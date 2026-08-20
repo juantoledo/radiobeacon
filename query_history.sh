@@ -56,7 +56,7 @@ case "$CMD" in
   history)
     event_key="${2:?Usage: $0 history <event_key>}"
     sqlite3 -header -column "$DB" \
-      "SELECT source_date_time, extracted_title, url FROM items WHERE event_key = '${event_key//\'/\'\'}' ORDER BY source_date_time;"
+      "SELECT item_id, source_date_time, extracted_title, url FROM items WHERE event_key = '${event_key//\'/\'\'}' ORDER BY source_date_time;"
     ;;
 
   multi)
@@ -64,7 +64,9 @@ case "$CMD" in
     sql "SELECT event_key, COUNT(*) AS updates,
                 MIN(source_date_time) AS first_seen,
                 MAX(source_date_time) AS last_seen,
-                MAX(url) AS url
+                MAX(url) AS url,
+                (SELECT item_id FROM items i2 WHERE i2.event_key = items.event_key
+                 ORDER BY source_date_time DESC LIMIT 1) AS latest_item_id
          FROM items
          WHERE event_key IS NOT NULL
          GROUP BY event_key
@@ -75,7 +77,7 @@ case "$CMD" in
 
   latest)
     limit="${2:-20}"
-    sql "SELECT i.event_key, i.source_date_time, i.extracted_title, i.url
+    sql "SELECT i.event_key, i.item_id, i.source_date_time, i.extracted_title, i.url
          FROM items i
          JOIN (
              SELECT event_key, MAX(source_date_time) AS latest
@@ -94,7 +96,9 @@ case "$CMD" in
     sql "SELECT event_key, COUNT(*) AS updates,
                 ROUND((julianday(MAX(source_date_time)) - julianday(MIN(source_date_time))) * 24, 1) AS duration_hours,
                 MAX(source_date_time) AS last_seen,
-                MAX(url) AS url
+                MAX(url) AS url,
+                (SELECT item_id FROM items i2 WHERE i2.event_key = items.event_key
+                 ORDER BY source_date_time DESC LIMIT 1) AS latest_item_id
          FROM items
          WHERE event_key IS NOT NULL
          GROUP BY event_key
@@ -105,7 +109,7 @@ case "$CMD" in
   gaps)
     event_key="${2:?Usage: $0 gaps <event_key>}"
     sqlite3 -header -column "$DB" \
-      "SELECT source_date_time, extracted_title, url,
+      "SELECT item_id, source_date_time, extracted_title, url,
               ROUND((julianday(source_date_time) - julianday(LAG(source_date_time) OVER (ORDER BY source_date_time))) * 24, 2) AS hours_since_prev
        FROM items
        WHERE event_key = '${event_key//\'/\'\'}'
@@ -118,7 +122,9 @@ case "$CMD" in
     from_escaped="${from//\'/\'\'}"
     to_escaped="${to//\'/\'\'}"
     sqlite3 -header -column "$DB" \
-      "SELECT event_key, MAX(source_date_time) AS last_seen, MAX(url) AS url
+      "SELECT event_key, MAX(source_date_time) AS last_seen, MAX(url) AS url,
+              (SELECT item_id FROM items i2 WHERE i2.event_key = items.event_key
+               ORDER BY source_date_time DESC LIMIT 1) AS latest_item_id
        FROM items
        WHERE event_key IS NOT NULL
          AND extracted_title LIKE '%${to_escaped}%'
@@ -131,13 +137,17 @@ case "$CMD" in
     pattern="${2:-}"
     if [ -n "$pattern" ]; then
       pattern_escaped="${pattern//\'/\'\'}"
-      sql "SELECT event_key, MIN(extracted_title) AS sample_title, MAX(source_date_time) AS last_seen, MAX(url) AS url
+      sql "SELECT event_key, MIN(extracted_title) AS sample_title, MAX(source_date_time) AS last_seen, MAX(url) AS url,
+                  (SELECT item_id FROM items i2 WHERE i2.event_key = items.event_key
+                   ORDER BY source_date_time DESC LIMIT 1) AS latest_item_id
            FROM items
            WHERE event_key IS NOT NULL AND extracted_title LIKE '%${pattern_escaped}%'
            GROUP BY event_key
            ORDER BY last_seen DESC;"
     else
-      sql "SELECT event_key, COUNT(*) AS updates, MAX(source_date_time) AS last_seen, MAX(url) AS url
+      sql "SELECT event_key, COUNT(*) AS updates, MAX(source_date_time) AS last_seen, MAX(url) AS url,
+                  (SELECT item_id FROM items i2 WHERE i2.event_key = items.event_key
+                   ORDER BY source_date_time DESC LIMIT 1) AS latest_item_id
            FROM items
            WHERE event_key IS NOT NULL
            GROUP BY event_key
