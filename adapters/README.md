@@ -22,6 +22,16 @@ job, run separately.
   reconstructed with `WHERE event_key = ? ORDER BY source_date_time` (see
   [query_history.sh](../query_history.sh) at the repo root).
 
+- **csn** (`src/adapters/csn/`) — recent earthquakes from Chile's Centro
+  Sismológico Nacional (CSN, Universidad de Chile). CSN has no official
+  public API; this uses a widely-used unofficial JSON mirror of its
+  auto-detected earthquake list — no auth/key required, but the request
+  needs a real browser `User-Agent` (the API's WAF 403s the default
+  `Python-urllib/x.y` one). The API gives no stable id or per-event page,
+  so `fecha` (the earthquake's detection timestamp) is used as both `id`
+  and `event_key`, and every item's `url` points at the same
+  sismologia.cl homepage.
+
 New adapters are picked up automatically: `discover_adapters()`
 (`src/adapters/__main__.py`) scans this package's submodules for concrete
 `DataSourceAdapter` subclasses, so adding one just means adding a new
@@ -62,10 +72,8 @@ present), and runs every discovered adapter once
 
 ## Configuration
 
-Env vars, in `.env` at the repo root (see `.env.example`). None of the
-SENAPRED ones are secrets — they're public values reverse-engineered from
-senapred.cl's own JS bundle; all are optional and default to the current
-known-working value.
+Env vars, in `.env` at the repo root (see `.env.example`). None are
+secrets — all are optional and default to the current known-working value.
 
 | var | default |
 |---|---|
@@ -76,13 +84,15 @@ known-working value.
 | `ADAPTERS_SENAPRED_ALERTA_BASE_URL` | `https://senapred.cl/alerta/` |
 | `ADAPTERS_SENAPRED_EVENTO_BASE_URL` | `https://senapred.cl/evento/` |
 | `ADAPTERS_SENAPRED_QUERY_LIMIT` | `20` |
+| `ADAPTERS_CSN_API_URL` | `https://api.gael.cloud/general/public/sismos` |
+| `ADAPTERS_CSN_SITE_URL` | `https://www.sismologia.cl/` |
 
 ## Tests
 
 ```bash
 .venv/bin/pytest tests/ -v                    # unit tests only
-.venv/bin/pytest tests/ -v -m ""               # include the live integration test
+.venv/bin/pytest tests/ -v -m ""               # include the live integration tests
 ```
 
-The `integration` marker (see `pytest.ini`) hits the real SENAPRED backend
-— excluded by default.
+The `integration` marker (see `pytest.ini`) hits real external services
+(SENAPRED, CSN) — excluded by default.
