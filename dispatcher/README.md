@@ -4,8 +4,7 @@ Watches `storage/radiobeacon.db` for newly-inserted items and delivers
 each one to a set of handlers — the component that turns "a new row
 appeared" into "something happened." Fully decoupled from
 [adapters](../adapters/README.md): it only reads `items`, polling on its
-own interval, the same way [enrichment](../enrichment/README.md) is
-decoupled — connected to the rest of the pipeline only through the
+own interval — connected to the rest of the pipeline only through the
 database.
 
 Right now the only handler is `log_handler`, which just logs. This is the
@@ -93,10 +92,9 @@ different treatment, no override machinery needed beyond picking a name.
 ### Manual overrides take effect immediately — for any row, not just in-flight ones
 
 `dispatch_policy` is the sanctioned exception to `items` rows being
-immutable once stored — like `summary` (enrichment's to update), a
-separate actor may update this column after the fact (e.g. a future UI,
-or manually). Two things react live, never from a value fixed at some
-earlier point in time:
+immutable once stored — like `summary`, a separate actor may update this
+column after the fact (e.g. a future UI, or manually). Two things react
+live, never from a value fixed at some earlier point in time:
 
 - **A policy's own `repeat_times`/`interval_seconds` change** (e.g. via
   `policies.sh`) takes effect for every item currently on that policy on

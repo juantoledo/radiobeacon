@@ -1,9 +1,8 @@
 # adapters
 
 Fetches raw data from external sources and stores it in SQLite
-(`storage/radiobeacon.db`). Adapters only fetch and store — no summarization, no
-radio/AX.25 logic. Summarization is [enrichment](../enrichment/README.md)'s
-job, run separately.
+(`storage/radiobeacon.db`). Adapters only fetch and store — no
+radio/AX.25 logic.
 
 ## Adapters
 
@@ -65,7 +64,7 @@ IGNORE`, so an already-known `id` is never touched or refreshed, only
 genuinely new items get inserted. This assumes an adapter never reuses an
 id for content that changes over time (true for SENAPRED, see above).
 `dispatch_policy` is the exception: like `summary`, adapters only ever
-propose an initial value for it — it may be overridden afterward by a
+propose an initial value for it — it may be updated afterward by a
 separate actor (see
 [dispatcher/override_item.py](../dispatcher/README.md#manual-overrides-take-effect-immediately-mostly)).
 

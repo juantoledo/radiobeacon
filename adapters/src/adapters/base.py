@@ -27,8 +27,7 @@ class DataSourceAdapter(ABC):
     def fetch_and_store(self, db_path: str | Path = DEFAULT_DB_PATH) -> SourceReading:
         """Part of the adapter contract: every fetch is captured to the
         SQLite store, so callers don't have to remember to persist it.
-        Storing raw data only — summarization is enrichment's job, run
-        separately (see enrichment/summarize_item.py)."""
+        Storing raw data only."""
         logger.info("%s: fetching", type(self).__name__)
         reading = self.fetch()
         if not reading.ok:

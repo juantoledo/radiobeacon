@@ -86,8 +86,8 @@ def test_store_reading_populates_items_table(tmp_path):
     assert row[1] == "1"
     assert row[2] == "Alerta de prueba"
     assert row[3] == "Contenido de prueba"
-    # store_reading() never touches summary — that's enrichment's job, run
-    # separately (see enrichment/summarize_item.py), not the fetch/store path
+    # store_reading() never touches summary — a separate actor sets it later,
+    # not the fetch/store path
     assert row[4] is None
     assert row[5] == "https://example.com/alerta/1"
     assert row[6] == "alerta-de-prueba-2026-08-19"
@@ -115,9 +115,10 @@ def test_store_reading_handles_missing_generic_fields(tmp_path):
 
 
 def test_store_reading_preserves_existing_summary_on_refresh(tmp_path):
-    """A `summary` set later by enrichment (manually or via an orchestrator)
-    must survive a normal refresh fetch — store_reading() never touches an
-    already-known row at all (see test_store_reading_does_not_touch_known_items)."""
+    """A `summary` set later by a separate actor (manually or via an
+    orchestrator) must survive a normal refresh fetch — store_reading()
+    never touches an already-known row at all (see
+    test_store_reading_does_not_touch_known_items)."""
     conn = get_connection(tmp_path / "radiobeacon.db")
     store_reading(conn, _make_reading())
     conn.execute(

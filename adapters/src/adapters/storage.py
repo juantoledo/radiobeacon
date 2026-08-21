@@ -237,9 +237,8 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
 
     `summary`, like `dispatch_policy`, is never touched here — adapters
     only propose an initial value (or leave it NULL/unset); a separate
-    actor updates it afterward. `summary` starts NULL and is populated
-    later by enrichment's own tooling (manually via
-    enrichment/summarize_item.py, or via an orchestrator).
+    actor updates it afterward. `summary` starts NULL and stays that way
+    until a separate actor sets it.
     `dispatch_policy` starts at whatever the adapter proposed and can be
     overridden afterward by a human/UI (via dispatcher/override_item.py) —
     unlike the rest of the row, this column is not meant to be
@@ -265,7 +264,7 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
                 item_id,
                 _as_text(getattr(item, "title", None)),
                 _as_text(getattr(item, "contents", None)),
-                None,  # summary — populated later by enrichment, not here
+                None,  # summary — never set here, populated later by a separate actor
                 _as_text(getattr(item, "url", None)),
                 _as_text(getattr(item, "event_key", None)),
                 _as_text(getattr(item, "type", None)),

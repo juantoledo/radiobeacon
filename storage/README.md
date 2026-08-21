@@ -2,7 +2,7 @@
 
 Holds `radiobeacon.db`, the SQLite database shared by
 [adapters](../adapters/README.md) (writes raw fetched items) and
-[enrichment](../enrichment/README.md) (writes `summary` on existing rows).
+[dispatcher](../dispatcher/README.md) (reads items, tracks delivery state).
 Nothing in this folder is a package — no code lives here, just the
 database file. `radiobeacon.db` is gitignored; only `.gitkeep` is tracked so the
 folder exists before the first fetch creates it.
@@ -30,7 +30,7 @@ the database itself.
 |---|---|
 | `source`, `item_id` | primary key — which adapter, and the item's id from that source |
 | `extracted_title`, `extracted_contents` | from the adapter's `title`/`contents` |
-| `summary` | populated later by enrichment; `NULL` until then |
+| `summary` | free-form short blurb, set later by a separate actor; `NULL` until then |
 | `url` | public link for the item, if any |
 | `event_key` | groups items that are updates to the same ongoing event |
 | `type`, `subtype` | generic two-level category |

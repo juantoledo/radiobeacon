@@ -6,8 +6,8 @@ ENV_FILE="../.env"
 if [ -f "$ENV_FILE" ]; then
   # Parsed line-by-line instead of `source`d: a plain `source .env` runs
   # each line through bash's normal command parsing, so any unquoted value
-  # containing spaces (e.g. ENRICHMENT_SUMARIZER_PROMPT=Summarize this...) gets
-  # misread as a command invocation and aborts the script. This loop just
+  # containing spaces gets misread as a command invocation and aborts the
+  # script. This loop just
   # splits each line on the first `=` and exports it directly, no
   # command parsing involved.
   while IFS= read -r line || [ -n "$line" ]; do
