@@ -15,6 +15,8 @@ mq/             optional local MQTT broker (Docker), dispatcher can publish Clou
 actions/        optional MQTT-subscribed pipeline of N configurable actions (e.g. chunking)
 storage/        the shared SQLite database (radiobeacon.db) both packages read/write
 query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
+bootstrap.sh    one-command fresh-clone setup — see Quick start below
+lib.sh          shared .env/.venv helpers sourced by bootstrap.sh and every package's start.sh
 ```
 
 Each package folder has its own README with setup and usage details:
@@ -46,13 +48,17 @@ data-adapters (fetch)  →  storage/radiobeacon.db
 ## Quick start
 
 ```bash
-cp .env.example .env   # fill in real values
-./data-adapters/start.sh    # fetch + store from all adapters
-./dispatcher/start.sh  # watch for new items and deliver them
-./mq/start.sh          # optional — local broker for CloudEvents publishing
-./actions/start.sh     # optional — run the configured action pipeline
+./bootstrap.sh   # fresh clone: creates .env, sets up every .venv, starts
+                 # mq + data-adapters + dispatcher + actions together
+                 # (Ctrl+C stops all of them). No secrets required — every
+                 # .env.example default is safe to run as-is.
 ./query_history.sh --help   # explore what's in radiobeacon.db
 ```
+
+To run just one piece instead of everything, use that package's own
+`start.sh` directly (`./data-adapters/start.sh`, `./dispatcher/start.sh`,
+`./mq/start.sh`, `./actions/start.sh`) — each is self-contained (creates
+its own `.venv` on first run) and independent of the others.
 
 ## Configuration
 
