@@ -34,7 +34,7 @@ job, run separately.
   and `event_key`, and every item's `url` points at the same
   sismologia.cl homepage. `dispatch_policy` is `"urgent"` at/above
   `ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD`, `"informational"` below it —
-  see [triggers/README.md](../triggers/README.md#delivery-repeat-policy-dispatch_policy).
+  see [dispatcher/README.md](../dispatcher/README.md#delivery-repeat-policy-dispatch_policy).
 
 New adapters are picked up automatically: `discover_adapters()`
 (`src/adapters/__main__.py`) scans this package's submodules for concrete
@@ -57,7 +57,7 @@ each of these is optional, read via `getattr(item, name, None)`:
 | `url` | public link for the item, if any |
 | `event_key` | groups items that are updates to the same ongoing thing |
 | `type`, `subtype` | generic two-level category (raw API type + finer category) |
-| `dispatch_policy` | names a row in [triggers](../triggers/README.md)' `dispatch_policies` table — a soft reference, meaningless to this package, that centralizes delivery repeat count/interval config |
+| `dispatch_policy` | names a row in [dispatcher](../dispatcher/README.md)'s `dispatch_policies` table — a soft reference, meaningless to this package, that centralizes delivery repeat count/interval config |
 | `source_date_time` | when the source says the item happened/was published |
 
 Items are immutable once stored — `store_reading()` uses `INSERT OR
@@ -67,7 +67,7 @@ id for content that changes over time (true for SENAPRED, see above).
 `dispatch_policy` is the exception: like `summary`, adapters only ever
 propose an initial value for it — it may be overridden afterward by a
 separate actor (see
-[triggers/override_item.py](../triggers/README.md#manual-overrides-take-effect-immediately-mostly)).
+[dispatcher/override_item.py](../dispatcher/README.md#manual-overrides-take-effect-immediately-mostly)).
 
 ## Setup
 

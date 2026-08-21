@@ -1,7 +1,7 @@
 import sqlite3
 
-from triggers.override import override_item, rearm_item
-from triggers.watcher import check_for_new_items, discover_new_items
+from dispatcher.override import override_item, rearm_item
+from dispatcher.watcher import check_for_new_items, discover_new_items
 
 
 def _make_conn():

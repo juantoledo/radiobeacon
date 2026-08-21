@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 Handler = Callable[[sqlite3.Row], None]
 
-_CREATE_TRIGGER_STATE = """
-CREATE TABLE IF NOT EXISTS trigger_state (
+_CREATE_DISPATCHER_STATE = """
+CREATE TABLE IF NOT EXISTS dispatcher_state (
     consumer TEXT PRIMARY KEY,
     last_seen_rowid INTEGER NOT NULL
 );
@@ -55,6 +55,20 @@ def _now_iso() -> str:
     return _now_dt().isoformat()
 
 
+def _migrate_trigger_state_table(conn: sqlite3.Connection) -> None:
+    """trigger_state was renamed to dispatcher_state when the package that
+    owns it (triggers/) was renamed to dispatcher/. Existing databases
+    still have the old-named table with real watermark data in it — that
+    data is the source of truth for what's already been discovered, so it
+    gets renamed in place rather than dropped."""
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'trigger_state'"
+    ).fetchone()
+    if exists:
+        conn.execute("ALTER TABLE trigger_state RENAME TO dispatcher_state")
+        conn.commit()
+
+
 def _migrate_trigger_dispatches_table(conn: sqlite3.Connection) -> None:
     """trigger_dispatches used to store an absolute next_due_at, computed
     once at schedule time — which meant a policy's interval_seconds
@@ -85,8 +99,9 @@ def _migrate_trigger_dispatches_table(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_tables(conn: sqlite3.Connection) -> None:
+    _migrate_trigger_state_table(conn)
     _migrate_trigger_dispatches_table(conn)
-    conn.execute(_CREATE_TRIGGER_STATE)
+    conn.execute(_CREATE_DISPATCHER_STATE)
     conn.execute(_CREATE_TRIGGER_DISPATCHES)
     conn.execute(_CREATE_DISPATCH_POLICIES)
     conn.execute(_CREATE_ITEM_POLICY_STATE)
@@ -96,7 +111,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
 
 def _last_seen_rowid(conn: sqlite3.Connection, consumer: str) -> int:
     row = conn.execute(
-        "SELECT last_seen_rowid FROM trigger_state WHERE consumer = ?", (consumer,)
+        "SELECT last_seen_rowid FROM dispatcher_state WHERE consumer = ?", (consumer,)
     ).fetchone()
     if row is not None:
         return row[0]
@@ -104,10 +119,10 @@ def _last_seen_rowid(conn: sqlite3.Connection, consumer: str) -> int:
     # First run for this consumer: skip the existing backlog instead of
     # scheduling every historical row for delivery — start the watermark
     # at the current max rowid. To intentionally replay history for this
-    # consumer, delete its row from trigger_state (see README).
+    # consumer, delete its row from dispatcher_state (see README).
     max_rowid = conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM items").fetchone()[0]
     conn.execute(
-        "INSERT INTO trigger_state (consumer, last_seen_rowid) VALUES (?, ?)",
+        "INSERT INTO dispatcher_state (consumer, last_seen_rowid) VALUES (?, ?)",
         (consumer, max_rowid),
     )
     conn.commit()
@@ -154,7 +169,7 @@ def discover_new_items(conn: sqlite3.Connection, consumer: str) -> int:
             (consumer, row["source"], row["item_id"], row["dispatch_policy"]),
         )
         conn.execute(
-            "UPDATE trigger_state SET last_seen_rowid = ? WHERE consumer = ?",
+            "UPDATE dispatcher_state SET last_seen_rowid = ? WHERE consumer = ?",
             (row["rowid"], consumer),
         )
         conn.commit()
@@ -234,7 +249,7 @@ def dispatch_due_items(
     `last_triggered_at + policy.interval_seconds` using each row's
     *current* policy — never a precomputed timestamp — so editing a
     policy's own repeat_times/interval_seconds (e.g. via
-    triggers/policies.py) takes effect immediately: a shortened interval
+    dispatcher/policies.py) takes effect immediately: a shortened interval
     makes an already-scheduled item due sooner, a lengthened one pushes
     it out, both without waiting for the item's old schedule to elapse
     first. (A dispatch_policy change on the item itself is handled
@@ -308,7 +323,7 @@ def check_for_new_items(
 
 def log_handler(row: sqlite3.Row) -> None:
     """The one built-in handler — logs the item. Real handlers (radio TX,
-    etc.) register alongside/instead of this in triggers.__main__."""
+    etc.) register alongside/instead of this in dispatcher.__main__."""
     logger.info(
         "trigger: source=%s item_id=%s type=%s dispatch_policy=%s title=%r url=%s",
         row["source"],

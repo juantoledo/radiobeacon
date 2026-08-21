@@ -14,8 +14,8 @@ from .watcher import check_for_new_items, log_handler  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-INTERVAL_SECONDS = int(os.environ.get("TRIGGERS_INTERVAL_SECONDS", "5"))
-CONSUMER_NAME = os.environ.get("TRIGGERS_CONSUMER_NAME", "log")
+INTERVAL_SECONDS = int(os.environ.get("DISPATCHER_INTERVAL_SECONDS", "5"))
+CONSUMER_NAME = os.environ.get("DISPATCHER_CONSUMER_NAME", "log")
 
 # The extension point: real handlers (radio TX, notifications, etc.) get
 # added here once they exist — none do yet, so this just logs.
@@ -34,7 +34,7 @@ def main() -> None:
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
 
     logger.info(
-        "triggers: starting (consumer=%s, interval=%ds)", CONSUMER_NAME, INTERVAL_SECONDS
+        "dispatcher: starting (consumer=%s, interval=%ds)", CONSUMER_NAME, INTERVAL_SECONDS
     )
     try:
         while not stop_event.is_set():
@@ -51,7 +51,7 @@ def main() -> None:
             stop_event.wait(INTERVAL_SECONDS)
     finally:
         conn.close()
-    logger.info("triggers: stopped")
+    logger.info("dispatcher: stopped")
 
 
 if __name__ == "__main__":

@@ -173,7 +173,7 @@ class SenapredAlert:
 
     @property
     def dispatch_policy(self) -> str:
-        """Names a row in triggers' dispatch_policies table (see
+        """Names a row in dispatcher's dispatch_policies table (see
         adapters.storage.store_reading's docstring). "Alerta" items are
         active early-warnings — "urgent". "Evento" items are a
         monitoring/historical feed (declared/monitored/closed updates,

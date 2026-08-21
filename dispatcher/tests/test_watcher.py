@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-import triggers.watcher as watcher_module
-from triggers.policy import set_policy
-from triggers.watcher import _ensure_tables, check_for_new_items, discover_new_items
+import dispatcher.watcher as watcher_module
+from dispatcher.policy import set_policy
+from dispatcher.watcher import _ensure_tables, check_for_new_items, discover_new_items
 
 
 def _make_conn():
@@ -62,7 +62,7 @@ def test_ensure_tables_creates_and_seeds_tables_idempotently():
     tables = {
         row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
-    assert "trigger_state" in tables
+    assert "dispatcher_state" in tables
     assert "trigger_dispatches" in tables
     assert "dispatch_policies" in tables
 
@@ -149,7 +149,7 @@ def test_first_poll_skips_existing_backlog_but_records_watermark(clock):
 
     assert discovered == 0
     watermark = conn.execute(
-        "SELECT last_seen_rowid FROM trigger_state WHERE consumer = ?", ("log",)
+        "SELECT last_seen_rowid FROM dispatcher_state WHERE consumer = ?", ("log",)
     ).fetchone()[0]
     assert watermark == 2
 
@@ -253,7 +253,7 @@ def test_different_items_pointing_at_different_named_policies_get_different_trea
 def test_shortening_policy_interval_makes_inflight_item_due_sooner(clock):
     """Due-ness is computed live from last_triggered_at + the policy's
     *current* interval_seconds, not a timestamp precomputed at schedule
-    time — so editing dispatch_policies (e.g. via triggers/policies.py)
+    time — so editing dispatch_policies (e.g. via dispatcher/policies.py)
     affects an already-scheduled item immediately, without waiting for
     its old interval to elapse first."""
     conn = _make_conn()
@@ -361,7 +361,7 @@ def test_dispatch_policy_reassignment_restarts_delivery_count_under_new_policy(c
     assert remaining is None  # already retired
 
     # re-arm and reassign to a fresh policy with its own 3-delivery budget
-    from triggers.override import rearm_item
+    from dispatcher.override import rearm_item
 
     rearm_item(conn, consumer, "csn", "1")
     conn.execute("UPDATE items SET dispatch_policy = 'mega' WHERE source = 'csn' AND item_id = '1'")
@@ -378,7 +378,7 @@ def test_dispatch_policy_reassignment_restarts_delivery_count_under_new_policy(c
 
 def test_manual_dispatch_policy_edit_takes_effect_on_next_poll_for_inflight_item(clock):
     """Simulates an override made directly on `items` (e.g. via
-    triggers/override_item.py or a future UI) while the item is still
+    dispatcher/override_item.py or a future UI) while the item is still
     in-flight — the reschedule-or-retire decision made at the next due
     poll uses the new dispatch_policy, with no extra step needed (a
     delivery already due at that exact poll still fires — the edit
@@ -394,7 +394,7 @@ def test_manual_dispatch_policy_edit_takes_effect_on_next_poll_for_inflight_item
     assert check_for_new_items(conn, consumer, [delivered.append]) == 1
     assert len(delivered) == 1
 
-    # downgrade directly on items — not via any triggers API
+    # downgrade directly on items — not via any dispatcher API
     conn.execute(
         "UPDATE items SET dispatch_policy = 'informational' WHERE source = 'csn' AND item_id = '1'"
     )

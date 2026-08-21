@@ -5,18 +5,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "adapters" / "src"))
-sys.path.insert(0, str(REPO_ROOT / "triggers" / "src"))
+sys.path.insert(0, str(REPO_ROOT / "dispatcher" / "src"))
 
 from adapters.storage import DEFAULT_DB_PATH, get_connection  # noqa: E402
-from triggers.policy import delete_policy, list_policies, set_policy  # noqa: E402
-from triggers.watcher import _ensure_tables  # noqa: E402
+from dispatcher.policy import delete_policy, list_policies, set_policy  # noqa: E402
+from dispatcher.watcher import _ensure_tables  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Manage triggers' dispatch_policies table — the centralized "
+        description="Manage dispatcher's dispatch_policies table — the centralized "
         "repeat_times/interval_seconds config that items' dispatch_policy column "
         "references by name."
     )

@@ -5,7 +5,7 @@ DEFAULT_POLICY_NAME = "informational"
 
 # Seeded into dispatch_policies on first _ensure_tables() call, only if
 # the table is empty — the starting set an operator can then edit via
-# triggers/policies.sh (list/set/delete), not by changing these constants.
+# dispatcher/policies.sh (list/set/delete), not by changing these constants.
 _SEED_POLICIES = (
     ("urgent", 5, 60, "Redelivers several times, spread out."),
     ("informational", 1, 0, "Delivered once."),
@@ -84,7 +84,7 @@ def set_policy(
     description: str | None = None,
 ) -> None:
     """Creates or replaces a named policy — the actual "centralized
-    management" surface (see triggers/policies.py)."""
+    management" surface (see dispatcher/policies.py)."""
     conn.execute(
         "INSERT INTO dispatch_policies (name, repeat_times, interval_seconds, description) "
         "VALUES (?, ?, ?, ?) "

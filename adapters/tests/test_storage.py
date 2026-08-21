@@ -406,7 +406,7 @@ def test_get_connection_migrates_missing_dispatch_policy_column(tmp_path):
 def test_get_connection_drops_urgency_and_repeat_columns(tmp_path):
     """Covers the schema with the now-retired urgency/repeat_times/
     repeat_interval_seconds columns (superseded by dispatch_policy,
-    which centralizes that config in triggers' dispatch_policies table
+    which centralizes that config in dispatcher's dispatch_policies table
     instead) — dropped in place, same mechanism that already retired
     summarized_title/summarized_contents."""
     db_path = tmp_path / "radiobeacon.db"
@@ -451,7 +451,7 @@ def test_get_connection_drops_urgency_and_repeat_columns(tmp_path):
     ).fetchone()
     # other data preserved; dropped columns' data is gone, dispatch_policy
     # starts NULL until re-set (by an adapter re-fetching under a new id,
-    # or manually via triggers/override_item.py)
+    # or manually via dispatcher/override_item.py)
     assert row == ("Titulo", None)
 
 

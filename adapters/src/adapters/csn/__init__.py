@@ -75,7 +75,7 @@ class CsnEarthquake:
 
     @property
     def dispatch_policy(self) -> str:
-        """Names a row in triggers' dispatch_policies table (see
+        """Names a row in dispatcher's dispatch_policies table (see
         adapters.storage.store_reading's docstring). Earthquakes at/above
         URGENT_MAGNITUDE_THRESHOLD point at "urgent" (redelivered several
         times); below it, "informational" (delivered once) — a minor

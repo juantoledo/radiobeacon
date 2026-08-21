@@ -32,4 +32,4 @@ fi
 # sent to this script reach the long-running poll loop directly — see
 # adapters/start.sh for the same pattern.
 export PYTHONPATH=src
-exec .venv/bin/python3 -m triggers
+exec .venv/bin/python3 -m dispatcher

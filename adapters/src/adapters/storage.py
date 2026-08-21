@@ -54,7 +54,7 @@ _NEW_TEXT_COLUMNS = (
 # Columns from an older schema — dropped on migration if present: two
 # summarized_* columns replaced by the single `summary` column, and
 # urgency/repeat_times/repeat_interval_seconds replaced by the single
-# dispatch_policy column (see triggers.policy for the centralized
+# dispatch_policy column (see dispatcher.policy for the centralized
 # repeat/interval config it now points at).
 _DROPPED_COLUMNS = (
     "summarized_title",
@@ -162,14 +162,14 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
     split can use the same two columns.
 
     `dispatch_policy` (where an adapter has one) names which delivery
-    policy triggers/ should use for this item — e.g. "urgent" or
+    policy dispatcher/ should use for this item — e.g. "urgent" or
     "informational". Meaningless to this package: it's a soft reference
-    (not a SQL FOREIGN KEY) to the `name` column of triggers'
+    (not a SQL FOREIGN KEY) to the `name` column of dispatcher's
     `dispatch_policies` table, which centralizes the actual repeat
     count/interval config a name maps to (see
-    triggers/src/triggers/policy.py). A row with no `dispatch_policy`
+    dispatcher/src/dispatcher/policy.py). A row with no `dispatch_policy`
     (adapter doesn't implement it, value missing, or the name doesn't
-    exist in `dispatch_policies`) falls back to triggers' default policy.
+    exist in `dispatch_policies`) falls back to dispatcher's default policy.
 
     `summary`, like `dispatch_policy`, is never touched here — adapters
     only propose an initial value (or leave it NULL/unset); a separate
@@ -177,7 +177,7 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
     later by enrichment's own tooling (manually via
     enrichment/summarize_item.py, or via an orchestrator).
     `dispatch_policy` starts at whatever the adapter proposed and can be
-    overridden afterward by a human/UI (via triggers/override_item.py) —
+    overridden afterward by a human/UI (via dispatcher/override_item.py) —
     unlike the rest of the row, this column is not meant to be
     immutable-forever, only adapter-untouched-after-insert.
 

@@ -1,4 +1,4 @@
-# triggers
+# dispatcher
 
 Watches `storage/radiobeacon.db` for newly-inserted items and delivers
 each one to a set of handlers — the component that turns "a new row
@@ -10,7 +10,7 @@ database.
 
 Right now the only handler is `log_handler`, which just logs. This is the
 extension point for real delivery later (radio TX, notifications, etc.) —
-see `triggers/src/triggers/__main__.py`'s `HANDLERS` list.
+see `dispatcher/src/dispatcher/__main__.py`'s `HANDLERS` list.
 
 ## How it works
 
@@ -31,11 +31,11 @@ Every poll:
 **First run skips the backlog**: a brand-new consumer's watermark starts
 at the database's current max `rowid`, not `0`, and every item's
 `dispatch_policy` is silently baselined (not treated as a change) the
-first time step 2 sees it — so pointing `triggers` at an already-populated
+first time step 2 sees it — so pointing `dispatcher` at an already-populated
 database doesn't immediately fire on every historical row. To
 intentionally replay history for a consumer, delete its rows from the
-`trigger_state` **and** `item_policy_state` tables
-(`sqlite3 storage/radiobeacon.db "DELETE FROM trigger_state WHERE consumer = '...'; DELETE FROM item_policy_state WHERE consumer = '...'"`)
+`dispatcher_state` **and** `item_policy_state` tables
+(`sqlite3 storage/radiobeacon.db "DELETE FROM dispatcher_state WHERE consumer = '...'; DELETE FROM item_policy_state WHERE consumer = '...'"`)
 and restart.
 
 ## Delivery repeat policy (`dispatch_policy`)
@@ -113,7 +113,7 @@ earlier point in time:
   state**: still in-flight, already fully retired, or never even
   discovered as "new" in the first place (predates this consumer's
   watermark). No `--rearm` needed for this case — see the two tests
-  named for it in `triggers/tests/test_watcher.py` if you want the exact
+  named for it in `dispatcher/tests/test_watcher.py` if you want the exact
   mechanics.
 
 `--rearm` still exists for the one thing a `dispatch_policy` change
@@ -128,7 +128,7 @@ on (e.g. "resend this exact alert again").
   (doesn't need to already exist in `dispatch_policies` — same
   soft-reference/fallback behavior as an adapter-set one).
 - `--rearm` re-inserts a due `trigger_dispatches` row for `--consumer`
-  (defaults to `TRIGGERS_CONSUMER_NAME`) — only has an effect if the item
+  (defaults to `DISPATCHER_CONSUMER_NAME`) — only has an effect if the item
   is currently retired; a no-op (logged) if it's still in-flight or
   doesn't exist.
 
@@ -140,7 +140,7 @@ on (e.g. "resend this exact alert again").
 
 Same pattern as `adapters/start.sh`: creates a `.venv`, installs
 `requirements.txt`, loads `../.env`, then `exec`s into a **long-running**
-poll loop (`PYTHONPATH=src python3 -m triggers`). `Ctrl+C`/`SIGTERM` stops
+poll loop (`PYTHONPATH=src python3 -m dispatcher`). `Ctrl+C`/`SIGTERM` stops
 it cleanly.
 
 ## Configuration
@@ -151,15 +151,15 @@ see "Managing policies" above.
 
 | var | default |
 |---|---|
-| `TRIGGERS_INTERVAL_SECONDS` | `5` |
-| `TRIGGERS_CONSUMER_NAME` | `log` |
+| `DISPATCHER_INTERVAL_SECONDS` | `5` |
+| `DISPATCHER_CONSUMER_NAME` | `log` |
 
 ## State
 
 Four tables, owned by this package (separate from `items`, which stays
 adapter-owned):
 
-- `trigger_state (consumer, last_seen_rowid)` — the discovery watermark.
+- `dispatcher_state (consumer, last_seen_rowid)` — the discovery watermark.
 - `trigger_dispatches (consumer, source, item_id, times_triggered,
   last_triggered_at)` — per-item delivery progress for an item currently
   in-flight; `last_triggered_at` is `NULL` for a never-delivered item

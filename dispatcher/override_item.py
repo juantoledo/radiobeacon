@@ -6,10 +6,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "adapters" / "src"))
-sys.path.insert(0, str(REPO_ROOT / "triggers" / "src"))
+sys.path.insert(0, str(REPO_ROOT / "dispatcher" / "src"))
 
 from adapters.storage import DEFAULT_DB_PATH, get_connection  # noqa: E402
-from triggers.override import override_item, rearm_item  # noqa: E402
+from dispatcher.override import override_item, rearm_item  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +25,7 @@ def main() -> None:
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to radiobeacon.db")
     parser.add_argument(
         "--dispatch-policy",
-        help="Name of a row in dispatch_policies (see triggers/policies.sh list)",
+        help="Name of a row in dispatch_policies (see dispatcher/policies.sh list)",
     )
     parser.add_argument(
         "--rearm",
@@ -36,7 +36,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--consumer",
-        default=os.environ.get("TRIGGERS_CONSUMER_NAME", "log"),
+        default=os.environ.get("DISPATCHER_CONSUMER_NAME", "log"),
         help="Consumer to re-arm for (only relevant with --rearm)",
     )
     args = parser.parse_args()

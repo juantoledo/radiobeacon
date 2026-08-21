@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from triggers.policy import (
+from dispatcher.policy import (
     RepeatPolicy,
     delete_policy,
     ensure_seeded,
