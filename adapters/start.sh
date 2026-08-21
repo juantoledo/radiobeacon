@@ -32,4 +32,9 @@ if [ ! -d .venv ]; then
 fi
 
 .venv/bin/pip install -q -r requirements.txt
-PYTHONPATH=src .venv/bin/python3 -m adapters
+
+# exec replaces this shell process with the Python one (instead of running
+# it as a child) so SIGINT/SIGTERM sent to this script reach the
+# long-running adapter loop directly — see adapters/src/adapters/__main__.py.
+export PYTHONPATH=src
+exec .venv/bin/python3 -m adapters
