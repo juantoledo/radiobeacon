@@ -5,12 +5,27 @@ import sqlite3
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DB_PATH = REPO_ROOT / "storage" / "radiobeacon.db"
+
+_audit_event_hooks: list[Callable[..., None]] = []
+
+
+def register_audit_event_hook(hook: Callable[..., None]) -> None:
+    """Registers a callback invoked (best-effort) after every successful
+    record_audit_event() call, with the same keyword arguments
+    record_audit_event() itself takes (event_type, actor, source, item_id,
+    details). A hook that raises is logged and swallowed — never masks the
+    caller's own operation, which has already committed by the time hooks
+    run. Not called at import time by any package — callers register
+    explicitly at startup, so importing this module never has network
+    side effects on its own. Registering the same hook twice is a no-op."""
+    if hook not in _audit_event_hooks:
+        _audit_event_hooks.append(hook)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS items (
@@ -156,7 +171,10 @@ def record_audit_event(
     function, same column set, regardless of which package or which event
     produced it. `actor` identifies what wrote the row (e.g.
     "adapters.SenapredAdapter", "dispatcher.watcher"). `details` is optional free-form JSON (reuses
-    _json_default for datetime/dataclass/Enum values, same as rawdata)."""
+    _json_default for datetime/dataclass/Enum values, same as rawdata).
+    After the row commits, every hook registered via
+    register_audit_event_hook() is invoked with these same arguments —
+    see that function for the contract (best-effort, never raises)."""
     _ensure_audit_log_table(conn)
     conn.execute(
         "INSERT INTO audit_log (event_type, actor, source, item_id, details) "
@@ -170,6 +188,18 @@ def record_audit_event(
         ),
     )
     conn.commit()
+
+    for hook in _audit_event_hooks:
+        try:
+            hook(
+                event_type=event_type,
+                actor=actor,
+                source=source,
+                item_id=item_id,
+                details=details,
+            )
+        except Exception:
+            logger.error("audit event hook %r failed", hook, exc_info=True)
 
 
 def _json_default(obj: Any) -> Any:

@@ -8,8 +8,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "adapters" / "src"))
 
-from adapters.storage import DEFAULT_DB_PATH, get_connection  # noqa: E402
+from adapters.storage import DEFAULT_DB_PATH, get_connection, register_audit_event_hook  # noqa: E402
 
+from .mq_publisher import publish_cloud_event  # noqa: E402
 from .watcher import check_for_new_items, log_handler  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,10 @@ CONSUMER_NAME = os.environ.get("DISPATCHER_CONSUMER_NAME", "log")
 # The extension point: real handlers (radio TX, notifications, etc.) get
 # added here once they exist — none do yet, so this just logs.
 HANDLERS = [log_handler]
+
+# Publishes select audit events (see mq_publisher.py) to MQTT as
+# CloudEvents — no-ops unless DISPATCHER_MQ_HOST is set.
+register_audit_event_hook(publish_cloud_event)
 
 
 def main() -> None:

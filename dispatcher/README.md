@@ -130,6 +130,63 @@ on (e.g. "resend this exact alert again").
   is currently retired; a no-op (logged) if it's still in-flight or
   doesn't exist.
 
+## Publishing to a message queue (CloudEvents over MQTT)
+
+Optionally, 6 of the audit events this package records (see "State" below
+for the full `audit_log` picture) are also published to a local MQTT
+broker as [CloudEvents](https://cloudevents.io) — a subscriber (radio TX,
+notifications, another service) can react without polling `audit_log`
+itself:
+
+- `item.dispatched`, `item.dispatch_failed` — every handler call in
+  `dispatch_due_items`.
+- `item.discovered` — a new item scheduled for delivery.
+- `item.policy_drifted` — an item's `dispatch_policy` changed since last seen.
+- `item.policy_overridden`, `item.rearmed` — via `override_item.sh`.
+
+`adapter.fetch`, `item.stored`, `policy.set`, `policy.deleted` are
+recorded in `audit_log` but never published here.
+
+Disabled by default — set `DISPATCHER_MQ_HOST` to enable (see
+`.env.example`); leave it unset and no connection is ever attempted. See
+[mq/README.md](../mq/README.md) for the local Mosquitto broker this is
+meant to point at.
+
+Each event is published to the topic `radiobeacon/events/<event_type>`
+(e.g. `radiobeacon/events/item.dispatched`) — subscribe to
+`radiobeacon/events/#` to receive all of them, or an exact topic for one
+event type. Each message payload is a structured-mode CloudEvents JSON
+envelope, e.g.:
+
+```json
+{
+  "specversion": "1.0",
+  "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "source": "radiobeacon/log_handler",
+  "type": "cl.radiobeacon.item.dispatched",
+  "time": "2026-08-21T14:32:07.123456+00:00",
+  "data": {
+    "source": "senapred",
+    "item_id": "abc123",
+    "actor": "log_handler",
+    "details": {
+      "consumer": "log",
+      "dispatch_policy": "urgent",
+      "times_triggered": 1
+    }
+  }
+}
+```
+
+Note the two different "source" fields: the CloudEvents envelope's
+top-level `source` (who emitted the event — `radiobeacon/<actor>`) vs.
+`data.source` (radiobeacon's own domain concept — which adapter the item
+belongs to, e.g. `"senapred"`).
+
+A publish failure (broker down, etc.) is logged and never breaks
+delivery — the `audit_log` row is always the source of truth; MQTT
+publishing is best-effort on top of it.
+
 ## Usage
 
 ```bash
@@ -151,6 +208,10 @@ see "Managing policies" above.
 |---|---|
 | `DISPATCHER_INTERVAL_SECONDS` | `5` |
 | `DISPATCHER_CONSUMER_NAME` | `log` |
+| `DISPATCHER_MQ_HOST` | *(unset — MQTT publishing disabled)* |
+| `DISPATCHER_MQ_PORT` | `1883` |
+| `DISPATCHER_MQ_QOS` | `1` |
+| `DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS` | `5` |
 
 ## State
 

@@ -7,11 +7,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "adapters" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "dispatcher" / "src"))
 
-from adapters.storage import DEFAULT_DB_PATH, get_connection  # noqa: E402
+from adapters.storage import DEFAULT_DB_PATH, get_connection, register_audit_event_hook  # noqa: E402
+from dispatcher.mq_publisher import publish_cloud_event  # noqa: E402
 from dispatcher.policy import delete_policy, list_policies, set_policy  # noqa: E402
 from dispatcher.watcher import _ensure_tables  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+# Publishes select audit events (see dispatcher/mq_publisher.py) to MQTT as
+# CloudEvents — no-ops unless DISPATCHER_MQ_HOST is set.
+register_audit_event_hook(publish_cloud_event)
 
 
 def main() -> None:

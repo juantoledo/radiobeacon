@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from types import SimpleNamespace
 
-from adapters.storage import get_connection, store_reading
+import adapters.storage as storage_module
+from adapters.storage import get_connection, record_audit_event, store_reading
 
 
 @dataclass
@@ -562,3 +563,84 @@ def test_get_connection_migrates_summarized_title_contents_to_summary(tmp_path):
     ).fetchone()
     # dropped columns' data is gone; summary starts NULL until re-fetched
     assert row == ("Titulo", "Contenido", None)
+
+
+def test_register_audit_event_hook_is_invoked_after_record_audit_event(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_module, "_audit_event_hooks", [])
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    calls = []
+    storage_module.register_audit_event_hook(lambda **kwargs: calls.append(kwargs))
+
+    record_audit_event(
+        conn,
+        event_type="item.dispatched",
+        actor="log_handler",
+        source="senapred",
+        item_id="1",
+        details={"consumer": "log"},
+    )
+
+    assert calls == [
+        {
+            "event_type": "item.dispatched",
+            "actor": "log_handler",
+            "source": "senapred",
+            "item_id": "1",
+            "details": {"consumer": "log"},
+        }
+    ]
+
+
+def test_register_audit_event_hook_receives_none_for_optional_fields(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_module, "_audit_event_hooks", [])
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    calls = []
+    storage_module.register_audit_event_hook(lambda **kwargs: calls.append(kwargs))
+
+    record_audit_event(conn, event_type="policy.set", actor="dispatcher.policy")
+
+    assert calls == [
+        {
+            "event_type": "policy.set",
+            "actor": "dispatcher.policy",
+            "source": None,
+            "item_id": None,
+            "details": None,
+        }
+    ]
+
+
+def test_raising_hook_does_not_propagate_or_block_other_hooks(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_module, "_audit_event_hooks", [])
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    calls = []
+
+    def failing_hook(**kwargs):
+        raise RuntimeError("boom")
+
+    storage_module.register_audit_event_hook(failing_hook)
+    storage_module.register_audit_event_hook(lambda **kwargs: calls.append(kwargs))
+
+    record_audit_event(conn, event_type="item.discovered", actor="dispatcher.watcher")
+
+    assert len(calls) == 1
+    row = conn.execute(
+        "SELECT event_type FROM audit_log WHERE event_type = 'item.discovered'"
+    ).fetchone()
+    assert row is not None
+
+
+def test_registering_the_same_hook_twice_only_invokes_it_once(tmp_path, monkeypatch):
+    monkeypatch.setattr(storage_module, "_audit_event_hooks", [])
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    calls = []
+
+    def hook(**kwargs):
+        calls.append(kwargs)
+
+    storage_module.register_audit_event_hook(hook)
+    storage_module.register_audit_event_hook(hook)
+
+    record_audit_event(conn, event_type="item.rearmed", actor="dispatcher.override")
+
+    assert len(calls) == 1
