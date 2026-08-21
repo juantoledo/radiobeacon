@@ -6,7 +6,13 @@ services:
     ports:
       - "127.0.0.1:1883:1883"
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      # :Z relabels the bind-mounted file for this container's exclusive
+      # use under SELinux (rootless podman enforces this even though it
+      # accepted the mount at container-create time; without it mosquitto
+      # fails at startup with "Unable to open config file", permission
+      # denied by SELinux, not a missing file). A no-op on plain Docker /
+      # non-SELinux hosts, so safe either way.
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,Z
       - mosquitto-data:/mosquitto/data
 
 volumes:
