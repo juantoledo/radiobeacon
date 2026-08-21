@@ -1,3 +1,4 @@
 pytest
 anthropic
 openai
+ollama

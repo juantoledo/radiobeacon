@@ -1,0 +1,12 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: radiobeacon-ollama
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:

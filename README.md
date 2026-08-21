@@ -11,15 +11,17 @@ for the full system design.
 
 ```
 adapters/     fetches raw data from external sources, stores it in SQLite
-enrichment/   summarizes stored items via an LLM (Claude/OpenAI), run separately
+enrichment/   summarizes stored items via an LLM (Claude/OpenAI/Ollama), run separately
 dispatcher/   watches for new items and delivers them to handlers, run separately
+ollama/       optional self-hosted Ollama server (Docker), a no-API-key summarizer backend
 storage/      the shared SQLite database (radiobeacon.db) all three packages read/write
 query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
 ```
 
 Each package folder has its own README with setup and usage details:
 [adapters/README.md](adapters/README.md), [enrichment/README.md](enrichment/README.md),
-[dispatcher/README.md](dispatcher/README.md), [storage/README.md](storage/README.md).
+[dispatcher/README.md](dispatcher/README.md), [ollama/README.md](ollama/README.md),
+[storage/README.md](storage/README.md).
 
 ### Architecture
 

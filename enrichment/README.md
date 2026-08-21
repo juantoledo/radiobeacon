@@ -1,8 +1,9 @@
 # enrichment
 
-Summarizes items already stored in `storage/radiobeacon.db` via an LLM (Claude
-or OpenAI) — genuinely condenses/rewrites the content, not extractive
-sentence-selection. Fully decoupled from [adapters](../adapters/README.md):
+Summarizes items already stored in `storage/radiobeacon.db` via an LLM (Claude,
+OpenAI, or a self-hosted Ollama server — see [../ollama/README.md](../ollama/README.md))
+— genuinely condenses/rewrites the content, not extractive sentence-selection.
+Fully decoupled from [adapters](../adapters/README.md):
 adapters only fetch and store raw data; this package only reads/updates the
 `summary` column of already-stored rows, run manually or by an
 orchestrator, not as part of the fetch pipeline.
@@ -30,9 +31,9 @@ summarize(fields: dict[str, Any], sentence_count: int = 2, provider: str | None 
 (e.g. `dict(cursor.fetchone())` with `sqlite3.Row`). Requires
 `extracted_title` and/or `extracted_contents`; returns `None` if both are
 missing/empty. `provider` defaults to the `ENRICHMENT_SUMARIZER_PROVIDER`
-env var (`claude` or `openai`); falls back to the original combined text,
-unchanged, if no provider is configured or the API call fails —
-summarization should never hard-fail the caller.
+env var (`claude`, `openai`, or `ollama`); falls back to the original
+combined text, unchanged, if no provider is configured or the API call
+fails — summarization should never hard-fail the caller.
 
 Every key in `fields` becomes a `{key}` placeholder available to a custom
 `ENRICHMENT_SUMARIZER_PROMPT` — in practice, any column of the items table
@@ -47,12 +48,15 @@ Env vars, in `.env` at the repo root (see `.env.example`).
 
 | var | meaning | default |
 |---|---|---|
-| `ENRICHMENT_SUMARIZER_PROVIDER` | `claude` or `openai`; unset disables summarization | unset |
+| `ENRICHMENT_SUMARIZER_PROVIDER` | `claude`, `openai`, or `ollama`; unset disables summarization | unset |
 | `ANTHROPIC_API_KEY` | required if provider is `claude` — read directly by the `anthropic` SDK | — |
 | `OPENAI_API_KEY` | required if provider is `openai` — read directly by the `openai` SDK | — |
 | `ENRICHMENT_SUMARIZER_CLAUDE_MODEL` | model used when provider is `claude` | `claude-haiku-4-5` |
 | `ENRICHMENT_SUMARIZER_OPENAI_MODEL` | model used when provider is `openai` | `gpt-4o-mini` |
+| `ENRICHMENT_SUMARIZER_OLLAMA_MODEL` | model used when provider is `ollama` — must already be pulled into the server | `llama3.2:1b` |
+| `ENRICHMENT_SUMARIZER_OLLAMA_HOST` | base URL of the Ollama server; no API key needed | `http://localhost:11434` |
 | `ENRICHMENT_SUMARIZER_PROMPT` | prompt template, `str.format`-substituted (escape literal `{`/`}` as `{{`/`}}`) | built-in Spanish default |
+| `ENRICHMENT_SUMARIZER_MAX_CHARS` | hard character cap applied to every summary (success and both fallback paths), regardless of provider or what the prompt asks for — LLMs, especially small local ones, don't reliably self-enforce a character count from prompt text alone | unset (no truncation) |
 
 ## Tests
 

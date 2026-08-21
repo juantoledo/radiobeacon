@@ -11,12 +11,14 @@ _ENRICHMENT_SUMARIZER_ENV_VARS = (
     "ENRICHMENT_SUMARIZER_CLAUDE_MODEL",
     "ENRICHMENT_SUMARIZER_OPENAI_MODEL",
     "ENRICHMENT_SUMARIZER_PROMPT",
+    "ENRICHMENT_SUMARIZER_MAX_CHARS",
 )
 _PRINT_CONFIG_SNIPPET = (
     "import json; from enrichment.sumarizer import ("
-    "CLAUDE_MODEL, OPENAI_MODEL, PROMPT_TEMPLATE); "
+    "CLAUDE_MODEL, OPENAI_MODEL, PROMPT_TEMPLATE, MAX_CHARS); "
     "print(json.dumps({'CLAUDE_MODEL': CLAUDE_MODEL, "
-    "'OPENAI_MODEL': OPENAI_MODEL, 'PROMPT_TEMPLATE': PROMPT_TEMPLATE}))"
+    "'OPENAI_MODEL': OPENAI_MODEL, 'PROMPT_TEMPLATE': PROMPT_TEMPLATE, "
+    "'MAX_CHARS': MAX_CHARS}))"
 )
 
 
@@ -224,6 +226,7 @@ def test_config_defaults_when_env_vars_unset():
     assert config["CLAUDE_MODEL"] == "claude-haiku-4-5"
     assert config["OPENAI_MODEL"] == "gpt-4o-mini"
     assert config["PROMPT_TEMPLATE"] == summarize_module.DEFAULT_PROMPT_TEMPLATE
+    assert config["MAX_CHARS"] is None
 
 
 def test_config_overridable_via_env_vars():
@@ -232,9 +235,67 @@ def test_config_overridable_via_env_vars():
             "ENRICHMENT_SUMARIZER_CLAUDE_MODEL": "claude-fake-model",
             "ENRICHMENT_SUMARIZER_OPENAI_MODEL": "gpt-fake-model",
             "ENRICHMENT_SUMARIZER_PROMPT": "Custom: {text} ({sentence_count})",
+            "ENRICHMENT_SUMARIZER_MAX_CHARS": "42",
         }
     )
 
     assert config["CLAUDE_MODEL"] == "claude-fake-model"
     assert config["OPENAI_MODEL"] == "gpt-fake-model"
     assert config["PROMPT_TEMPLATE"] == "Custom: {text} ({sentence_count})"
+    assert config["MAX_CHARS"] == 42
+
+
+def test_truncate_returns_unchanged_when_under_limit():
+    assert summarize_module._truncate("corto", 200) == "corto"
+
+
+def test_truncate_returns_unchanged_when_max_chars_is_none():
+    assert summarize_module._truncate("cualquier largo", None) == "cualquier largo"
+
+
+def test_truncate_cuts_at_last_word_boundary():
+    result = summarize_module._truncate("uno dos tres cuatro", 10)
+
+    assert result == "uno dos"
+    assert len(result) <= 10
+
+
+def test_truncate_hard_cuts_when_no_word_boundary_available():
+    result = summarize_module._truncate("unapalabramuylarga", 5)
+
+    assert result == "unapa"
+
+
+def test_summarize_truncates_successful_result(monkeypatch):
+    monkeypatch.setattr(summarize_module, "MAX_CHARS", 10)
+    monkeypatch.setattr(
+        summarize_module, "_summarize_claude", lambda prompt: "una respuesta muy larga"
+    )
+
+    result = summarize({"extracted_contents": "texto"}, provider="claude")
+
+    assert len(result) <= 10
+    assert result == "una"
+
+
+def test_summarize_truncates_no_provider_fallback(monkeypatch):
+    monkeypatch.setattr(summarize_module, "MAX_CHARS", 5)
+
+    result = summarize(
+        {"extracted_contents": "texto original largo"}, provider="not-a-real-provider"
+    )
+
+    assert result == "texto"
+
+
+def test_summarize_truncates_failure_fallback(monkeypatch):
+    monkeypatch.setattr(summarize_module, "MAX_CHARS", 5)
+
+    def _raise(prompt):
+        raise RuntimeError("api unreachable")
+
+    monkeypatch.setattr(summarize_module, "_summarize_claude", _raise)
+
+    result = summarize({"extracted_contents": "texto original largo"}, provider="claude")
+
+    assert result == "texto"

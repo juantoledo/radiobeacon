@@ -7,6 +7,21 @@ logger = logging.getLogger(__name__)
 PROVIDER_ENV_VAR = "ENRICHMENT_SUMARIZER_PROVIDER"
 CLAUDE_MODEL = os.environ.get("ENRICHMENT_SUMARIZER_CLAUDE_MODEL", "claude-haiku-4-5")
 OPENAI_MODEL = os.environ.get("ENRICHMENT_SUMARIZER_OPENAI_MODEL", "gpt-4o-mini")
+OLLAMA_MODEL = os.environ.get("ENRICHMENT_SUMARIZER_OLLAMA_MODEL", "llama3.2:1b")
+OLLAMA_HOST = os.environ.get("ENRICHMENT_SUMARIZER_OLLAMA_HOST", "http://localhost:11434")
+
+# Hard cap on the returned summary length, regardless of provider or of
+# what the prompt itself asks for. Needed because asking an LLM to self-
+# enforce a character count is unreliable — verified empirically: even a
+# prompt that explicitly says "count the characters, shorten if over" let
+# a small local model (llama3.2:1b) blow past a 200-char budget on a long
+# input. Applies uniformly to every return path, including the
+# no-provider-configured and API-failure fallbacks, since the underlying
+# constraint (e.g. an AX.25 UI frame's ~256-byte payload, see CONTEXT.md)
+# doesn't care which path produced the text. Unset by default — off unless
+# a caller opts in.
+_MAX_CHARS_RAW = os.environ.get("ENRICHMENT_SUMARIZER_MAX_CHARS")
+MAX_CHARS = int(_MAX_CHARS_RAW) if _MAX_CHARS_RAW else None
 
 DEFAULT_PROMPT_TEMPLATE = (
     "Resume el siguiente texto en español en exactamente {sentence_count} "
@@ -30,6 +45,18 @@ PROMPT_TEMPLATE = os.environ.get("ENRICHMENT_SUMARIZER_PROMPT", DEFAULT_PROMPT_T
 def _combine_text(extracted_title: str | None, extracted_contents: str | None) -> str | None:
     parts = [part for part in (extracted_title, extracted_contents) if part]
     return "\n\n".join(parts) if parts else None
+
+
+def _truncate(result: str, max_chars: int | None) -> str:
+    if max_chars is None or len(result) <= max_chars:
+        return result
+    truncated = result[:max_chars]
+    # Back off to the last word boundary so a hard cutoff doesn't sever a
+    # word mid-way — only if there is one in the truncated slice at all.
+    last_space = truncated.rfind(" ")
+    if last_space > 0:
+        truncated = truncated[:last_space]
+    return truncated.rstrip()
 
 
 def _prompt(fields: dict[str, Any], text: str, sentence_count: int) -> str:
@@ -63,8 +90,19 @@ def _summarize_openai(prompt: str) -> str:
     return response.choices[0].message.content.strip()
 
 
-_VALID_PROVIDERS = ("claude", "openai")
-_MODEL_BY_PROVIDER = {"claude": CLAUDE_MODEL, "openai": OPENAI_MODEL}
+def _summarize_ollama(prompt: str) -> str:
+    from ollama import Client
+
+    client = Client(host=OLLAMA_HOST)
+    response = client.chat(
+        model=OLLAMA_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return response["message"]["content"].strip()
+
+
+_VALID_PROVIDERS = ("claude", "openai", "ollama")
+_MODEL_BY_PROVIDER = {"claude": CLAUDE_MODEL, "openai": OPENAI_MODEL, "ollama": OLLAMA_MODEL}
 
 
 def summarize(
@@ -72,9 +110,9 @@ def summarize(
     sentence_count: int = 2,
     provider: str | None = None,
 ) -> str | None:
-    """Abstractive summary via an LLM API (Claude or OpenAI) — genuinely
-    condenses/rewrites, unlike extractive methods that only select existing
-    sentences.
+    """Abstractive summary via an LLM API (Claude, OpenAI, or a self-hosted
+    Ollama server) — genuinely condenses/rewrites, unlike extractive methods
+    that only select existing sentences.
 
     `fields` is a dict of column name -> value — pass the items table row
     as-is (e.g. `dict(cursor.fetchone())` with `sqlite3.Row`, or the field
@@ -85,13 +123,19 @@ def summarize(
     contain `extracted_title` and/or `extracted_contents` — returns None if
     both are missing/empty (nothing to summarize).
 
-    `provider` defaults to the ENRICHMENT_SUMARIZER_PROVIDER env var ("claude" or
-    "openai"). API keys are read by each SDK from its own standard env var
-    (ANTHROPIC_API_KEY / OPENAI_API_KEY) — not handled here.
+    `provider` defaults to the ENRICHMENT_SUMARIZER_PROVIDER env var ("claude",
+    "openai", or "ollama"). API keys for claude/openai are read by each SDK
+    from its own standard env var (ANTHROPIC_API_KEY / OPENAI_API_KEY) — not
+    handled here. ollama needs no key; it talks to a local/self-hosted
+    server at ENRICHMENT_SUMARIZER_OLLAMA_HOST instead.
 
     Falls back to the combined text, unchanged, if no provider is
     configured/recognized or the API call fails (network, auth, rate
-    limit, etc.) — summarization should never break the fetch pipeline."""
+    limit, etc.) — summarization should never break the fetch pipeline.
+
+    Every return path (success, no-provider fallback, and failure fallback)
+    is capped at ENRICHMENT_SUMARIZER_MAX_CHARS if set — see MAX_CHARS above
+    for why this can't just be left to the prompt."""
     text = _combine_text(fields.get("extracted_title"), fields.get("extracted_contents"))
     if not text:
         return None
@@ -103,7 +147,7 @@ def summarize(
             "returning text unchanged",
             provider,
         )
-        return text
+        return _truncate(text, MAX_CHARS)
 
     logger.info(
         "summarizing via %s (model=%s, input_len=%d, sentence_count=%d)",
@@ -120,7 +164,7 @@ def summarize(
         # summarization failure, not crash the caller.
         prompt = _prompt(fields, text, sentence_count)
         logger.info("prompt: %s", prompt)
-        result = summarize_fn(prompt)
+        result = _truncate(summarize_fn(prompt), MAX_CHARS)
         logger.info(
             "summarized via %s: input_len=%d -> output_len=%d",
             provider,
@@ -134,4 +178,4 @@ def summarize(
             provider,
             exc_info=True,
         )
-        return text
+        return _truncate(text, MAX_CHARS)
