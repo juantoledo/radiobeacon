@@ -1,5 +1,7 @@
 .venv/
 storage/*.db
+storage/*.db-wal
+storage/*.db-shm
 __pycache__/
 *.pyc
 .pytest_cache/

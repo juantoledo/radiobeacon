@@ -5,15 +5,27 @@ from pathlib import Path
 
 import pytest
 
-from adapters.csn import API_URL, SITE_URL, CsnAdapter, CsnEarthquake, _parse_earthquake
+from adapters.csn import (
+    API_URL,
+    SITE_URL,
+    URGENT_MAGNITUDE_THRESHOLD,
+    CsnAdapter,
+    CsnEarthquake,
+    _parse_earthquake,
+)
 
 _ADAPTERS_SRC = str(Path(__file__).resolve().parents[2] / "src")
 _PRINT_CONFIG_SNIPPET = (
-    "import json; from adapters.csn import API_URL, SITE_URL; "
-    "print(json.dumps({'API_URL': API_URL, 'SITE_URL': SITE_URL}))"
+    "import json; from adapters.csn import API_URL, SITE_URL, URGENT_MAGNITUDE_THRESHOLD; "
+    "print(json.dumps({'API_URL': API_URL, 'SITE_URL': SITE_URL, "
+    "'URGENT_MAGNITUDE_THRESHOLD': URGENT_MAGNITUDE_THRESHOLD}))"
 )
 
-_ADAPTERS_CSN_ENV_VARS = ("ADAPTERS_CSN_API_URL", "ADAPTERS_CSN_SITE_URL")
+_ADAPTERS_CSN_ENV_VARS = (
+    "ADAPTERS_CSN_API_URL",
+    "ADAPTERS_CSN_SITE_URL",
+    "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD",
+)
 
 
 def _read_config_in_subprocess(env_overrides: dict) -> dict:
@@ -52,6 +64,13 @@ MOCK_ITEMS = [
         "RefGeografica": "56 km al S de Caldera",
         "FechaUpdate": "2026-08-20T19:10:00.440Z",
     },
+    {
+        "Fecha": "2026-08-20 12:00:00",
+        "Profundidad": "50",
+        "Magnitud": "6.1",
+        "RefGeografica": "10 km al O de Iquique",
+        "FechaUpdate": "2026-08-20T19:10:00.450Z",
+    },
 ]
 
 
@@ -74,6 +93,7 @@ def test_generic_contract_fields_are_inferred():
     assert earthquake.source_date_time == earthquake.fecha
     assert earthquake.type == "Sismo"
     assert earthquake.url == SITE_URL
+    assert earthquake.dispatch_policy == "informational"  # magnitude 3.2 < default threshold
 
 
 def test_generic_contract_id_is_fecha():
@@ -104,6 +124,20 @@ def test_generic_contract_id_differs_between_distinct_earthquakes():
     assert a.id != b.id
 
 
+def test_dispatch_policy_is_informational_below_magnitude_threshold():
+    earthquake = _parse_earthquake(MOCK_ITEMS[0])  # magnitude 3.2
+
+    assert earthquake.magnitud < URGENT_MAGNITUDE_THRESHOLD
+    assert earthquake.dispatch_policy == "informational"
+
+
+def test_dispatch_policy_is_urgent_at_or_above_magnitude_threshold():
+    earthquake = _parse_earthquake(MOCK_ITEMS[2])  # magnitude 6.1
+
+    assert earthquake.magnitud >= URGENT_MAGNITUDE_THRESHOLD
+    assert earthquake.dispatch_policy == "urgent"
+
+
 def test_fetch_sorts_newest_first(monkeypatch):
     monkeypatch.setattr(
         "adapters.csn._fetch_earthquakes", lambda: MOCK_ITEMS
@@ -117,6 +151,7 @@ def test_fetch_sorts_newest_first(monkeypatch):
     assert [e.ref_geografica for e in reading.data] == [
         "78 km al SE de Socaire",
         "56 km al S de Caldera",
+        "10 km al O de Iquique",
     ]
 
 
@@ -147,6 +182,7 @@ def test_config_defaults_when_env_vars_unset():
 
     assert config["API_URL"] == "https://api.gael.cloud/general/public/sismos"
     assert config["SITE_URL"] == "https://www.sismologia.cl/"
+    assert config["URGENT_MAGNITUDE_THRESHOLD"] == 4.5
 
 
 def test_config_overridable_via_env_vars():
@@ -154,8 +190,10 @@ def test_config_overridable_via_env_vars():
         {
             "ADAPTERS_CSN_API_URL": "https://example.test/sismos",
             "ADAPTERS_CSN_SITE_URL": "https://example.test/",
+            "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD": "5.0",
         }
     )
 
     assert config["API_URL"] == "https://example.test/sismos"
     assert config["SITE_URL"] == "https://example.test/"
+    assert config["URGENT_MAGNITUDE_THRESHOLD"] == 5.0

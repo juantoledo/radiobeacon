@@ -1,0 +1,79 @@
+import argparse
+import logging
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "adapters" / "src"))
+sys.path.insert(0, str(REPO_ROOT / "triggers" / "src"))
+
+from adapters.storage import DEFAULT_DB_PATH, get_connection  # noqa: E402
+from triggers.policy import delete_policy, list_policies, set_policy  # noqa: E402
+from triggers.watcher import _ensure_tables  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Manage triggers' dispatch_policies table — the centralized "
+        "repeat_times/interval_seconds config that items' dispatch_policy column "
+        "references by name."
+    )
+    parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to radiobeacon.db")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser("list", help="List every named policy")
+
+    set_parser = subparsers.add_parser("set", help="Create or replace a named policy")
+    set_parser.add_argument("name")
+    set_parser.add_argument("--repeat-times", type=int, required=True)
+    set_parser.add_argument("--interval-seconds", type=int, required=True)
+    set_parser.add_argument("--description")
+
+    delete_parser = subparsers.add_parser("delete", help="Delete a named policy")
+    delete_parser.add_argument("name")
+
+    args = parser.parse_args()
+
+    conn = get_connection(args.db)
+    _ensure_tables(conn)  # creates + seeds dispatch_policies if this is the first run
+
+    if args.command == "list":
+        rows = list_policies(conn)
+        if not rows:
+            print("No policies defined.")
+        for name, repeat_times, interval_seconds, description in rows:
+            print(f"{name}\trepeat_times={repeat_times}\tinterval_seconds={interval_seconds}\t{description or ''}")
+
+    elif args.command == "set":
+        set_policy(
+            conn,
+            args.name,
+            args.repeat_times,
+            args.interval_seconds,
+            description=args.description,
+        )
+        logger.info(
+            "set policy name=%s repeat_times=%d interval_seconds=%d",
+            args.name,
+            args.repeat_times,
+            args.interval_seconds,
+        )
+
+    elif args.command == "delete":
+        deleted = delete_policy(conn, args.name)
+        if deleted:
+            logger.info("deleted policy name=%s", args.name)
+        else:
+            logger.error("no policy found for name=%s", args.name)
+            sys.exit(1)
+
+    conn.close()
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
+    )
+    main()

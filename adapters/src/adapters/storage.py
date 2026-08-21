@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS items (
     event_key TEXT,
     type TEXT,
     subtype TEXT,
+    dispatch_policy TEXT,
     source_date_time TEXT,
     fetched_at TEXT NOT NULL,
     captured_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -47,11 +48,21 @@ _NEW_TEXT_COLUMNS = (
     "event_key",
     "type",
     "subtype",
+    "dispatch_policy",
     "source_date_time",
 )
-# Columns from an older schema (two summarized_* columns, since replaced by
-# the single `summary` column) — dropped on migration if present.
-_DROPPED_COLUMNS = ("summarized_title", "summarized_contents")
+# Columns from an older schema — dropped on migration if present: two
+# summarized_* columns replaced by the single `summary` column, and
+# urgency/repeat_times/repeat_interval_seconds replaced by the single
+# dispatch_policy column (see triggers.policy for the centralized
+# repeat/interval config it now points at).
+_DROPPED_COLUMNS = (
+    "summarized_title",
+    "summarized_contents",
+    "urgency",
+    "repeat_times",
+    "repeat_interval_seconds",
+)
 
 
 def _migrate_items_table(conn: sqlite3.Connection) -> None:
@@ -78,9 +89,18 @@ def _migrate_items_table(conn: sqlite3.Connection) -> None:
 
 
 def get_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
+    """Adapters now run as independent per-adapter loops on their own
+    threads (see adapters.__main__), each opening its own connection to
+    write on its own schedule — WAL mode lets those writers coexist with
+    readers (e.g. query_history.sh) without blocking, and the longer
+    busy_timeout (vs. Python's 5s default) gives a writer more room to
+    wait out another adapter's write instead of raising "database is
+    locked" on the rare occasion two fetches finish at nearly the same
+    moment."""
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     _migrate_items_table(conn)
     conn.commit()
@@ -141,11 +161,25 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
     "Hidrometeorologico"). Any adapter with a similar broad/fine category
     split can use the same two columns.
 
-    `summary` is never touched here — adapters only fetch and store raw
-    data, they don't call out to enrichment. It starts NULL and is
-    populated separately, later, by enrichment's own tooling (manually via
-    enrichment/summarize_item.py, or via an orchestrator) — not part of
-    the fetch/store pipeline.
+    `dispatch_policy` (where an adapter has one) names which delivery
+    policy triggers/ should use for this item — e.g. "urgent" or
+    "informational". Meaningless to this package: it's a soft reference
+    (not a SQL FOREIGN KEY) to the `name` column of triggers'
+    `dispatch_policies` table, which centralizes the actual repeat
+    count/interval config a name maps to (see
+    triggers/src/triggers/policy.py). A row with no `dispatch_policy`
+    (adapter doesn't implement it, value missing, or the name doesn't
+    exist in `dispatch_policies`) falls back to triggers' default policy.
+
+    `summary`, like `dispatch_policy`, is never touched here — adapters
+    only propose an initial value (or leave it NULL/unset); a separate
+    actor updates it afterward. `summary` starts NULL and is populated
+    later by enrichment's own tooling (manually via
+    enrichment/summarize_item.py, or via an orchestrator).
+    `dispatch_policy` starts at whatever the adapter proposed and can be
+    overridden afterward by a human/UI (via triggers/override_item.py) —
+    unlike the rest of the row, this column is not meant to be
+    immutable-forever, only adapter-untouched-after-insert.
 
     Returns the number of newly stored (previously unseen) items."""
     stored = 0
@@ -159,9 +193,9 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
         cursor = conn.execute(
             "INSERT OR IGNORE INTO items "
             "(source, item_id, extracted_title, extracted_contents, "
-            "summary, url, event_key, type, subtype, source_date_time, "
-            "fetched_at, rawdata) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "summary, url, event_key, type, subtype, dispatch_policy, "
+            "source_date_time, fetched_at, rawdata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 reading.source,
                 item_id,
@@ -172,6 +206,7 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
                 _as_text(getattr(item, "event_key", None)),
                 _as_text(getattr(item, "type", None)),
                 _as_text(getattr(item, "subtype", None)),
+                _as_text(getattr(item, "dispatch_policy", None)),
                 _as_text(getattr(item, "source_date_time", None)),
                 reading.fetched_at.isoformat(),
                 json.dumps(item, default=_json_default),

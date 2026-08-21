@@ -17,6 +17,7 @@ class FakeAlert:
     event_key: str = "alerta-de-prueba-2026-08-19"
     type: str = "Alerta"
     subtype: str = "Hidrometeorologico"
+    dispatch_policy: str = "urgent"
     source_date_time: datetime = datetime(2026, 8, 19, 10, 0, 0)
 
 
@@ -53,7 +54,8 @@ def test_store_reading_populates_items_table(tmp_path):
     assert stored == 1
     row = conn.execute(
         "SELECT source, item_id, extracted_title, extracted_contents, "
-        "summary, url, event_key, type, subtype, source_date_time, rawdata "
+        "summary, url, event_key, type, subtype, dispatch_policy, "
+        "source_date_time, rawdata "
         "FROM items WHERE item_id = ?",
         ("1",),
     ).fetchone()
@@ -68,8 +70,9 @@ def test_store_reading_populates_items_table(tmp_path):
     assert row[6] == "alerta-de-prueba-2026-08-19"
     assert row[7] == "Alerta"
     assert row[8] == "Hidrometeorologico"
-    assert row[9] == "2026-08-19T10:00:00"
-    assert json.loads(row[10])["id"] == "1"
+    assert row[9] == "urgent"
+    assert row[10] == "2026-08-19T10:00:00"
+    assert json.loads(row[11])["id"] == "1"
 
 
 def test_store_reading_handles_missing_generic_fields(tmp_path):
@@ -81,11 +84,11 @@ def test_store_reading_handles_missing_generic_fields(tmp_path):
     assert stored == 1
     row = conn.execute(
         "SELECT extracted_title, extracted_contents, summary, "
-        "url, event_key, type, subtype, source_date_time "
+        "url, event_key, type, subtype, dispatch_policy, source_date_time "
         "FROM items WHERE item_id = ?",
         ("2",),
     ).fetchone()
-    assert row == (None, None, None, None, None, None, None, None)
+    assert row == (None, None, None, None, None, None, None, None, None)
 
 
 def test_store_reading_preserves_existing_summary_on_refresh(tmp_path):
@@ -233,6 +236,15 @@ def test_get_connection_is_idempotent(tmp_path):
     assert isinstance(conn2, sqlite3.Connection)
 
 
+def test_get_connection_enables_wal_mode(tmp_path):
+    db_path = tmp_path / "radiobeacon.db"
+
+    conn = get_connection(db_path)
+
+    mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode.lower() == "wal"
+
+
 def test_get_connection_migrates_legacy_data_column(tmp_path):
     db_path = tmp_path / "radiobeacon.db"
     legacy_conn = sqlite3.connect(db_path)
@@ -252,12 +264,13 @@ def test_get_connection_migrates_legacy_data_column(tmp_path):
 
     row = conn.execute(
         "SELECT rawdata, extracted_title, extracted_contents, "
-        "summary, url, event_key, type, subtype, source_date_time "
+        "summary, url, event_key, type, subtype, dispatch_policy, "
+        "source_date_time "
         "FROM items WHERE item_id = ?",
         ("legacy-1",),
     ).fetchone()
     assert json.loads(row[0]) == {"id": "legacy-1"}
-    assert row[1:] == (None, None, None, None, None, None, None, None)
+    assert row[1:] == (None, None, None, None, None, None, None, None, None)
 
 
 def test_get_connection_migrates_title_and_contents_columns(tmp_path):
@@ -357,6 +370,89 @@ def test_get_connection_migrates_missing_type_and_subtype_columns(tmp_path):
         "SELECT type, subtype FROM items WHERE item_id = ?", ("legacy-6",)
     ).fetchone()
     assert row == (None, None)
+
+
+def test_get_connection_migrates_missing_dispatch_policy_column(tmp_path):
+    """Covers a database created before dispatch_policy existed at all —
+    the column is added fresh, backfilled NULL."""
+    db_path = tmp_path / "radiobeacon.db"
+    legacy_conn = sqlite3.connect(db_path)
+    legacy_conn.execute(
+        "CREATE TABLE items (source TEXT NOT NULL, item_id TEXT NOT NULL, "
+        "extracted_title TEXT, extracted_contents TEXT, summary TEXT, "
+        "url TEXT, event_key TEXT, type TEXT, subtype TEXT, source_date_time TEXT, "
+        "fetched_at TEXT NOT NULL, captured_at TEXT NOT NULL DEFAULT "
+        "(datetime('now')), rawdata TEXT NOT NULL, PRIMARY KEY (source, item_id))"
+    )
+    legacy_conn.execute(
+        "INSERT INTO items (source, item_id, extracted_title, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("fake_source", "legacy-7", "Titulo", "2026-08-19T12:00:00", '{"id": "legacy-7"}'),
+    )
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    conn = get_connection(db_path)
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+    assert "dispatch_policy" in columns
+
+    row = conn.execute(
+        "SELECT dispatch_policy FROM items WHERE item_id = ?", ("legacy-7",)
+    ).fetchone()
+    assert row == (None,)
+
+
+def test_get_connection_drops_urgency_and_repeat_columns(tmp_path):
+    """Covers the schema with the now-retired urgency/repeat_times/
+    repeat_interval_seconds columns (superseded by dispatch_policy,
+    which centralizes that config in triggers' dispatch_policies table
+    instead) — dropped in place, same mechanism that already retired
+    summarized_title/summarized_contents."""
+    db_path = tmp_path / "radiobeacon.db"
+    legacy_conn = sqlite3.connect(db_path)
+    legacy_conn.execute(
+        "CREATE TABLE items (source TEXT NOT NULL, item_id TEXT NOT NULL, "
+        "extracted_title TEXT, extracted_contents TEXT, summary TEXT, "
+        "url TEXT, event_key TEXT, type TEXT, subtype TEXT, urgency TEXT, "
+        "repeat_times INTEGER, repeat_interval_seconds INTEGER, "
+        "source_date_time TEXT, fetched_at TEXT NOT NULL, captured_at TEXT NOT NULL "
+        "DEFAULT (datetime('now')), rawdata TEXT NOT NULL, PRIMARY KEY (source, item_id))"
+    )
+    legacy_conn.execute(
+        "INSERT INTO items (source, item_id, extracted_title, urgency, repeat_times, "
+        "repeat_interval_seconds, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "fake_source",
+            "legacy-8",
+            "Titulo",
+            "urgent",
+            5,
+            60,
+            "2026-08-19T12:00:00",
+            '{"id": "legacy-8"}',
+        ),
+    )
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    conn = get_connection(db_path)
+
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
+    assert "urgency" not in columns
+    assert "repeat_times" not in columns
+    assert "repeat_interval_seconds" not in columns
+    assert "dispatch_policy" in columns
+
+    row = conn.execute(
+        "SELECT extracted_title, dispatch_policy FROM items WHERE item_id = ?",
+        ("legacy-8",),
+    ).fetchone()
+    # other data preserved; dropped columns' data is gone, dispatch_policy
+    # starts NULL until re-set (by an adapter re-fetching under a new id,
+    # or manually via triggers/override_item.py)
+    assert row == ("Titulo", None)
 
 
 def test_get_connection_renames_url_access_to_event_key(tmp_path):

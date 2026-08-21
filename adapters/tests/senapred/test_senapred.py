@@ -147,6 +147,13 @@ def test_generic_contract_fields_are_inferred():
     assert alert.source_date_time == alert.fecha_hora
     assert alert.event_key == alert.url_access
     assert alert.subtype == alert.tipo
+    assert alert.dispatch_policy == "urgent"
+
+
+def test_generic_contract_dispatch_policy_is_informational_for_evento_type():
+    evento = _parse_alerta(MOCK_EVENTO_ITEMS[0])
+
+    assert evento.dispatch_policy == "informational"
 
 
 def test_generic_contract_url_uses_evento_base_url_for_evento_type():

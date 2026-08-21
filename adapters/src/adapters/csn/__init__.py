@@ -20,6 +20,12 @@ API_URL = os.environ.get(
 # CSN's site has no per-earthquake detail page in this API's data (no id/slug
 # is provided) — every item links to the same site homepage.
 SITE_URL = os.environ.get("ADAPTERS_CSN_SITE_URL", "https://www.sismologia.cl/")
+# Not every earthquake deserves the "urgent" dispatch policy's redelivery
+# — below this magnitude, .dispatch_policy points at "informational"
+# instead (single delivery, no redelivery).
+URGENT_MAGNITUDE_THRESHOLD = float(
+    os.environ.get("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", "4.5")
+)
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
@@ -66,6 +72,17 @@ class CsnEarthquake:
     @property
     def type(self) -> str:
         return "Sismo"
+
+    @property
+    def dispatch_policy(self) -> str:
+        """Names a row in triggers' dispatch_policies table (see
+        adapters.storage.store_reading's docstring). Earthquakes at/above
+        URGENT_MAGNITUDE_THRESHOLD point at "urgent" (redelivered several
+        times); below it, "informational" (delivered once) — a minor
+        earthquake doesn't need repeated broadcasts."""
+        if self.magnitud < URGENT_MAGNITUDE_THRESHOLD:
+            return "informational"
+        return "urgent"
 
 
 def _parse_earthquake(item: dict[str, Any]) -> CsnEarthquake:

@@ -171,6 +171,16 @@ class SenapredAlert:
         the same columns."""
         return self.tipo
 
+    @property
+    def dispatch_policy(self) -> str:
+        """Names a row in triggers' dispatch_policies table (see
+        adapters.storage.store_reading's docstring). "Alerta" items are
+        active early-warnings — "urgent". "Evento" items are a
+        monitoring/historical feed (declared/monitored/closed updates,
+        including things like seismic write-ups) — "informational" since
+        they're not an active warning."""
+        return "urgent" if self.type == "Alerta" else "informational"
+
 
 def _post_json(url: str, headers: dict[str, str], body: str) -> dict[str, Any]:
     request = urllib.request.Request(

@@ -13,6 +13,17 @@ The schema and all read/write logic live in
 changes, applied idempotently every time a connection is opened, so an
 existing `radiobeacon.db` always stays compatible with the current code.
 
+`get_connection()` opens the database in **WAL mode**: since each adapter
+now runs as its own independent loop/thread (see
+[adapters/README.md](../adapters/README.md)), each with its own connection
+writing on its own schedule, WAL lets those writers coexist with readers
+(e.g. `query_history.sh`) without blocking, and a longer busy-timeout
+(30s) gives a writer more room to wait out another adapter's write instead
+of failing outright on the rare occasion two fetches land at the same
+moment. WAL adds two sidecar files next to the database
+(`radiobeacon.db-wal`, `radiobeacon.db-shm`) — both gitignored, same as
+the database itself.
+
 ## Schema (`items` table)
 
 | column | meaning |
