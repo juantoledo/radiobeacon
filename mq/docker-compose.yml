@@ -6,13 +6,17 @@ services:
     ports:
       - "127.0.0.1:1883:1883"
     volumes:
-      # :Z relabels the bind-mounted file for this container's exclusive
-      # use under SELinux (rootless podman enforces this even though it
-      # accepted the mount at container-create time; without it mosquitto
-      # fails at startup with "Unable to open config file", permission
-      # denied by SELinux, not a missing file). A no-op on plain Docker /
-      # non-SELinux hosts, so safe either way.
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro,Z
+      # Mounting the whole directory (rather than bind-mounting just
+      # mosquitto.conf as a single file) is deliberate: single-file bind
+      # mounts have more runtime-specific edge cases (podman's Docker-API
+      # compat layer in particular has known cases where the mount ends up
+      # as an empty directory instead of the file, which is exactly what
+      # produced mosquitto's "Unable to open config file" on rootless
+      # podman) — mounting the directory sidesteps that whole class of
+      # problem and behaves identically on plain Docker.
+      # :Z requests an SELinux relabel; harmless on non-SELinux hosts
+      # (e.g. Ubuntu's default AppArmor) — kept for hosts where it matters.
+      - ./config:/mosquitto/config:ro,Z
       - mosquitto-data:/mosquitto/data
 
 volumes:
