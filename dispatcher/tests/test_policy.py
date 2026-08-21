@@ -112,3 +112,31 @@ def test_delete_policy_returns_false_for_unknown_name(conn):
     deleted = delete_policy(conn, "does-not-exist")
 
     assert deleted is False
+
+
+def test_set_policy_records_audit_event(conn):
+    set_policy(conn, "custom", repeat_times=2, interval_seconds=5, description="test policy")
+
+    row = conn.execute(
+        "SELECT event_type, actor, details FROM audit_log WHERE event_type = 'policy.set'"
+    ).fetchone()
+    assert row[0] == "policy.set"
+    assert row[1] == "dispatcher.policy"
+    assert '"name": "custom"' in row[2]
+
+
+def test_delete_policy_records_audit_event_only_when_actually_deleted(conn):
+    set_policy(conn, "custom", repeat_times=1, interval_seconds=0)
+
+    delete_policy(conn, "does-not-exist")
+    count_before = conn.execute(
+        "SELECT COUNT(*) FROM audit_log WHERE event_type = 'policy.deleted'"
+    ).fetchone()[0]
+    assert count_before == 0
+
+    delete_policy(conn, "custom")
+    row = conn.execute(
+        "SELECT event_type, details FROM audit_log WHERE event_type = 'policy.deleted'"
+    ).fetchone()
+    assert row[0] == "policy.deleted"
+    assert '"name": "custom"' in row[1]

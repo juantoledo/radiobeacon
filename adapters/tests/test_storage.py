@@ -46,6 +46,29 @@ def _make_reading(**overrides):
     return SimpleNamespace(**defaults)
 
 
+def test_store_reading_records_audit_event_for_newly_stored_item(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    store_reading(conn, _make_reading())
+
+    row = conn.execute(
+        "SELECT event_type, actor, source, item_id FROM audit_log WHERE event_type = 'item.stored'"
+    ).fetchone()
+    assert row == ("item.stored", "adapters.storage", "fake_source", "1")
+
+
+def test_store_reading_does_not_record_audit_event_for_already_known_item(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    store_reading(conn, _make_reading())
+
+    store_reading(conn, _make_reading())  # same id, refetched
+
+    count = conn.execute(
+        "SELECT COUNT(*) FROM audit_log WHERE event_type = 'item.stored'"
+    ).fetchone()[0]
+    assert count == 1  # only the first, genuinely-new store recorded
+
+
 def test_store_reading_populates_items_table(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 

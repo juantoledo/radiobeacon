@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .storage import DEFAULT_DB_PATH, get_connection, store_reading
+from .storage import DEFAULT_DB_PATH, get_connection, record_audit_event, store_reading
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,14 @@ class DataSourceAdapter(ABC):
             )
         conn = get_connection(db_path)
         try:
-            store_reading(conn, reading)
+            stored_count = store_reading(conn, reading)
+            record_audit_event(
+                conn,
+                event_type="adapter.fetch",
+                actor=f"adapters.{type(self).__name__}",
+                source=reading.source,
+                details={"ok": reading.ok, "error": reading.error, "stored_count": stored_count},
+            )
         finally:
             conn.close()
         return reading

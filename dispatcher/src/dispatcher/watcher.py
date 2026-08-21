@@ -3,6 +3,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
+from adapters.storage import record_audit_event
+
 from . import policy as policy_module
 
 logger = logging.getLogger(__name__)
@@ -173,6 +175,14 @@ def discover_new_items(conn: sqlite3.Connection, consumer: str) -> int:
             (row["rowid"], consumer),
         )
         conn.commit()
+        record_audit_event(
+            conn,
+            event_type="item.discovered",
+            actor="dispatcher.watcher",
+            source=row["source"],
+            item_id=row["item_id"],
+            details={"consumer": consumer},
+        )
 
     return len(rows)
 
@@ -233,6 +243,14 @@ def sync_policy_changes(conn: sqlite3.Connection, consumer: str) -> int:
                 (current, consumer, row["source"], row["item_id"]),
             )
             conn.commit()
+            record_audit_event(
+                conn,
+                event_type="item.policy_drifted",
+                actor="dispatcher.watcher",
+                source=row["source"],
+                item_id=row["item_id"],
+                details={"consumer": consumer, "old_policy": known[key], "new_policy": current},
+            )
             changed += 1
 
     return changed
@@ -277,16 +295,50 @@ def dispatch_due_items(
                 continue  # not due yet, under the current policy
 
         for handler in handlers:
+            handler_name = getattr(handler, "__name__", str(handler))
             try:
                 handler(row)
-            except Exception:
+            except Exception as exc:
                 logger.error(
                     "handler %s failed for source=%s item_id=%s",
-                    getattr(handler, "__name__", handler),
+                    handler_name,
                     row["source"],
                     row["item_id"],
                     exc_info=True,
                 )
+                # Best-effort: a failure recording the audit row itself must
+                # never mask the original handler exception above.
+                try:
+                    record_audit_event(
+                        conn,
+                        event_type="item.dispatch_failed",
+                        actor=handler_name,
+                        source=row["source"],
+                        item_id=row["item_id"],
+                        details={
+                            "consumer": consumer,
+                            "dispatch_policy": row["dispatch_policy"],
+                            "error": str(exc),
+                        },
+                    )
+                except Exception:
+                    logger.error("failed to record audit event for dispatch failure", exc_info=True)
+            else:
+                try:
+                    record_audit_event(
+                        conn,
+                        event_type="item.dispatched",
+                        actor=handler_name,
+                        source=row["source"],
+                        item_id=row["item_id"],
+                        details={
+                            "consumer": consumer,
+                            "dispatch_policy": row["dispatch_policy"],
+                            "times_triggered": row["times_triggered"] + 1,
+                        },
+                    )
+                except Exception:
+                    logger.error("failed to record audit event for dispatch success", exc_info=True)
 
         times_triggered = row["times_triggered"] + 1
         if times_triggered < policy.repeat_times:

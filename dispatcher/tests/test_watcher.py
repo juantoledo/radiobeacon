@@ -470,6 +470,77 @@ def test_policy_change_on_retired_item_is_detected_and_fires_without_rearm(clock
     assert len(delivered) == 2
 
 
+def test_discover_new_items_records_audit_event(clock):
+    conn = _make_conn()
+    discover_new_items(conn, "log")  # establish watermark before the item exists
+    _insert_item(conn, "senapred", "1", "informational")
+
+    discover_new_items(conn, "log")
+
+    row = conn.execute(
+        "SELECT event_type, actor, source, item_id FROM audit_log WHERE event_type = 'item.discovered'"
+    ).fetchone()
+    assert tuple(row) == ("item.discovered", "dispatcher.watcher", "senapred", "1")
+
+
+def test_sync_policy_changes_records_audit_event_on_drift(clock):
+    conn = _make_conn()
+    discover_new_items(conn, "log")
+    _insert_item(conn, "csn", "1", "informational")
+    discover_new_items(conn, "log")  # baseline the item's policy
+
+    conn.execute(
+        "UPDATE items SET dispatch_policy = 'urgent' WHERE source = 'csn' AND item_id = '1'"
+    )
+    conn.commit()
+    watcher_module.sync_policy_changes(conn, "log")
+
+    row = conn.execute(
+        "SELECT event_type, source, item_id, details "
+        "FROM audit_log WHERE event_type = 'item.policy_drifted'"
+    ).fetchone()
+    assert row[0] == "item.policy_drifted"
+    assert row[1] == "csn"
+    assert row[2] == "1"
+    assert '"old_policy": "informational"' in row[3]
+    assert '"new_policy": "urgent"' in row[3]
+
+
+def test_dispatch_due_items_records_audit_event_on_success(clock):
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)
+    _insert_item(conn, "senapred", "1", "informational")
+
+    check_for_new_items(conn, consumer, [lambda row: None])
+
+    row = conn.execute(
+        "SELECT event_type, source, item_id FROM audit_log WHERE event_type = 'item.dispatched'"
+    ).fetchone()
+    assert tuple(row) == ("item.dispatched", "senapred", "1")
+
+
+def test_dispatch_due_items_records_audit_event_on_handler_failure(clock):
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)
+    _insert_item(conn, "senapred", "1", "informational")
+
+    def failing_handler(row):
+        raise RuntimeError("boom")
+
+    check_for_new_items(conn, consumer, [failing_handler])
+
+    row = conn.execute(
+        "SELECT event_type, source, item_id, details "
+        "FROM audit_log WHERE event_type = 'item.dispatch_failed'"
+    ).fetchone()
+    assert row[0] == "item.dispatch_failed"
+    assert row[1] == "senapred"
+    assert row[2] == "1"
+    assert "boom" in row[3]
+
+
 def test_independent_consumers_track_separate_watermarks_and_schedules(clock):
     conn = _make_conn()
     discover_new_items(conn, "consumer-a")

@@ -1,5 +1,7 @@
 import sqlite3
 
+from adapters.storage import record_audit_event
+
 from .watcher import _arm, _ensure_tables
 
 
@@ -29,6 +31,15 @@ def override_item(
         (dispatch_policy, source, item_id),
     )
     conn.commit()
+    if cursor.rowcount > 0:
+        record_audit_event(
+            conn,
+            event_type="item.policy_overridden",
+            actor="dispatcher.override",
+            source=source,
+            item_id=item_id,
+            details={"dispatch_policy": dispatch_policy},
+        )
     return cursor.rowcount > 0
 
 
@@ -59,4 +70,12 @@ def rearm_item(conn: sqlite3.Connection, consumer: str, source: str, item_id: st
 
     _arm(conn, consumer, source, item_id)
     conn.commit()
+    record_audit_event(
+        conn,
+        event_type="item.rearmed",
+        actor="dispatcher.override",
+        source=source,
+        item_id=item_id,
+        details={"consumer": consumer},
+    )
     return True

@@ -109,3 +109,34 @@ def test_rearm_item_does_nothing_for_unknown_item():
     rearmed = rearm_item(conn, "log", "csn", "does-not-exist")
 
     assert rearmed is False
+
+
+def test_override_item_records_audit_event():
+    conn = _make_conn()
+    _insert_item(conn, "csn", "1", dispatch_policy="informational")
+
+    override_item(conn, "csn", "1", dispatch_policy="urgent")
+
+    row = conn.execute(
+        "SELECT event_type, source, item_id, details "
+        "FROM audit_log WHERE event_type = 'item.policy_overridden'"
+    ).fetchone()
+    assert row[0] == "item.policy_overridden"
+    assert row[1] == "csn"
+    assert row[2] == "1"
+    assert '"dispatch_policy": "urgent"' in row[3]
+
+
+def test_rearm_item_records_audit_event():
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)
+    _insert_item(conn, "csn", "1", dispatch_policy="informational")
+    check_for_new_items(conn, consumer, [lambda row: None])  # deliver + retire
+
+    rearm_item(conn, consumer, "csn", "1")
+
+    row = conn.execute(
+        "SELECT event_type, source, item_id FROM audit_log WHERE event_type = 'item.rearmed'"
+    ).fetchone()
+    assert tuple(row) == ("item.rearmed", "csn", "1")

@@ -32,6 +32,30 @@ CREATE TABLE IF NOT EXISTS items (
 );
 """
 
+# audit_log is the one durable, queryable record of pipeline events —
+# unlike stdlib logging (stdout only, not persisted). Every package writes
+# to it exclusively through record_audit_event() below, never directly, so
+# the column set/contract stays uniform regardless of which package or
+# event produced a row. `source`/`item_id` are nullable: some events (e.g.
+# a dispatch_policies edit) aren't about any one item.
+_CREATE_AUDIT_LOG = """
+CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    source TEXT,
+    item_id TEXT,
+    details TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+_CREATE_AUDIT_LOG_SOURCE_ITEM_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_source_item ON audit_log (source, item_id);"
+)
+_CREATE_AUDIT_LOG_EVENT_TYPE_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log (event_type);"
+)
+
 # (old_column, new_column): renames applied in order to databases created
 # before a given schema change.
 _COLUMN_RENAMES = (
@@ -103,9 +127,49 @@ def get_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     _migrate_items_table(conn)
+    _ensure_audit_log_table(conn)
     conn.commit()
     logger.debug("opened sqlite connection at %s", path)
     return conn
+
+
+def _ensure_audit_log_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection (not just ones from
+    get_connection) — record_audit_event calls this itself, so a caller
+    that hand-rolls a bare sqlite3 connection (e.g. a test) doesn't need to
+    separately know about this table."""
+    conn.execute(_CREATE_AUDIT_LOG)
+    conn.execute(_CREATE_AUDIT_LOG_SOURCE_ITEM_INDEX)
+    conn.execute(_CREATE_AUDIT_LOG_EVENT_TYPE_INDEX)
+
+
+def record_audit_event(
+    conn: sqlite3.Connection,
+    *,
+    event_type: str,
+    actor: str,
+    source: str | None = None,
+    item_id: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> None:
+    """The one contract every package writes audit rows through — same
+    function, same column set, regardless of which package or which event
+    produced it. `actor` identifies what wrote the row (e.g.
+    "adapters.SenapredAdapter", "dispatcher.watcher"). `details` is optional free-form JSON (reuses
+    _json_default for datetime/dataclass/Enum values, same as rawdata)."""
+    _ensure_audit_log_table(conn)
+    conn.execute(
+        "INSERT INTO audit_log (event_type, actor, source, item_id, details) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            event_type,
+            actor,
+            source,
+            item_id,
+            json.dumps(details, default=_json_default) if details is not None else None,
+        ),
+    )
+    conn.commit()
 
 
 def _json_default(obj: Any) -> Any:
@@ -212,6 +276,14 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
                 json.dumps(item, default=_json_default),
             ),
         )
+        if cursor.rowcount:
+            record_audit_event(
+                conn,
+                event_type="item.stored",
+                actor="adapters.storage",
+                source=reading.source,
+                item_id=item_id,
+            )
         stored += cursor.rowcount
 
     conn.commit()

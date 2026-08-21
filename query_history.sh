@@ -38,6 +38,7 @@ Commands:
   gaps <event_key>        Time gap (hours) between consecutive updates within one event
   escalated <from> <to>   Events whose titles mention both patterns (e.g. escalated Amarilla -> "Alerta Roja")
   events [pattern]        List distinct event_keys, optionally filtered by title LIKE pattern
+  audit [limit]           Most recent audit_log entries, newest first (default limit: 20)
 
   --db <path>             Use a different database file (default: storage/radiobeacon.db)
 
@@ -153,6 +154,12 @@ case "$CMD" in
            GROUP BY event_key
            ORDER BY last_seen DESC;"
     fi
+    ;;
+
+  audit)
+    limit="${2:-20}"
+    sql "SELECT recorded_at, event_type, actor, source, item_id, details
+         FROM audit_log ORDER BY id DESC LIMIT $limit;"
     ;;
 
   -h|--help|"")

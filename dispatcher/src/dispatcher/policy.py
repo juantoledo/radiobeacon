@@ -1,6 +1,8 @@
 import sqlite3
 from dataclasses import dataclass
 
+from adapters.storage import record_audit_event
+
 DEFAULT_POLICY_NAME = "informational"
 
 # Seeded into dispatch_policies on first _ensure_tables() call, only if
@@ -95,10 +97,28 @@ def set_policy(
         (name, repeat_times, interval_seconds, description),
     )
     conn.commit()
+    record_audit_event(
+        conn,
+        event_type="policy.set",
+        actor="dispatcher.policy",
+        details={
+            "name": name,
+            "repeat_times": repeat_times,
+            "interval_seconds": interval_seconds,
+            "description": description,
+        },
+    )
 
 
 def delete_policy(conn: sqlite3.Connection, name: str) -> bool:
     """Returns whether a row was actually deleted (False if unknown)."""
     cursor = conn.execute("DELETE FROM dispatch_policies WHERE name = ?", (name,))
     conn.commit()
+    if cursor.rowcount > 0:
+        record_audit_event(
+            conn,
+            event_type="policy.deleted",
+            actor="dispatcher.policy",
+            details={"name": name},
+        )
     return cursor.rowcount > 0
