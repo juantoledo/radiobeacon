@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Useful queries against storage/radiobeacon.db's items table, centered on
 # event_key (the field that groups an event's separate update snapshots
-# into one timeline — see adapters/src/adapters/storage.py).
+# into one timeline — see data-adapters/src/adapters/storage.py).
 set -euo pipefail
 cd "$(dirname "$0")"
 

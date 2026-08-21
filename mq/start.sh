@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 
 ENV_FILE="../.env"
 if [ -f "$ENV_FILE" ]; then
-  # See adapters/start.sh for why this isn't a plain `source`.
+  # See data-adapters/start.sh for why this isn't a plain `source`.
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ''|'#'*) continue ;;

@@ -3,7 +3,7 @@
 Watches `storage/radiobeacon.db` for newly-inserted items and delivers
 each one to a set of handlers — the component that turns "a new row
 appeared" into "something happened." Fully decoupled from
-[adapters](../adapters/README.md): it only reads `items`, polling on its
+[data-adapters](../data-adapters/README.md): it only reads `items`, polling on its
 own interval — connected to the rest of the pipeline only through the
 database.
 
@@ -41,7 +41,7 @@ and restart.
 
 Every item carries a `dispatch_policy` column (a name, set by the adapter
 that produced it — see
-[adapters/README.md](../adapters/README.md#adapter-contract)) that's a
+[data-adapters/README.md](../data-adapters/README.md#adapter-contract)) that's a
 soft reference (not a SQL `FOREIGN KEY`) into this package's own
 `dispatch_policies` table, which centralizes the actual delivery config:
 
@@ -193,7 +193,7 @@ publishing is best-effort on top of it.
 ./start.sh
 ```
 
-Same pattern as `adapters/start.sh`: creates a `.venv`, installs
+Same pattern as `data-adapters/start.sh`: creates a `.venv`, installs
 `requirements.txt`, loads `../.env`, then `exec`s into a **long-running**
 poll loop (`PYTHONPATH=src python3 -m dispatcher`). `Ctrl+C`/`SIGTERM` stops
 it cleanly.

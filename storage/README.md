@@ -1,21 +1,21 @@
 # storage
 
 Holds `radiobeacon.db`, the SQLite database shared by
-[adapters](../adapters/README.md) (writes raw fetched items) and
+[data-adapters](../data-adapters/README.md) (writes raw fetched items) and
 [dispatcher](../dispatcher/README.md) (reads items, tracks delivery state).
 Nothing in this folder is a package — no code lives here, just the
 database file. `radiobeacon.db` is gitignored; only `.gitkeep` is tracked so the
 folder exists before the first fetch creates it.
 
 The schema and all read/write logic live in
-`adapters/src/adapters/storage.py` (`get_connection()`,
+`data-adapters/src/adapters/storage.py` (`get_connection()`,
 `store_reading()`) — that module also owns the migration path for schema
 changes, applied idempotently every time a connection is opened, so an
 existing `radiobeacon.db` always stays compatible with the current code.
 
 `get_connection()` opens the database in **WAL mode**: since each adapter
 now runs as its own independent loop/thread (see
-[adapters/README.md](../adapters/README.md)), each with its own connection
+[data-adapters/README.md](../data-adapters/README.md)), each with its own connection
 writing on its own schedule, WAL lets those writers coexist with readers
 (e.g. `query_history.sh`) without blocking, and a longer busy-timeout
 (30s) gives a writer more room to wait out another adapter's write instead
@@ -40,7 +40,7 @@ the database itself.
 | `rawdata` | full JSON serialization of the original item |
 
 Items are immutable once inserted (`INSERT OR IGNORE` — see
-[adapters/README.md](../adapters/README.md#adapter-contract)), so
+[data-adapters/README.md](../data-adapters/README.md#adapter-contract)), so
 `captured_at`/`fetched_at` reflect the first time an item was seen, not the
 most recent fetch cycle.
 

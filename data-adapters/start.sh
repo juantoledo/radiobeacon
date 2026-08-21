@@ -35,6 +35,6 @@ fi
 
 # exec replaces this shell process with the Python one (instead of running
 # it as a child) so SIGINT/SIGTERM sent to this script reach the
-# long-running adapter loop directly — see adapters/src/adapters/__main__.py.
+# long-running adapter loop directly — see data-adapters/src/adapters/__main__.py.
 export PYTHONPATH=src
 exec .venv/bin/python3 -m adapters

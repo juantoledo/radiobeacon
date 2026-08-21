@@ -1,4 +1,4 @@
-# adapters
+# data-adapters
 
 Fetches raw data from external sources and stores it in SQLite
 (`storage/radiobeacon.db`). Adapters only fetch and store — no

@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT / "adapters" / "src"))
+sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 
 from adapters.storage import DEFAULT_DB_PATH, get_connection, register_audit_event_hook  # noqa: E402
 
