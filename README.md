@@ -12,6 +12,7 @@ implemented here — see [CONTEXT.md](CONTEXT.md) for the full system design.
 data-adapters/  fetches raw data from external sources, stores it in SQLite
 dispatcher/     watches for new items and delivers them to handlers, run separately
 mq/             optional local MQTT broker (Docker), dispatcher can publish CloudEvents here
+actions/        optional MQTT-subscribed pipeline of N configurable actions (e.g. chunking)
 storage/        the shared SQLite database (radiobeacon.db) both packages read/write
 query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
 ```
@@ -20,6 +21,7 @@ Each package folder has its own README with setup and usage details:
 [data-adapters/README.md](data-adapters/README.md),
 [dispatcher/README.md](dispatcher/README.md),
 [mq/README.md](mq/README.md),
+[actions/README.md](actions/README.md),
 [storage/README.md](storage/README.md).
 
 ### Architecture
@@ -37,6 +39,8 @@ data-adapters (fetch)  →  storage/radiobeacon.db
                      dispatcher (watch + deliver, run separately)
                               ┊ (optional)
                      mq/ (Mosquitto, CloudEvents)
+                              ┊ (optional)
+                     actions/ (chained MQTT-subscribed pipeline)
 ```
 
 ## Quick start
@@ -46,6 +50,7 @@ cp .env.example .env   # fill in real values
 ./data-adapters/start.sh    # fetch + store from all adapters
 ./dispatcher/start.sh  # watch for new items and deliver them
 ./mq/start.sh          # optional — local broker for CloudEvents publishing
+./actions/start.sh     # optional — run the configured action pipeline
 ./query_history.sh --help   # explore what's in radiobeacon.db
 ```
 
