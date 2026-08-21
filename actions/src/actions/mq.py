@@ -48,4 +48,9 @@ def build_cloud_event_payload(*, event_type: str, actor: str, data: dict[str, An
         },
         data,
     )
-    return json.dumps(to_dict(event))
+    # ensure_ascii=False: json.dumps() otherwise escapes every non-ASCII
+    # character to a \uXXXX sequence by default — valid JSON either way
+    # (any correct parser decodes it back to the same string), but
+    # unreadable on the wire/in logs for this repo's largely
+    # Spanish-language content, which is full of accented characters.
+    return json.dumps(to_dict(event), ensure_ascii=False)

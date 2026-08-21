@@ -8,16 +8,18 @@ import pytest
 from adapters.csn import (
     API_URL,
     SITE_URL,
+    SOURCE_TZ,
     URGENT_MAGNITUDE_THRESHOLD,
     CsnAdapter,
     CsnEarthquake,
     _parse_earthquake,
 )
+from adapters.timeutil import to_utc
 
 _ADAPTERS_SRC = str(Path(__file__).resolve().parents[2] / "src")
 _PRINT_CONFIG_SNIPPET = (
-    "import json; from adapters.csn import API_URL, SITE_URL, URGENT_MAGNITUDE_THRESHOLD; "
-    "print(json.dumps({'API_URL': API_URL, 'SITE_URL': SITE_URL, "
+    "import json; from adapters.csn import API_URL, SITE_URL, SOURCE_TZ, URGENT_MAGNITUDE_THRESHOLD; "
+    "print(json.dumps({'API_URL': API_URL, 'SITE_URL': SITE_URL, 'SOURCE_TZ': SOURCE_TZ, "
     "'URGENT_MAGNITUDE_THRESHOLD': URGENT_MAGNITUDE_THRESHOLD}))"
 )
 
@@ -25,6 +27,7 @@ _ADAPTERS_CSN_ENV_VARS = (
     "ADAPTERS_CSN_API_URL",
     "ADAPTERS_CSN_SITE_URL",
     "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD",
+    "ADAPTERS_CSN_SOURCE_TZ",
 )
 
 
@@ -90,7 +93,7 @@ def test_generic_contract_fields_are_inferred():
     assert earthquake.title == "Sismo M3.2 - 78 km al SE de Socaire"
     assert "3.2" in earthquake.contents
     assert "222" in earthquake.contents
-    assert earthquake.source_date_time == earthquake.fecha
+    assert earthquake.source_date_time == to_utc(earthquake.fecha, assume_tz=SOURCE_TZ)
     assert earthquake.type == "Sismo"
     assert earthquake.url == SITE_URL
     assert earthquake.dispatch_policy == "informational"  # magnitude 3.2 < default threshold
@@ -122,6 +125,31 @@ def test_generic_contract_id_differs_between_distinct_earthquakes():
     b = _parse_earthquake(MOCK_ITEMS[1])
 
     assert a.id != b.id
+
+
+def test_source_date_time_is_utc_converted():
+    earthquake = _parse_earthquake(MOCK_ITEMS[0])  # "2026-08-20 18:54:25", winter (-04:00)
+
+    assert earthquake.source_date_time.tzinfo is not None
+    assert earthquake.source_date_time.utcoffset().total_seconds() == 0
+    assert earthquake.source_date_time.isoformat() == "2026-08-20T22:54:25+00:00"
+
+
+def test_id_and_event_key_are_unaffected_by_utc_conversion():
+    """Deliberate, permanent decoupling — see CsnEarthquake.id's docstring.
+    id/event_key must keep deriving from the raw, unconverted fecha so
+    existing stored item_ids never change format."""
+    earthquake = _parse_earthquake(MOCK_ITEMS[0])
+
+    assert earthquake.id == "2026-08-20T18:54:25"
+    assert earthquake.event_key == "2026-08-20T18:54:25"
+    assert earthquake.id != earthquake.source_date_time.isoformat()
+
+
+def test_source_tz_overridable_via_env_var():
+    config = _read_config_in_subprocess({"ADAPTERS_CSN_SOURCE_TZ": "UTC"})
+
+    assert config["SOURCE_TZ"] == "UTC"
 
 
 def test_dispatch_policy_is_informational_below_magnitude_threshold():
@@ -182,6 +210,7 @@ def test_config_defaults_when_env_vars_unset():
 
     assert config["API_URL"] == "https://api.gael.cloud/general/public/sismos"
     assert config["SITE_URL"] == "https://www.sismologia.cl/"
+    assert config["SOURCE_TZ"] == "America/Santiago"
     assert config["URGENT_MAGNITUDE_THRESHOLD"] == 4.5
 
 

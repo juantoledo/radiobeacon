@@ -14,6 +14,7 @@ from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
 
 from ..base import DataSourceAdapter, SourceReading
+from ..timeutil import to_utc, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +266,7 @@ def _parse_alerta(item: dict[str, Any]) -> SenapredAlert:
         id=item["id"],
         titulo=item["titulo"],
         contenido=item["contenido"],
-        fecha_hora=datetime.fromisoformat(item["fechaHora"]),
+        fecha_hora=to_utc(datetime.fromisoformat(item["fechaHora"])),
         autor=item.get("autor"),
         tipo=variable_riesgo.get("nombre"),
         type=item.get("type"),
@@ -281,7 +282,7 @@ class SenapredAdapter(DataSourceAdapter):
     since senapred.cl's own /eventos/ page merges both."""
 
     def fetch(self) -> SourceReading:
-        now = datetime.now()
+        now = utc_now()
         try:
             credentials = _get_anonymous_credentials()
             raw_items = _query_alertas(credentials) + _query_eventos(credentials)

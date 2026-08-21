@@ -61,3 +61,38 @@ All configuration is via a single `.env` file at the repo root (copy
 Naming convention: vars specific to one package/adapter are prefixed with
 its path (`ADAPTERS_SENAPRED_*`); generic vars read directly by a
 third-party SDK under its own standard name are unprefixed.
+
+## Dates and times: always UTC
+
+Every datetime that enters this repo — from an adapter's source, computed
+internally, or read back out of storage — is UTC, always timezone-aware,
+no exceptions. This applies uniformly across data-adapters, dispatcher,
+and actions.
+
+- Never call `datetime.now()` or `datetime.utcnow()` directly. Use
+  `adapters.timeutil.utc_now()`.
+- Never store or pass along a naive datetime from an external source
+  without converting it first via `adapters.timeutil.to_utc()`, which
+  requires you to state the source's timezone explicitly if it's naive
+  — an unlabeled naive datetime silently treated as UTC is exactly the
+  bug class this rule exists to prevent (senapred/csn's `fetched_at`
+  originally used bare `datetime.now()`, which silently encoded the
+  host's local timezone).
+- `items.captured_at` and `audit_log.recorded_at` are populated by
+  SQLite's own `datetime('now')`, which is correct in *value* (UTC) but
+  uses SQLite's native string format (no offset marker) rather than
+  Python's offset-suffixed ISO 8601. A deliberate, known format
+  difference, not a bug — don't string-compare these columns against
+  Python-generated ISO strings without normalizing first.
+- One documented, permanent exception: CSN's `id`/`event_key` are
+  derived from the *raw, unconverted* source timestamp string
+  (`adapters.csn.CsnEarthquake.fecha`), not the UTC-converted
+  `source_date_time` — intentional, to keep historical `items.item_id`
+  values stable. Do not "fix" this to use the converted value; see the
+  docstring on `CsnEarthquake.source_date_time`.
+- Displaying a UTC datetime to a person (a future UI, a human-readable
+  log/notification line) is the one legitimate reason to convert away
+  from UTC — use `adapters.timeutil.to_display_tz()`, which converts to
+  `DISPLAY_TIMEZONE` (env var, default `America/Santiago`; see
+  `.env.example`). Presentation only: never feed its result back into
+  anything stored or compared against other stored datetimes.

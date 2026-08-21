@@ -39,6 +39,7 @@ Commands:
   escalated <from> <to>   Events whose titles mention both patterns (e.g. escalated Amarilla -> "Alerta Roja")
   events [pattern]        List distinct event_keys, optionally filtered by title LIKE pattern
   audit [limit]           Most recent audit_log entries, newest first (default limit: 20)
+  chunks <source> <item_id>   Chunks for one item, in order
 
   --db <path>             Use a different database file (default: storage/radiobeacon.db)
 
@@ -160,6 +161,17 @@ case "$CMD" in
     limit="${2:-20}"
     sql "SELECT recorded_at, event_type, actor, source, item_id, details
          FROM audit_log ORDER BY id DESC LIMIT $limit;"
+    ;;
+
+  chunks)
+    source="${2:?Usage: $0 chunks <source> <item_id>}"
+    item_id="${3:?Usage: $0 chunks <source> <item_id>}"
+    source_escaped="${source//\'/\'\'}"
+    item_id_escaped="${item_id//\'/\'\'}"
+    sql "SELECT chunk_index, chunk_count, text
+         FROM chunks
+         WHERE source = '$source_escaped' AND item_id = '$item_id_escaped'
+         ORDER BY chunk_index;"
     ;;
 
   -h|--help|"")

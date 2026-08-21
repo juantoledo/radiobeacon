@@ -62,3 +62,18 @@ def test_build_cloud_event_payload_has_expected_envelope_fields():
         "chunk_index": 0,
         "text": "hello",
     }
+
+
+def test_build_cloud_event_payload_does_not_escape_non_ascii_characters():
+    payload = build_cloud_event_payload(
+        event_type="item.chunked",
+        actor="actions.chunk",
+        data={"text": "Prevención de ñanduú"},
+    )
+
+    # The literal accented characters must appear on the wire, not
+    # \uXXXX escapes — even though both are valid JSON and decode to the
+    # same string, the escaped form is unreadable in logs/on the wire
+    # for this repo's largely Spanish-language content.
+    assert "\\u" not in payload
+    assert "Prevención de ñanduú" in payload

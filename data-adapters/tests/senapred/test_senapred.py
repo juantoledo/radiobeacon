@@ -150,6 +150,22 @@ def test_generic_contract_fields_are_inferred():
     assert alert.dispatch_policy == "urgent"
 
 
+def test_fecha_hora_normalized_to_utc_regardless_of_source_offset():
+    # MOCK_ITEMS[0]'s fechaHora carries "Z" (UTC); MOCK_EVENTO_ITEMS[0]'s
+    # carries "-04:00" (Chile local) — SENAPRED's real API mixes both
+    # across its two feeds. Both must normalize to tz-aware UTC.
+    alerta = _parse_alerta(MOCK_ITEMS[0])
+    evento = _parse_alerta(MOCK_EVENTO_ITEMS[0])
+
+    assert alerta.fecha_hora.tzinfo is not None
+    assert alerta.fecha_hora.utcoffset().total_seconds() == 0
+    assert alerta.fecha_hora.isoformat() == "2026-08-19T12:00:00+00:00"
+
+    assert evento.fecha_hora.tzinfo is not None
+    assert evento.fecha_hora.utcoffset().total_seconds() == 0
+    assert evento.fecha_hora.isoformat() == "2026-08-19T17:28:28+00:00"
+
+
 def test_generic_contract_dispatch_policy_is_informational_for_evento_type():
     evento = _parse_alerta(MOCK_EVENTO_ITEMS[0])
 

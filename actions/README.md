@@ -21,9 +21,12 @@ action-chaining layer.)
   event, looks up the item's `extracted_contents` in `items` and splits
   it into small, word-boundary-safe chunks (`ACTIONS_CHUNK_MAX_CHARS`,
   default 200 — headroom under AX.25's ~256-byte UI frame payload limit,
-  see CONTEXT.md), publishing one CloudEvent per chunk to its configured
-  output topic for a future downstream action (e.g. an AX.25 formatter)
-  to consume.
+  see CONTEXT.md), durably storing every chunk, in order, in the `chunks`
+  table (queryable via `./query_history.sh chunks <source> <item_id>`
+  from the repo root) before publishing a single completion CloudEvent —
+  not one per chunk — to its configured output topic, for a future
+  downstream action (e.g. an AX.25 formatter) to go query the stored
+  chunks and consume.
 
 New actions are picked up automatically: `discover_actions()`
 (`src/actions/__main__.py`) scans this package's submodules for concrete

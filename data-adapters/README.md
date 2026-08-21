@@ -104,6 +104,7 @@ secrets — all are optional and default to the current known-working value.
 | `ADAPTERS_CSN_API_URL` | `https://api.gael.cloud/general/public/sismos` |
 | `ADAPTERS_CSN_SITE_URL` | `https://www.sismologia.cl/` |
 | `ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD` | `4.5` |
+| `ADAPTERS_CSN_SOURCE_TZ` | `America/Santiago` — best-effort assumption about the timezone of CSN's unlabeled `Fecha` field; see the comment on `CsnEarthquake.source_date_time` |
 
 ## Tests
 

@@ -138,8 +138,16 @@ broker as [CloudEvents](https://cloudevents.io) — a subscriber (radio TX,
 notifications, another service) can react without polling `audit_log`
 itself:
 
-- `item.dispatched`, `item.dispatch_failed` — every handler call in
-  `dispatch_due_items`.
+- `item.dispatched` — the **first** successful handler call for an item
+  (`times_triggered == 1`). A `repeat_times > 1` policy (e.g. `urgent`)
+  redelivers the same item several times for radio-TX robustness, but
+  those redeliveries are the same logical dispatch happening again, not a
+  new occurrence — publishing every one would make a downstream MQTT
+  subscriber (e.g. `actions/`) redundantly reprocess the same item once
+  per redelivery. `audit_log` still records every redelivery; only the
+  first reaches MQTT.
+- `item.dispatch_failed` — every failed handler call, unfiltered (each
+  failure is its own noteworthy event, not a repeat of a success).
 - `item.discovered` — a new item scheduled for delivery.
 - `item.policy_drifted` — an item's `dispatch_policy` changed since last seen.
 - `item.policy_overridden`, `item.rearmed` — via `override_item.sh`.

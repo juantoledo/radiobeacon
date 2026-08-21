@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
+
 import adapters.storage as storage_module
-from adapters.storage import get_connection, record_audit_event, store_reading
+from adapters.storage import get_connection, record_audit_event, store_chunks, store_reading
 
 
 @dataclass
@@ -644,3 +646,114 @@ def test_registering_the_same_hook_twice_only_invokes_it_once(tmp_path, monkeypa
     record_audit_event(conn, event_type="item.rearmed", actor="dispatcher.override")
 
     assert len(calls) == 1
+
+
+def test_get_connection_closes_connection_on_setup_failure(tmp_path, monkeypatch):
+    created = []
+    real_connect = sqlite3.connect
+
+    def _tracking_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        created.append(conn)
+        return conn
+
+    monkeypatch.setattr(storage_module.sqlite3, "connect", _tracking_connect)
+
+    def _raise(conn):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(storage_module, "_migrate_items_table", _raise)
+
+    with pytest.raises(RuntimeError):
+        get_connection(tmp_path / "radiobeacon.db")
+
+    assert len(created) == 1
+    with pytest.raises(sqlite3.ProgrammingError):
+        created[0].execute("SELECT 1")
+
+
+def test_migrate_items_table_tolerates_concurrent_rename(tmp_path):
+    """Simulates the TOCTOU race directly: another connection completing
+    the exact same rename between this connection's PRAGMA table_info
+    read and its own ALTER TABLE call. _migrate_items_table must treat
+    the resulting sqlite3.OperationalError as a no-op, not propagate it."""
+    real_conn = sqlite3.connect(tmp_path / "radiobeacon.db")
+    real_conn.execute(
+        "CREATE TABLE items (source TEXT, item_id TEXT, data TEXT, fetched_at TEXT)"
+    )
+    real_conn.commit()
+
+    class FlakyConn:
+        def execute(self, sql, *args, **kwargs):
+            if sql.startswith("ALTER TABLE items RENAME COLUMN data"):
+                raise sqlite3.OperationalError("duplicate column name: rawdata")
+            return real_conn.execute(sql, *args, **kwargs)
+
+    storage_module._migrate_items_table(FlakyConn())  # must not raise
+
+
+def test_store_reading_skips_failing_item_but_commits_the_rest(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    # Not a dataclass — json.dumps(item, default=_json_default) raises
+    # TypeError for it, simulating an unexpected/malformed item mid-batch.
+    poison = SimpleNamespace(id="poison")
+    reading = _make_reading(
+        data=[
+            FakeAlert(id="1", titulo="one"),
+            poison,
+            FakeAlert(id="3", titulo="three"),
+        ]
+    )
+
+    stored = store_reading(conn, reading)
+
+    assert stored == 2
+    ids = {row[0] for row in conn.execute("SELECT item_id FROM items").fetchall()}
+    assert ids == {"1", "3"}
+
+
+def test_store_chunks_persists_rows_in_order(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    # Deliberately passed out of order — chunk_index, not insertion order,
+    # is what determines the reconstructed sequence.
+    chunks = [
+        {"source": "csn", "item_id": "1", "chunk_index": 2, "chunk_count": 3, "text": "third"},
+        {"source": "csn", "item_id": "1", "chunk_index": 0, "chunk_count": 3, "text": "first"},
+        {"source": "csn", "item_id": "1", "chunk_index": 1, "chunk_count": 3, "text": "second"},
+    ]
+
+    store_chunks(conn, chunks)
+
+    rows = conn.execute(
+        "SELECT chunk_index, text FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
+        ("csn", "1"),
+    ).fetchall()
+    assert rows == [(0, "first"), (1, "second"), (2, "third")]
+
+
+def test_store_chunks_is_idempotent_for_the_same_batch(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    chunks = [
+        {"source": "csn", "item_id": "1", "chunk_index": 0, "chunk_count": 1, "text": "only"},
+    ]
+
+    store_chunks(conn, chunks)
+    second = store_chunks(conn, chunks)
+
+    assert second == 0
+    count = conn.execute(
+        "SELECT COUNT(*) FROM chunks WHERE source = ? AND item_id = ?", ("csn", "1")
+    ).fetchone()[0]
+    assert count == 1
+
+
+def test_store_chunks_returns_count_of_newly_stored_rows(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    chunks = [
+        {"source": "csn", "item_id": "1", "chunk_index": 0, "chunk_count": 2, "text": "a"},
+        {"source": "csn", "item_id": "1", "chunk_index": 1, "chunk_count": 2, "text": "b"},
+    ]
+
+    stored = store_chunks(conn, chunks)
+
+    assert stored == 2

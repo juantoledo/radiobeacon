@@ -71,6 +71,28 @@ _CREATE_AUDIT_LOG_EVENT_TYPE_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log (event_type);"
 )
 
+# chunks is a durable, ordered record of every chunk a "chunk"-family
+# action has produced — independent of whether anything was subscribed on
+# MQTT to receive it. chunk_index/chunk_count preserve each chunk's
+# position within its batch; UNIQUE(source, item_id, chunk_index) + the
+# writer's INSERT OR IGNORE make storing the same batch twice a no-op
+# (e.g. if a duplicate delivery somehow reaches run() despite the
+# framework-level idempotency check in actions.__main__). No separate
+# index needed beyond the UNIQUE constraint's own — it already covers
+# (source, item_id) as a prefix, same as items' PRIMARY KEY does.
+_CREATE_CHUNKS = """
+CREATE TABLE IF NOT EXISTS chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    chunk_count INTEGER NOT NULL,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (source, item_id, chunk_index)
+);
+"""
+
 # (old_column, new_column): renames applied in order to databases created
 # before a given schema change.
 _COLUMN_RENAMES = (
@@ -106,24 +128,44 @@ _DROPPED_COLUMNS = (
 
 def _migrate_items_table(conn: sqlite3.Connection) -> None:
     """Patches an items table created before the current column set/names
-    existed, so existing databases keep working as the schema evolves."""
+    existed, so existing databases keep working as the schema evolves.
+    Each adapter opens its own connection independently (see
+    get_connection's docstring) — if two threads both open a connection
+    against a still-unmigrated legacy DB at nearly the same moment, both
+    can read the pre-migration column list before either commits, then
+    both attempt the same ALTER TABLE. Whichever runs second gets
+    sqlite3.OperationalError even though the migration step it wanted is
+    already done (by the other connection) — caught per-statement below
+    and treated as a no-op, not a failure, so this is self-healing
+    without needing cross-connection locking."""
     columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
     if not columns:
         return  # table doesn't exist yet; SCHEMA above creates it fresh
 
     for old, new in _COLUMN_RENAMES:
         if old in columns and new not in columns:
-            conn.execute(f"ALTER TABLE items RENAME COLUMN {old} TO {new}")
+            try:
+                conn.execute(f"ALTER TABLE items RENAME COLUMN {old} TO {new}")
+            except sqlite3.OperationalError:
+                logger.debug(
+                    "items.%s already renamed to %s by another connection", old, new
+                )
             columns.discard(old)
             columns.add(new)
 
     for column in _NEW_TEXT_COLUMNS:
         if column not in columns:
-            conn.execute(f"ALTER TABLE items ADD COLUMN {column} TEXT")
+            try:
+                conn.execute(f"ALTER TABLE items ADD COLUMN {column} TEXT")
+            except sqlite3.OperationalError:
+                logger.debug("items.%s already added by another connection", column)
 
     for column in _DROPPED_COLUMNS:
         if column in columns:
-            conn.execute(f"ALTER TABLE items DROP COLUMN {column}")
+            try:
+                conn.execute(f"ALTER TABLE items DROP COLUMN {column}")
+            except sqlite3.OperationalError:
+                logger.debug("items.%s already dropped by another connection", column)
             columns.discard(column)
 
 
@@ -139,11 +181,16 @@ def get_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.executescript(SCHEMA)
-    _migrate_items_table(conn)
-    _ensure_audit_log_table(conn)
-    conn.commit()
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(SCHEMA)
+        _migrate_items_table(conn)
+        _ensure_audit_log_table(conn)
+        _ensure_chunks_table(conn)
+        conn.commit()
+    except Exception:
+        conn.close()
+        raise
     logger.debug("opened sqlite connection at %s", path)
     return conn
 
@@ -200,6 +247,38 @@ def record_audit_event(
             )
         except Exception:
             logger.error("audit event hook %r failed", hook, exc_info=True)
+
+
+def _ensure_chunks_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — store_chunks calls
+    this itself, same pattern as _ensure_audit_log_table."""
+    conn.execute(_CREATE_CHUNKS)
+
+
+def store_chunks(conn: sqlite3.Connection, chunks: list[dict[str, Any]]) -> int:
+    """Persists chunks (the exact dicts actions.chunk.ChunkAction.run()
+    builds) in order. Querying back with `ORDER BY chunk_index` always
+    reconstructs the original sequence — insertion order alone isn't
+    relied on for correctness, chunk_index is the authoritative position.
+    Returns the number of newly stored rows (0 for a chunk_index already
+    on file for that source/item_id — a duplicate batch, not an error)."""
+    _ensure_chunks_table(conn)
+    stored = 0
+    for chunk in chunks:
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO chunks (source, item_id, chunk_index, chunk_count, text) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                chunk["source"],
+                chunk["item_id"],
+                chunk["chunk_index"],
+                chunk["chunk_count"],
+                chunk["text"],
+            ),
+        )
+        stored += cursor.rowcount
+    conn.commit()
+    return stored
 
 
 def _json_default(obj: Any) -> Any:
@@ -277,52 +356,67 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
     Returns the number of newly stored (previously unseen) items."""
     stored = 0
     skipped_no_id = 0
+    failed = 0
     items = reading.data if isinstance(reading.data, list) else []
     for item in items:
         item_id = getattr(item, "id", None)
         if item_id is None:
             skipped_no_id += 1
             continue
-        cursor = conn.execute(
-            "INSERT OR IGNORE INTO items "
-            "(source, item_id, extracted_title, extracted_contents, "
-            "summary, url, event_key, type, subtype, dispatch_policy, "
-            "source_date_time, fetched_at, rawdata) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
+        try:
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO items "
+                "(source, item_id, extracted_title, extracted_contents, "
+                "summary, url, event_key, type, subtype, dispatch_policy, "
+                "source_date_time, fetched_at, rawdata) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    reading.source,
+                    item_id,
+                    _as_text(getattr(item, "title", None)),
+                    _as_text(getattr(item, "contents", None)),
+                    None,  # summary — never set here, populated later by a separate actor
+                    _as_text(getattr(item, "url", None)),
+                    _as_text(getattr(item, "event_key", None)),
+                    _as_text(getattr(item, "type", None)),
+                    _as_text(getattr(item, "subtype", None)),
+                    _as_text(getattr(item, "dispatch_policy", None)),
+                    _as_text(getattr(item, "source_date_time", None)),
+                    reading.fetched_at.isoformat(),
+                    json.dumps(item, default=_json_default),
+                ),
+            )
+            if cursor.rowcount:
+                record_audit_event(
+                    conn,
+                    event_type="item.stored",
+                    actor="adapters.storage",
+                    source=reading.source,
+                    item_id=item_id,
+                )
+            stored += cursor.rowcount
+        except Exception:
+            # One malformed/unexpected item must never discard every item
+            # processed earlier in this same batch — those are still
+            # pending in this transaction and get committed below along
+            # with everything else; only this one item is skipped.
+            failed += 1
+            logger.error(
+                "source=%s: failed to store item_id=%s, skipping",
                 reading.source,
                 item_id,
-                _as_text(getattr(item, "title", None)),
-                _as_text(getattr(item, "contents", None)),
-                None,  # summary — never set here, populated later by a separate actor
-                _as_text(getattr(item, "url", None)),
-                _as_text(getattr(item, "event_key", None)),
-                _as_text(getattr(item, "type", None)),
-                _as_text(getattr(item, "subtype", None)),
-                _as_text(getattr(item, "dispatch_policy", None)),
-                _as_text(getattr(item, "source_date_time", None)),
-                reading.fetched_at.isoformat(),
-                json.dumps(item, default=_json_default),
-            ),
-        )
-        if cursor.rowcount:
-            record_audit_event(
-                conn,
-                event_type="item.stored",
-                actor="adapters.storage",
-                source=reading.source,
-                item_id=item_id,
+                exc_info=True,
             )
-        stored += cursor.rowcount
 
     conn.commit()
-    already_known = len(items) - stored - skipped_no_id
+    already_known = len(items) - stored - skipped_no_id - failed
     logger.info(
         "source=%s: %d new item(s) stored, %d already known (untouched), "
-        "%d skipped (no id)",
+        "%d skipped (no id), %d failed",
         reading.source,
         stored,
         already_known,
         skipped_no_id,
+        failed,
     )
     return stored

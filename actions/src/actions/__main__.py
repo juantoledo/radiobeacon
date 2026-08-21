@@ -78,6 +78,26 @@ def _output_config(action_class: type[Action]) -> tuple[str | None, str]:
     return output_topic, output_event_type
 
 
+def _already_processed(conn, name: str, source: str | None, item_id: str | None) -> bool:
+    """Framework-level idempotency check, shared by every action — not
+    each action's own responsibility to remember. Defense-in-depth
+    against duplicate delivery of the same logical event: dispatcher's
+    mq_publisher already filters out item.dispatched redeliveries at the
+    source, but this also covers the crash-window case (a delivery whose
+    audit/publish committed but whose trigger_dispatches state update
+    didn't, replayed on restart) and any other future duplicate-delivery
+    source. Uses the existing idx_audit_log_source_item index — no schema
+    change. A source/item_id-less event (missing data) is never
+    considered "already processed", so it's always attempted."""
+    if not source or not item_id:
+        return False
+    row = conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = ? AND source = ? AND item_id = ? LIMIT 1",
+        (f"action.{name}.executed", source, item_id),
+    ).fetchone()
+    return row is not None
+
+
 def _make_on_message(action_class: type[Action], output_topic: str | None, output_event_type: str):
     """Builds the on_message callback for one action. paho-mqtt re-raises
     any exception an on_message callback doesn't catch (Client's
@@ -94,8 +114,16 @@ def _make_on_message(action_class: type[Action], output_topic: str | None, outpu
             event = mq.parse_cloud_event(message.payload)
             conn = get_connection(DEFAULT_DB_PATH)
             try:
-                outputs = action_class().run(event, conn=conn)
                 data = event.get("data") or {}
+                if _already_processed(conn, name, data.get("source"), data.get("item_id")):
+                    logger.info(
+                        "%s: already processed source=%s item_id=%s, skipping",
+                        name,
+                        data.get("source"),
+                        data.get("item_id"),
+                    )
+                    return
+                outputs = action_class().run(event, conn=conn)
                 try:
                     record_audit_event(
                         conn,
@@ -153,13 +181,23 @@ def _run_action_loop(
     stop_event.wait(), not loop_forever() — loop_forever() blocks
     uninterruptibly until disconnect() is called from inside a callback,
     with no way to signal it from a threading.Event like every other loop
-    in this repo does."""
+    in this repo does. Uses a stable client_id + clean_session=False (a
+    persistent MQTT session): without this, the broker forces a clean
+    session for an unnamed client and drops any QoS 1 message published
+    while this action is offline — messages would be silently lost
+    forever with no replay mechanism, unlike dispatcher's own audit_log/
+    rearm_item. A persistent session tells the broker to queue messages
+    for this exact client_id until it reconnects."""
     import paho.mqtt.client as mqtt_client
 
     name = _env_name(action_class).lower()
     logger.info("%s: starting (topics=%s)", name, topics)
 
-    client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2)
+    client = mqtt_client.Client(
+        mqtt_client.CallbackAPIVersion.VERSION2,
+        client_id=f"radiobeacon-actions-{name}",
+        clean_session=False,
+    )
     client.on_message = _make_on_message(action_class, output_topic, output_event_type)
 
     def _on_connect(client, userdata, connect_flags, reason_code, properties) -> None:

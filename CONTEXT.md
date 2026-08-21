@@ -16,6 +16,11 @@ de propagación en 2 metros (VHF)**, indicativo **CD3DXZ-1**, que combina:
   WSPR/FT8/NCDXF-IARU beacon network).
 - Contenido dinámico: alertas SENAPRED, clima, telemetría de sensores.
 
+(La capa de datos ya implementada en este repo sigue una regla propia de
+consistencia horaria — ver "Dates and times: always UTC" en
+[README.md](README.md) — independiente de la disciplina NTP/TDMA de la
+capa de radio descrita más abajo.)
+
 ## Hardware confirmado y ya probado
 
 - Transceptor VHF (2m) operativo, antena instalada.

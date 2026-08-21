@@ -1,9 +1,10 @@
 import logging
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Callable
 
 from adapters.storage import record_audit_event
+from adapters.timeutil import utc_now as _now_dt
 
 from . import policy as policy_module
 
@@ -47,14 +48,6 @@ CREATE TABLE IF NOT EXISTS item_policy_state (
     PRIMARY KEY (consumer, source, item_id)
 );
 """
-
-
-def _now_dt() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def _now_iso() -> str:
-    return _now_dt().isoformat()
 
 
 def _migrate_trigger_state_table(conn: sqlite3.Connection) -> None:

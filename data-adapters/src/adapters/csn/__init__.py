@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from ..base import DataSourceAdapter, SourceReading
+from ..timeutil import to_utc, utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,13 @@ URGENT_MAGNITUDE_THRESHOLD = float(
     os.environ.get("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", "4.5")
 )
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+# CSN's api.gael.cloud mirror gives no explicit offset on `Fecha` at all.
+# A live comparison against the feed's own regeneration timestamp
+# strongly suggests the underlying data is Chile local time throughout,
+# not UTC — but there's no official documentation confirming this. Kept
+# as an env var specifically so this assumption can be corrected in one
+# line, without a code change, if it's ever proven wrong.
+SOURCE_TZ = os.environ.get("ADAPTERS_CSN_SOURCE_TZ", "America/Santiago")
 
 
 @dataclass
@@ -41,7 +49,13 @@ class CsnEarthquake:
 
     # Generic item contract (see adapters.storage.store_reading). The API
     # gives no stable id, so fecha (the earthquake's detection timestamp)
-    # is used as both id and event_key.
+    # is used as both id and event_key — deliberately the RAW,
+    # unconverted value (not source_date_time below), so existing stored
+    # item_ids never change format. This is a permanent, deliberate
+    # exception to this repo's "everything is UTC" rule — see root
+    # README. Do not "fix" this to use source_date_time: doing so would
+    # change every id, causing dispatcher to treat every historical
+    # earthquake as newly-discovered again.
     @property
     def id(self) -> str:
         return self.fecha.isoformat()
@@ -67,7 +81,11 @@ class CsnEarthquake:
 
     @property
     def source_date_time(self) -> datetime:
-        return self.fecha
+        """UTC-normalized for storage/dispatch/display. Deliberately NOT
+        used for `id`/`event_key` above — those intentionally keep
+        deriving from the raw, unconverted `fecha` so existing stored
+        item_ids never change format."""
+        return to_utc(self.fecha, assume_tz=SOURCE_TZ)
 
     @property
     def type(self) -> str:
@@ -110,7 +128,7 @@ class CsnAdapter(DataSourceAdapter):
     """Fetches recent earthquakes from CSN's unofficial public API."""
 
     def fetch(self) -> SourceReading:
-        now = datetime.now()
+        now = utc_now()
         try:
             raw_items = _fetch_earthquakes()
             earthquakes = []
