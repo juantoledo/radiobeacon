@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Policies{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Dispatch policies</h1><a class="btn" href="/policies/new">+ New policy</a></div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Name</th><th>repeat_times</th><th>interval_seconds</th><th class="wrap">Description</th><th></th></tr></thead>
+  <tbody>
+    {% for name, repeat_times, interval_seconds, description in policies %}
+    <tr>
+      <td><span class="{{ name | policy_badge }}">{{ name }}</span></td>
+      <td>{{ repeat_times }}</td>
+      <td>{{ interval_seconds }}</td>
+      <td class="wrap muted">{{ description or "" }}</td>
+      <td class="actions-cell">
+        <a class="btn secondary" href="/policies/{{ name }}/edit">Edit</a>
+        <form method="post" action="/policies/{{ name }}/delete">
+          <button type="submit" class="danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="5">No policies defined.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

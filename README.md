@@ -13,7 +13,9 @@ data-adapters/  fetches raw data from external sources, stores it in SQLite
 dispatcher/     watches for new items and delivers them to handlers, run separately
 mq/             optional local MQTT broker (Docker), dispatcher can publish CloudEvents here
 actions/        optional MQTT-subscribed pipeline of N configurable actions (e.g. chunking)
-storage/        the shared SQLite database (radiobeacon.db) both packages read/write
+ui/             server-rendered ops dashboard (FastAPI) — browse/override items, manage
+                dispatch policies, view the audit log; dockerizable, localhost-only by default
+storage/        the shared SQLite database (radiobeacon.db) all packages read/write
 query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
 bootstrap.sh    one-command fresh-clone setup — see Quick start below
 lib.sh          shared .env/.venv helpers sourced by bootstrap.sh and every package's start.sh
@@ -24,6 +26,7 @@ Each package folder has its own README with setup and usage details:
 [dispatcher/README.md](dispatcher/README.md),
 [mq/README.md](mq/README.md),
 [actions/README.md](actions/README.md),
+[ui/README.md](ui/README.md),
 [storage/README.md](storage/README.md).
 
 ### Architecture
@@ -36,7 +39,7 @@ for the broader layered design (adapters → aggregator → formatters → TX
 layer) this project is working toward.
 
 ```
-data-adapters (fetch)  →  storage/radiobeacon.db
+data-adapters (fetch)  →  storage/radiobeacon.db  ←  ui/ (browse + override, HTTP on localhost)
                               ↑
                      dispatcher (watch + deliver, run separately)
                               ┊ (optional)
@@ -49,16 +52,20 @@ data-adapters (fetch)  →  storage/radiobeacon.db
 
 ```bash
 ./bootstrap.sh   # fresh clone: creates .env, sets up every .venv, starts
-                 # mq + data-adapters + dispatcher + actions together
+                 # mq + data-adapters + dispatcher + actions + ui together
                  # (Ctrl+C stops all of them). No secrets required — every
                  # .env.example default is safe to run as-is.
 ./query_history.sh --help   # explore what's in radiobeacon.db
 ```
 
+Once running, visit `http://127.0.0.1:8000` for the [ui/](ui/README.md)
+dashboard.
+
 To run just one piece instead of everything, use that package's own
 `start.sh` directly (`./data-adapters/start.sh`, `./dispatcher/start.sh`,
-`./mq/start.sh`, `./actions/start.sh`) — each is self-contained (creates
-its own `.venv` on first run) and independent of the others.
+`./mq/start.sh`, `./actions/start.sh`, `./ui/start.sh`) — each is
+self-contained (creates its own `.venv` on first run) and independent of
+the others.
 
 ## Configuration
 

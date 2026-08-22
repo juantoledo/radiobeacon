@@ -130,6 +130,15 @@ on (e.g. "resend this exact alert again").
   is currently retired; a no-op (logged) if it's still in-flight or
   doesn't exist.
 
+`dispatcher.override` also has `reset_dispatch_state(conn, consumer,
+source, item_id)` — a debug-only operation (no CLI wrapper; used by
+[ui/](../ui/README.md)'s Developers section) that clears a consumer's
+`trigger_dispatches`/`item_policy_state` rows for an item *without*
+re-arming it, unlike `--rearm` above. After it, the item is neither
+in-flight nor recorded as "seen" by that consumer at all — for clearing
+stuck or incorrect bookkeeping while debugging, not a normal delivery
+control.
+
 ## Publishing to a message queue (CloudEvents over MQTT)
 
 Optionally, 6 of the audit events this package records (see "State" below

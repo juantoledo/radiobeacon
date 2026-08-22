@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+  {% if refresh_seconds %}
+  <span class="live-badge">
+    <span class="pulse-dot" aria-hidden="true"></span>
+    Live · every {{ refresh_seconds }}s · <span id="refresh-status">just loaded</span>
+  </span>
+  {% endif %}
+</div>
+
+<div id="dashboard-content">
+<div class="card-row">
+  <div class="card"><div class="value">{{ counts.total_items }}</div><div class="label">Items</div></div>
+  <div class="card"><div class="value">{{ counts.items_last_24h }}</div><div class="label">Items · 24h</div></div>
+  <div class="card"><div class="value">{{ counts.total_audit_events }}</div><div class="label">Audit events</div></div>
+  <div class="card"><div class="value">{{ counts.in_flight_dispatches }}</div><div class="label">In-flight</div></div>
+  <div class="card"><div class="value">{{ counts.total_policies }}</div><div class="label">Policies</div></div>
+</div>
+
+<h2>Recent items</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Source</th><th>Item</th><th class="wrap">Title</th><th>Type</th><th>Policy</th><th>Date</th></tr></thead>
+  <tbody>
+    {% for item in recent_items %}
+    <tr>
+      <td>{{ item.source }}</td>
+      <td class="mono"><a href="/items/{{ item.source }}/{{ item.item_id }}">{{ item.item_id }}</a></td>
+      <td class="wrap">{{ item.extracted_title or "—" }}</td>
+      <td>{{ item.type or "" }}</td>
+      <td>{% if item.dispatch_policy %}<span class="{{ item.dispatch_policy | policy_badge }}">{{ item.dispatch_policy }}</span>{% endif %}</td>
+      <td class="muted">{{ item.source_date_time | display_dt }}</td>
+    </tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="6">No items yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p><a href="/items">View all items &rarr;</a></p>
+
+<h2>Recent audit events</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Event</th><th>Actor</th><th>Source</th><th>Item</th><th>Recorded</th></tr></thead>
+  <tbody>
+    {% for event in recent_audit_events %}
+    <tr>
+      <td><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
+      <td class="muted">{{ event.actor }}</td>
+      <td>{{ event.source or "" }}</td>
+      <td class="mono">
+        {% if event.source and event.item_id %}
+          <a href="/items/{{ event.source }}/{{ event.item_id }}">{{ event.item_id }}</a>
+        {% else %}{{ event.item_id or "" }}{% endif %}
+      </td>
+      <td class="muted">{{ event.recorded_at | display_dt }}</td>
+    </tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="5">No audit events yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+<p><a href="/audit">View full audit log &rarr;</a></p>
+</div>
+{% endblock %}
+{% block scripts %}
+{% if refresh_seconds %}
+<script src="/static/dashboard-refresh.js" defer data-interval-ms="{{ refresh_seconds * 1000 }}"></script>
+{% endif %}
+{% endblock %}

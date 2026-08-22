@@ -1,0 +1,26 @@
+services:
+  ui:
+    build:
+      context: ..
+      dockerfile: ui/Dockerfile
+    container_name: radiobeacon-ui
+    restart: unless-stopped
+    ports:
+      # Loopback-only, matching mq/docker-compose.yml's convention — this
+      # module has no auth of its own yet (see ui/README.md).
+      - "127.0.0.1:8000:8000"
+    environment:
+      # Bind all interfaces inside the container; the ports: mapping
+      # above is what actually restricts host access to loopback — same
+      # split mq/ uses (mosquitto binds all interfaces, the host-side
+      # mapping is what's loopback-only).
+      - UI_HOST=0.0.0.0
+      - UI_DB_PATH=/app/storage/radiobeacon.db
+    env_file:
+      - ../.env
+    volumes:
+      # Read-write, and a directory (not a single-file) bind mount: the
+      # UI's override/rearm/policy actions write to radiobeacon.db, and
+      # WAL mode needs to create -wal/-shm sidecar files next to it in
+      # the same directory.
+      - ../storage:/app/storage

@@ -1,6 +1,6 @@
 import sqlite3
 
-from dispatcher.override import override_item, rearm_item
+from dispatcher.override import override_item, rearm_item, reset_dispatch_state
 from dispatcher.watcher import check_for_new_items, discover_new_items
 
 
@@ -140,3 +140,80 @@ def test_rearm_item_records_audit_event():
         "SELECT event_type, source, item_id FROM audit_log WHERE event_type = 'item.rearmed'"
     ).fetchone()
     assert tuple(row) == ("item.rearmed", "csn", "1")
+
+
+def test_reset_dispatch_state_clears_in_flight_row():
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)  # establishes the watermark at 0 first
+    _insert_item(conn, "csn", "1", dispatch_policy="urgent")
+    discover_new_items(conn, consumer)  # now discovers + arms it
+
+    in_flight_before = conn.execute(
+        "SELECT COUNT(*) FROM trigger_dispatches WHERE consumer = ?", (consumer,)
+    ).fetchone()[0]
+    assert in_flight_before == 1
+
+    cleared = reset_dispatch_state(conn, consumer, "csn", "1")
+
+    assert cleared is True
+    in_flight_after = conn.execute(
+        "SELECT COUNT(*) FROM trigger_dispatches WHERE consumer = ?", (consumer,)
+    ).fetchone()[0]
+    assert in_flight_after == 0
+
+
+def test_reset_dispatch_state_clears_item_policy_state():
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)
+    _insert_item(conn, "csn", "1", dispatch_policy="informational")
+    discover_new_items(conn, consumer)  # baselines item_policy_state for this item
+
+    reset_dispatch_state(conn, consumer, "csn", "1")
+
+    row = conn.execute(
+        "SELECT 1 FROM item_policy_state WHERE consumer = ? AND source = 'csn' AND item_id = '1'",
+        (consumer,),
+    ).fetchone()
+    assert row is None
+
+
+def test_reset_dispatch_state_does_not_rearm():
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)
+    _insert_item(conn, "csn", "1", dispatch_policy="informational")
+    discover_new_items(conn, consumer)
+
+    reset_dispatch_state(conn, consumer, "csn", "1")
+
+    # Neither in-flight nor scheduled again — a plain poll must not
+    # redeliver it (distinguishing this from rearm_item, which would).
+    delivered = []
+    check_for_new_items(conn, consumer, [delivered.append])
+    assert delivered == []
+
+
+def test_reset_dispatch_state_returns_false_when_nothing_to_clear():
+    conn = _make_conn()
+
+    cleared = reset_dispatch_state(conn, "log", "csn", "does-not-exist")
+
+    assert cleared is False
+
+
+def test_reset_dispatch_state_records_audit_event():
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)
+    _insert_item(conn, "csn", "1", dispatch_policy="informational")
+    discover_new_items(conn, consumer)
+
+    reset_dispatch_state(conn, consumer, "csn", "1")
+
+    row = conn.execute(
+        "SELECT event_type, source, item_id FROM audit_log "
+        "WHERE event_type = 'item.dispatch_state_reset'"
+    ).fetchone()
+    assert tuple(row) == ("item.dispatch_state_reset", "csn", "1")

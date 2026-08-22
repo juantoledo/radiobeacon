@@ -1,0 +1,11 @@
+{% if total_pages > 1 %}
+<div class="pagination">
+  <span class="muted">Page {{ page }} of {{ total_pages }} ({{ total }} total)</span>
+  {% if page > 1 %}
+    <a href="{{ base_url }}?{{ qs }}&page={{ page - 1 }}">&larr; Previous</a>
+  {% endif %}
+  {% if page < total_pages %}
+    <a href="{{ base_url }}?{{ qs }}&page={{ page + 1 }}">Next &rarr;</a>
+  {% endif %}
+</div>
+{% endif %}

@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "edit" %}Edit item (dev){% else %}New item (dev){% endif %}{% endblock %}
+{% block content %}
+<a class="crumb" href="/dev">&larr; Back to Developers</a>
+<div class="page-header"><h1>{% if mode == "edit" %}Edit item{% else %}New item{% endif %}</h1></div>
+
+<p class="banner-warn">
+  ⚠ This writes directly to <code>items</code>, bypassing the normal
+  adapter pipeline. Every save/create here is its own audit_log event
+  (actor <code>ui.dev</code>).
+</p>
+
+<form method="post" action="{% if mode == 'edit' %}/dev/items/{{ item.source }}/{{ item.item_id }}{% else %}/dev/items{% endif %}">
+  <table class="form-table">
+    <tr>
+      <th><label for="source">source</label></th>
+      <td>
+        {% if mode == "edit" %}
+        <input type="text" value="{{ item.source }}" readonly>
+        {% else %}
+        <input id="source" name="source" type="text" required placeholder="e.g. csn">
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <th><label for="item_id">item_id</label></th>
+      <td>
+        {% if mode == "edit" %}
+        <input type="text" value="{{ item.item_id }}" readonly>
+        {% else %}
+        <input id="item_id" name="item_id" type="text" required value="{{ suggested_item_id }}">
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <th><label for="extracted_title">extracted_title</label></th>
+      <td><input id="extracted_title" name="extracted_title" type="text" value="{{ (item.extracted_title if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="extracted_contents">extracted_contents</label></th>
+      <td><textarea id="extracted_contents" name="extracted_contents">{{ (item.extracted_contents if item else '') or '' }}</textarea></td>
+    </tr>
+    <tr>
+      <th><label for="summary">summary</label></th>
+      <td><textarea id="summary" name="summary">{{ (item.summary if item else '') or '' }}</textarea></td>
+    </tr>
+    <tr>
+      <th><label for="url">url</label></th>
+      <td><input id="url" name="url" type="text" value="{{ (item.url if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="event_key">event_key</label></th>
+      <td><input id="event_key" name="event_key" type="text" value="{{ (item.event_key if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="type">type</label></th>
+      <td><input id="type" name="type" type="text" value="{{ (item.type if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="subtype">subtype</label></th>
+      <td><input id="subtype" name="subtype" type="text" value="{{ (item.subtype if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="dispatch_policy">dispatch_policy</label></th>
+      <td>
+        <input id="dispatch_policy" name="dispatch_policy" type="text" list="policy-names"
+               value="{{ (item.dispatch_policy if item else suggested_dispatch_policy) or '' }}">
+        <datalist id="policy-names">
+          {% for p in policies %}<option value="{{ p[0] }}">{% endfor %}
+        </datalist>
+      </td>
+    </tr>
+    <tr>
+      <th><label for="source_date_time">source_date_time</label></th>
+      <td><input id="source_date_time" name="source_date_time" type="text"
+                 placeholder="2026-08-22T11:36:52+00:00"
+                 value="{{ (item.source_date_time if item else suggested_source_date_time) or '' }}"></td>
+    </tr>
+  </table>
+  <button type="submit">{% if mode == "edit" %}Save{% else %}Create{% endif %}</button>
+</form>
+
+{% if mode == "edit" %}
+<h2>Dispatcher state</h2>
+<form class="action" method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/reset-dispatch">
+  <label for="consumer">Reset dispatch state for consumer</label>
+  <input id="consumer" name="consumer" type="text" value="{{ default_consumer }}">
+  <button type="submit" class="secondary">Reset</button>
+</form>
+<p class="muted" style="font-size: 0.82rem;">
+  Clears this item's in-flight/tracked delivery state for the given
+  consumer without re-arming it — different from Rearm on the item's own
+  page, which schedules an immediate redelivery. Use this to clear stuck
+  or incorrect state while debugging.
+</p>
+
+<h2>Delete</h2>
+<form method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/delete"
+      onsubmit="return confirm('Delete {{ item.source }}/{{ item.item_id }}? This cannot be undone.');">
+  <button type="submit" class="danger">Delete this item</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -79,3 +79,42 @@ def rearm_item(conn: sqlite3.Connection, consumer: str, source: str, item_id: st
         details={"consumer": consumer},
     )
     return True
+
+
+def reset_dispatch_state(
+    conn: sqlite3.Connection, consumer: str, source: str, item_id: str
+) -> bool:
+    """Debug/dev-tool operation (see ui/'s Developers section) — clears
+    `consumer`'s trigger_dispatches and item_policy_state rows for this
+    item without re-arming it, unlike rearm_item which inserts a due
+    trigger_dispatches row. After this call the item is neither in-flight
+    nor recorded as "seen" by this consumer at all: it stays untouched
+    until its dispatch_policy actually changes (caught by
+    sync_policy_changes, which silently re-baselines a never-seen item
+    rather than arming it) or it's explicitly rearmed. Meant for clearing
+    stuck/incorrect dispatcher bookkeeping while debugging, not a normal
+    delivery-control operation like override_item/rearm_item. Returns
+    whether anything was actually cleared."""
+    _ensure_tables(conn)
+
+    trigger_cursor = conn.execute(
+        "DELETE FROM trigger_dispatches WHERE consumer = ? AND source = ? AND item_id = ?",
+        (consumer, source, item_id),
+    )
+    state_cursor = conn.execute(
+        "DELETE FROM item_policy_state WHERE consumer = ? AND source = ? AND item_id = ?",
+        (consumer, source, item_id),
+    )
+    conn.commit()
+
+    cleared = trigger_cursor.rowcount > 0 or state_cursor.rowcount > 0
+    if cleared:
+        record_audit_event(
+            conn,
+            event_type="item.dispatch_state_reset",
+            actor="ui.dev",
+            source=source,
+            item_id=item_id,
+            details={"consumer": consumer},
+        )
+    return cleared

@@ -1,0 +1,9 @@
+pytest
+httpx
+fastapi
+uvicorn
+jinja2
+python-multipart
+paho-mqtt
+cloudevents>=1.9,<2
+tzdata

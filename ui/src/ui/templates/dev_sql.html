@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}SQL runner{% endblock %}
+{% block content %}
+<a class="crumb" href="/dev">&larr; Back to Developers</a>
+<div class="page-header"><h1>SQL runner</h1></div>
+
+<p class="banner-warn">
+  ⚠ Read-only — this connects to the database in SQLite's own read-only
+  mode, so even a query that somehow slipped past validation can't write
+  anything. Only a single <code>SELECT</code> (or <code>WITH ... SELECT</code>)
+  statement is accepted. Results are capped at {{ row_limit }} rows.
+</p>
+
+<form method="get" action="/dev/sql">
+  <textarea class="sql-box" name="q" placeholder="SELECT * FROM items ORDER BY rowid DESC LIMIT 20">{{ q }}</textarea>
+  <p><button type="submit">Run query</button></p>
+</form>
+
+{% if error %}
+<p class="banner-warn">✗ {{ error }}</p>
+{% endif %}
+
+{% if columns %}
+<div class="table-wrap">
+<table>
+  <thead><tr>{% for col in columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>{% for value in row %}<td class="wrap mono">{{ value if value is not none else "" }}</td>{% endfor %}</tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="{{ columns | length }}">Query returned no rows.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if truncated %}
+<p class="muted">Showing the first {{ row_limit }} rows — narrow your query (add a WHERE/LIMIT) to see a different slice.</p>
+{% endif %}
+{% endif %}
+{% endblock %}

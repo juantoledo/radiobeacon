@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}radiobeacon{% endblock %} · radiobeacon</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
+    <nav>
+      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Dashboard</a>
+      <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">Items</a>
+      <a href="/policies" class="{{ 'active' if request.url.path.startswith('/policies') else '' }}">Policies</a>
+      <a href="/audit" class="{{ 'active' if request.url.path.startswith('/audit') else '' }}">Audit log</a>
+      {% if config.UI_DEV_TOOLS_ENABLED %}
+      <a href="/dev" class="{{ 'active' if request.url.path.startswith('/dev') else '' }}">Developers</a>
+      {% endif %}
+    </nav>
+  </header>
+  <main>
+    {% if request.query_params.get('msg') %}
+      <p class="banner">✓ {{ request.query_params.get('msg') }}</p>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

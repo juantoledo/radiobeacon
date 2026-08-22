@@ -169,7 +169,9 @@ def _migrate_items_table(conn: sqlite3.Connection) -> None:
             columns.discard(column)
 
 
-def get_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
+def get_connection(
+    db_path: str | Path = DEFAULT_DB_PATH, *, check_same_thread: bool = True
+) -> sqlite3.Connection:
     """Adapters now run as independent per-adapter loops on their own
     threads (see adapters.__main__), each opening its own connection to
     write on its own schedule — WAL mode lets those writers coexist with
@@ -177,10 +179,22 @@ def get_connection(db_path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     busy_timeout (vs. Python's 5s default) gives a writer more room to
     wait out another adapter's write instead of raising "database is
     locked" on the rare occasion two fetches finish at nearly the same
-    moment."""
+    moment.
+
+    check_same_thread=False is for a caller (e.g. ui.db.get_db) that opens
+    one connection per logical unit of work but can't guarantee every
+    step of that unit runs on the same OS thread — e.g. a framework whose
+    threadpool executor may service a single request's dependency setup
+    and its route handler body on two different worker threads. Safe
+    there because the connection is still only ever touched sequentially
+    within that one unit of work, never concurrently from two threads at
+    once; sqlite3's same-thread check has no way to distinguish that from
+    genuine concurrent cross-thread use, so it's disabled explicitly
+    rather than worked around. Defaults to True (the check stays on),
+    preserving every existing caller's behavior unchanged."""
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, timeout=30)
+    conn = sqlite3.connect(path, timeout=30, check_same_thread=check_same_thread)
     try:
         conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
