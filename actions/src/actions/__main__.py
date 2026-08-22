@@ -209,7 +209,7 @@ def _run_action_loop(
         # error logged anywhere. on_connect fires on every successful
         # (re)connect, so this covers both the initial connect and every
         # later reconnect.
-        logger.info("%s: connected (reason_code=%s), subscribing to %s", name, reason_code, topics)
+        logger.debug("%s: connected (reason_code=%s), subscribing to %s", name, reason_code, topics)
         client.subscribe([(topic, ACTIONS_MQ_QOS) for topic in topics])
 
     client.on_connect = _on_connect

@@ -281,6 +281,19 @@ def store_chunks(conn: sqlite3.Connection, chunks: list[dict[str, Any]]) -> int:
     return stored
 
 
+def store_summary(conn: sqlite3.Connection, source: str, item_id: str, summary: str) -> bool:
+    """Writes an AI-generated summary back onto an existing item (see
+    actions.ai.AiAction). Mirrors dispatcher.override.override_item's
+    shape: a plain UPDATE, returns whether a row was actually updated
+    (False if source/item_id doesn't match any stored item)."""
+    cursor = conn.execute(
+        "UPDATE items SET summary = ? WHERE source = ? AND item_id = ?",
+        (summary, source, item_id),
+    )
+    conn.commit()
+    return cursor.rowcount > 0
+
+
 def _json_default(obj: Any) -> Any:
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return dataclasses.asdict(obj)

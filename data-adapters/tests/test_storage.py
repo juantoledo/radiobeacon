@@ -7,7 +7,13 @@ from types import SimpleNamespace
 import pytest
 
 import adapters.storage as storage_module
-from adapters.storage import get_connection, record_audit_event, store_chunks, store_reading
+from adapters.storage import (
+    get_connection,
+    record_audit_event,
+    store_chunks,
+    store_reading,
+    store_summary,
+)
 
 
 @dataclass
@@ -757,3 +763,29 @@ def test_store_chunks_returns_count_of_newly_stored_rows(tmp_path):
     stored = store_chunks(conn, chunks)
 
     assert stored == 2
+
+
+def test_store_summary_updates_existing_item(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    conn.execute(
+        "INSERT INTO items (source, item_id, extracted_title, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?)",
+        ("csn", "1", "Sismo", "2026-08-19T12:00:00", "{}"),
+    )
+    conn.commit()
+
+    updated = store_summary(conn, "csn", "1", "A short summary.")
+
+    assert updated is True
+    row = conn.execute(
+        "SELECT summary FROM items WHERE source = ? AND item_id = ?", ("csn", "1")
+    ).fetchone()
+    assert row[0] == "A short summary."
+
+
+def test_store_summary_returns_false_for_unknown_item(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    updated = store_summary(conn, "csn", "does-not-exist", "A short summary.")
+
+    assert updated is False

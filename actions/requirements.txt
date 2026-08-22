@@ -1,3 +1,6 @@
 pytest
 paho-mqtt
 cloudevents>=1.9,<2
+anthropic
+openai
+ollama

@@ -28,6 +28,24 @@ action-chaining layer.)
   downstream action (e.g. an AX.25 formatter) to go query the stored
   chunks and consume.
 
+- **ai** (`src/actions/ai.py`) — on an `item.dispatched`-shaped event,
+  looks up the item and asks a configured LLM provider (OpenAI, Claude,
+  or a self-hosted Ollama — `ACTIONS_AI_PROVIDER`) to summarize it,
+  storing the result in `items.summary` and publishing a single
+  `item.summarized` CloudEvent carrying the summary text directly (one
+  bounded value, unlike `chunk`'s N rows, so no need for a pointer-only
+  event). `ACTIONS_AI_MAX_CHARS` is a skip threshold on the *input* —
+  content already at or under that length isn't sent to the provider at
+  all — not a cap on the output: whatever the provider returns is
+  stored/published verbatim, never truncated (the prompt itself asks for
+  a short, complete summary instead). **Disabled by default**
+  (`ACTIONS_AI_ENABLED=false`) — unlike `chunk`, this has a real per-call
+  cost (a paid API, or a hard dependency on a local Ollama install), so
+  it's opt-in. Once enabled, `ACTIONS_AI_PROVIDER` is required with no
+  default. A provider call failure is not swallowed — it propagates so no
+  misleading `action.ai.executed` audit event is recorded for a message
+  that actually failed.
+
 New actions are picked up automatically: `discover_actions()`
 (`src/actions/__main__.py`) scans this package's submodules for concrete
 `Action` subclasses, so adding one just means adding a new submodule — no
@@ -111,6 +129,13 @@ uppercased, e.g. `CHUNK` for `src/actions/chunk.py`):
 | `ACTIONS_<NAME>_OUTPUT_EVENT_TYPE` | no | defaults to the action's own module name (e.g. `chunk`); set explicitly (e.g. `item.chunked`) for readability — the MQTT topic and the CloudEvents `type` are separate concerns |
 
 Chunk-specific: `ACTIONS_CHUNK_MAX_CHARS` (default `200`).
+
+AI-specific: `ACTIONS_AI_ENABLED` (default `false`), `ACTIONS_AI_PROVIDER`
+(`openai`/`claude`/`ollama`, required once enabled), `ACTIONS_AI_PROMPT`
+(optional template override), `ACTIONS_AI_MAX_CHARS` (default `500`),
+`ACTIONS_AI_<PROVIDER>_MODEL`, `ACTIONS_AI_OLLAMA_HOST`, plus the
+unprefixed `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` read directly by each
+SDK — see `.env.example`.
 
 ## Tests
 
