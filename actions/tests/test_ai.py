@@ -1,6 +1,6 @@
 import pytest
 
-from adapters.storage import get_connection
+from adapters.storage import get_connection, set_setting
 
 import actions.ai
 from actions.ai import AiAction
@@ -212,6 +212,64 @@ def test_ai_propagates_provider_call_errors(tmp_path, monkeypatch):
         AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
     assert _stored_summary(conn, "senapred", "1") is None
+
+
+def test_ai_picks_up_settings_row_without_restart(tmp_path, monkeypatch):
+    """AiAction re-resolves ACTIONS_AI_ENABLED (and every other setting it
+    reads) via get_setting(conn=conn) on every run() call — a DB-stored
+    override (set via the /config UI) takes effect on the very next
+    message, no process restart needed."""
+    monkeypatch.delenv("ACTIONS_AI_ENABLED", raising=False)  # would otherwise skip
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_AI_ENABLED", "true")
+    set_setting(conn, "ACTIONS_AI_PROVIDER", "ollama")
+    set_setting(conn, "ACTIONS_AI_MAX_CHARS", "0")
+    monkeypatch.setattr(actions.ai, "_call_ollama", lambda prompt, model, host: "A summary.")
+    _insert_item(conn, "senapred", "1", "Some contents.")
+
+    outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
+
+    assert outputs == [{"source": "senapred", "item_id": "1", "summary": "A summary."}]
+
+
+def test_ai_passes_db_stored_openai_api_key_to_provider_call(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "openai")
+    monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "0")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "OPENAI_API_KEY", "sk-from-db", is_secret=True)
+    captured = {}
+    monkeypatch.setattr(
+        actions.ai,
+        "_call_openai",
+        lambda prompt, model, api_key: captured.setdefault("api_key", api_key) or "A summary.",
+    )
+    _insert_item(conn, "senapred", "1", "Some contents.")
+
+    AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
+
+    assert captured["api_key"] == "sk-from-db"
+
+
+def test_ai_passes_none_api_key_when_no_override_stored(tmp_path, monkeypatch):
+    """No DB override and no env var set -> api_key=None, preserving today's
+    behavior exactly (the SDK client falls back to its own env read)."""
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "claude")
+    monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "0")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    captured = {}
+    monkeypatch.setattr(
+        actions.ai,
+        "_call_claude",
+        lambda prompt, model, api_key: captured.setdefault("api_key", api_key) or "A summary.",
+    )
+    _insert_item(conn, "senapred", "1", "Some contents.")
+
+    AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
+
+    assert captured["api_key"] is None
 
 
 def test_ai_prompt_includes_item_fields(tmp_path, monkeypatch):

@@ -1,9 +1,30 @@
 import sqlite3
+import tempfile
+from pathlib import Path
 
+import adapters.storage as storage_module
 import pytest
 from adapters.storage import get_connection
 from dispatcher.watcher import _ensure_tables
 from fastapi.testclient import TestClient
+
+# get_setting() (used by the /config routes' get_setting(spec.key, ...,
+# conn=conn) calls, and by anything else that omits conn/db_path) falls
+# back to opening its own connection against DEFAULT_DB_PATH. Every route
+# test here already overrides ui.db.get_db to use the `conn` fixture below,
+# but this redirect is a safety net for any code path that doesn't go
+# through that override — see the equivalent conftest.py in the other
+# three packages' test suites.
+storage_module.DEFAULT_DB_PATH = Path(tempfile.mkdtemp(prefix="radiobeacon-test-db-")) / (
+    "radiobeacon.db"
+)
+# Actually create the file (fully migrated schema, dispatcher tables
+# included) — ui.db.open_readonly_connection() (the /dev/sql runner) opens
+# it in SQLite's read-only URI mode, which (unlike a normal connect) can't
+# create a missing file.
+_default_db_conn = storage_module.get_connection(storage_module.DEFAULT_DB_PATH)
+_ensure_tables(_default_db_conn)
+_default_db_conn.close()
 
 
 @pytest.fixture

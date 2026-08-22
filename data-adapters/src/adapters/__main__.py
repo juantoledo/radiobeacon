@@ -1,13 +1,13 @@
 import importlib
 import inspect
 import logging
-import os
 import pkgutil
 import signal
 import threading
 
 import adapters
 from adapters.base import DataSourceAdapter
+from adapters.storage import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +40,7 @@ def _interval_seconds(adapter_class: type[DataSourceAdapter]) -> int:
     (600s) if the adapter-specific var isn't set."""
     module_leaf = adapter_class.__module__.rsplit(".", 1)[-1].upper()
     adapter_env_var = f"ADAPTERS_{module_leaf}_INTERVAL_SECONDS"
-    value = os.environ.get(adapter_env_var) or os.environ.get(DEFAULT_INTERVAL_ENV_VAR)
+    value = get_setting(adapter_env_var) or get_setting(DEFAULT_INTERVAL_ENV_VAR)
     return int(value) if value else DEFAULT_INTERVAL_SECONDS
 
 

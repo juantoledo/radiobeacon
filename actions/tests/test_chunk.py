@@ -1,4 +1,4 @@
-from adapters.storage import get_connection
+from adapters.storage import get_connection, set_setting
 
 from actions.chunk import ChunkAction
 
@@ -135,6 +135,23 @@ def test_chunk_normalizes_literal_unicode_escapes(tmp_path, monkeypatch):
 
     assert len(stored) == 1
     assert stored[0]["text"] == "información meteorológica"
+
+
+def test_chunk_picks_up_settings_row_without_restart(tmp_path, monkeypatch):
+    """ChunkAction re-resolves ACTIONS_CHUNK_MAX_CHARS via get_setting(conn=conn)
+    on every run() call — a DB-stored override (set via the /config UI) takes
+    effect on the very next message, no process restart needed."""
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "1000")  # would keep this a single chunk
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "10")  # DB override should win
+    _insert_item(conn, "senapred", "1", "one two three four five")
+
+    ChunkAction().run(_dispatched_event("senapred", "1"), conn=conn)
+    stored = _stored_chunks(conn, "senapred", "1")
+
+    assert len(stored) > 1
+    for chunk in stored:
+        assert len(chunk["text"]) <= 10
 
 
 def test_chunk_leaves_real_backslashes_untouched(tmp_path, monkeypatch):

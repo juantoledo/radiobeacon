@@ -1,5 +1,4 @@
 import logging
-import os
 import signal
 import sys
 import threading
@@ -8,15 +7,20 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 
-from adapters.storage import DEFAULT_DB_PATH, get_connection, register_audit_event_hook  # noqa: E402
+from adapters.storage import (  # noqa: E402
+    DEFAULT_DB_PATH,
+    get_connection,
+    get_setting,
+    register_audit_event_hook,
+)
 
 from .mq_publisher import publish_cloud_event  # noqa: E402
 from .watcher import check_for_new_items, log_handler  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-INTERVAL_SECONDS = int(os.environ.get("DISPATCHER_INTERVAL_SECONDS", "5"))
-CONSUMER_NAME = os.environ.get("DISPATCHER_CONSUMER_NAME", "log")
+INTERVAL_SECONDS = int(get_setting("DISPATCHER_INTERVAL_SECONDS", "5"))
+CONSUMER_NAME = get_setting("DISPATCHER_CONSUMER_NAME", "log")
 
 # The extension point: real handlers (radio TX, notifications, etc.) get
 # added here once they exist — none do yet, so this just logs.

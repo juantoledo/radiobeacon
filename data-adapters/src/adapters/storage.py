@@ -1,6 +1,7 @@
 import dataclasses
 import json
 import logging
+import os
 import sqlite3
 from datetime import datetime
 from enum import Enum
@@ -90,6 +91,23 @@ CREATE TABLE IF NOT EXISTS chunks (
     text TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE (source, item_id, chunk_index)
+);
+"""
+
+# settings holds DB-stored overrides for the ADAPTERS_*/ACTIONS_*/DISPATCHER_*
+# env vars every package otherwise reads via os.environ.get — see get_setting
+# below. `key` is the exact env var name (e.g.
+# "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD"), reusing this repo's existing
+# naming convention as the row identifier instead of a separate id, same idea
+# as dispatch_policies' `name` PK. `is_secret` drives UI masking and stops
+# set_setting from ever writing a secret's plaintext into audit_log.details.
+_CREATE_SETTINGS = """
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    is_secret INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by TEXT
 );
 """
 
@@ -201,6 +219,7 @@ def get_connection(
         _migrate_items_table(conn)
         _ensure_audit_log_table(conn)
         _ensure_chunks_table(conn)
+        _ensure_settings_table(conn)
         conn.commit()
     except Exception:
         conn.close()
@@ -306,6 +325,106 @@ def store_summary(conn: sqlite3.Connection, source: str, item_id: str, summary: 
     )
     conn.commit()
     return cursor.rowcount > 0
+
+
+def _ensure_settings_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — get_setting/
+    set_setting/list_settings/delete_setting all call this themselves, same
+    pattern as _ensure_audit_log_table/_ensure_chunks_table."""
+    conn.execute(_CREATE_SETTINGS)
+
+
+def get_setting(
+    key: str,
+    default: str | None = None,
+    *,
+    conn: sqlite3.Connection | None = None,
+    db_path: str | Path | None = None,
+) -> str | None:
+    """Drop-in replacement for os.environ.get(key, default) at every config
+    call site across adapters/actions/dispatcher — callers keep doing their
+    own int()/float()/bool() casting around the returned string, exactly as
+    before. Resolution order: a settings row with a non-NULL value -> the
+    env var -> default.
+
+    Pass conn to reuse an already-open connection (e.g. inside Action.run(),
+    which already receives one per message) rather than opening a new one on
+    a per-message-hot path. If conn is None (module-level/import-time
+    callers, which have no connection to reuse), opens+closes a short-lived
+    one via get_connection(db_path) — safe to call at adapter import time,
+    since get_connection() creates/migrates the full schema (including
+    `settings`) idempotently on first open, regardless of which process
+    happens to be the first to ever connect.
+
+    db_path defaults to None (resolved to DEFAULT_DB_PATH inside the
+    function body), not `= DEFAULT_DB_PATH` in the signature — a default
+    parameter value is bound once, at module-import time, so a signature
+    default would silently ignore a later `monkeypatch.setattr(storage_module,
+    "DEFAULT_DB_PATH", ...)` in a test that omits db_path/conn (as every
+    module-level/no-conn caller, e.g. dispatcher.mq_publisher, does)."""
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection(DEFAULT_DB_PATH if db_path is None else db_path)
+    try:
+        _ensure_settings_table(conn)
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    finally:
+        if owns_conn:
+            conn.close()
+    if row is not None and row[0] is not None:
+        return row[0]
+    return os.environ.get(key, default)
+
+
+def set_setting(
+    conn: sqlite3.Connection,
+    key: str,
+    value: str | None,
+    *,
+    is_secret: bool = False,
+    actor: str = "ui.config",
+) -> None:
+    """Upserts one settings row and records a "setting.changed" audit event.
+    When is_secret is True, the audit event's `details` deliberately omits
+    `value` (only {"key": key, "is_secret": True}) — audit_log is queryable
+    via the UI's /audit page, so writing a secret's plaintext there would
+    defeat get_setting/set_setting's whole mask-on-read design."""
+    _ensure_settings_table(conn)
+    conn.execute(
+        "INSERT INTO settings (key, value, is_secret, updated_at, updated_by) "
+        "VALUES (?, ?, ?, datetime('now'), ?) "
+        "ON CONFLICT(key) DO UPDATE SET "
+        "value = excluded.value, is_secret = excluded.is_secret, "
+        "updated_at = excluded.updated_at, updated_by = excluded.updated_by",
+        (key, value, int(is_secret), actor),
+    )
+    conn.commit()
+    details: dict[str, Any] = {"key": key, "is_secret": is_secret}
+    if not is_secret:
+        details["value"] = value
+    record_audit_event(conn, event_type="setting.changed", actor=actor, details=details)
+
+
+def delete_setting(conn: sqlite3.Connection, key: str, *, actor: str = "ui.config") -> bool:
+    """Clears a DB override, reverting the key back to its env var/hardcoded
+    default. Returns whether a row actually existed."""
+    _ensure_settings_table(conn)
+    cursor = conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+    conn.commit()
+    deleted = cursor.rowcount > 0
+    if deleted:
+        record_audit_event(
+            conn, event_type="setting.reset", actor=actor, details={"key": key}
+        )
+    return deleted
+
+
+def list_settings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """All settings rows (key, value, is_secret, updated_at, updated_by),
+    ordered by key — the UI's source of "which keys currently have a DB
+    override"."""
+    _ensure_settings_table(conn)
+    return conn.execute("SELECT * FROM settings ORDER BY key").fetchall()
 
 
 def _json_default(obj: Any) -> Any:

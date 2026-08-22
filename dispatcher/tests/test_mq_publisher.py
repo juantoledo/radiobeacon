@@ -1,9 +1,22 @@
 import json
 
+import adapters.storage as storage_module
 import paho.mqtt.client
+import pytest
 
 import dispatcher.mq_publisher as mq_publisher
 from dispatcher.mq_publisher import publish_cloud_event
+
+
+@pytest.fixture(autouse=True)
+def _isolated_default_db_path(tmp_path, monkeypatch):
+    """get_setting() (called by every DISPATCHER_MQ_* lookup below) opens
+    its own connection against adapters.storage.DEFAULT_DB_PATH whenever a
+    caller doesn't pass conn/db_path explicitly — as every call in
+    mq_publisher.py does. Without this, every test here would silently
+    read/create the real repo's storage/radiobeacon.db instead of a
+    throwaway one."""
+    monkeypatch.setattr(storage_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
 
 
 class FakeMessageInfo:
@@ -112,6 +125,25 @@ def test_publish_does_not_filter_dispatch_failed(monkeypatch):
     )
 
     assert len(fake.published) == 1
+
+
+def test_publish_uses_settings_row_over_env_var_for_host(monkeypatch):
+    from adapters.storage import get_connection, set_setting
+
+    fake = _install_fake_client(monkeypatch)
+    monkeypatch.setenv("DISPATCHER_MQ_HOST", "env-host")
+    conn = get_connection(storage_module.DEFAULT_DB_PATH)
+    set_setting(conn, "DISPATCHER_MQ_HOST", "db-host")
+
+    publish_cloud_event(
+        event_type="item.dispatched",
+        actor="log_handler",
+        source="senapred",
+        item_id="1",
+        details={"consumer": "log", "times_triggered": 1},
+    )
+
+    assert fake.connected == ("db-host", 1883)
 
 
 def test_publish_builds_cloud_event_envelope_with_expected_fields(monkeypatch):

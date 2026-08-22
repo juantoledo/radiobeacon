@@ -413,6 +413,7 @@ label { display: block; font-size: 0.82rem; font-weight: 600; color: var(--fg-mu
 }
 .form-table textarea { min-height: 5rem; resize: vertical; }
 .form-table input[readonly] { background: var(--bg-subtle); color: var(--fg-muted); }
+.form-table tr.advanced-row { background: var(--warn-bg); }
 
 /* --- Buttons --- */
 

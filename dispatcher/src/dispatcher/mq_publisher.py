@@ -16,10 +16,11 @@ just reflects HTTP being the first binding the SDK implemented.)"""
 
 import json
 import logging
-import os
 import socket
 from contextlib import contextmanager
 from typing import Any
+
+from adapters.storage import get_setting
 
 logger = logging.getLogger(__name__)
 
@@ -74,16 +75,23 @@ def _get_client():
     reusing one persistent connection instead of paying a fresh TCP+MQTT
     handshake per event (as paho.mqtt.publish.single() would) keeps that
     from serially stalling the single-threaded poll loop. Raises on
-    failure — callers must catch (publish_cloud_event does)."""
+    failure — callers must catch (publish_cloud_event does).
+
+    Host/port/timeout are resolved via get_setting() once per connect, not
+    once per publish — so a settings-table override to DISPATCHER_MQ_HOST/
+    _PORT only takes effect on the next fresh connection (after the current
+    one drops and publish_cloud_event's except block resets _client to
+    None), not instantly. Not a regression versus env-var-only config,
+    which needed a full process restart to see a change at all."""
     global _client
     if _client is not None:
         return _client
 
     import paho.mqtt.client as mqtt_client
 
-    host = os.environ["DISPATCHER_MQ_HOST"]
-    port = int(os.environ.get("DISPATCHER_MQ_PORT", "1883"))
-    timeout = int(os.environ.get("DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS", "5"))
+    host = get_setting("DISPATCHER_MQ_HOST")
+    port = int(get_setting("DISPATCHER_MQ_PORT", "1883"))
+    timeout = int(get_setting("DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS", "5"))
 
     client = mqtt_client.Client(mqtt_client.CallbackAPIVersion.VERSION2)
     with _bounded_socket_timeout(timeout):
@@ -116,7 +124,7 @@ def publish_cloud_event(
         if (details or {}).get("times_triggered") != 1:
             return
 
-    host = os.environ.get("DISPATCHER_MQ_HOST")
+    host = get_setting("DISPATCHER_MQ_HOST")
     if not host:
         return
 
@@ -141,8 +149,8 @@ def publish_cloud_event(
         # JSON either way, but unreadable on the wire/in logs for this
         # repo's largely Spanish-language content.
         payload = json.dumps(to_dict(event), ensure_ascii=False)
-        qos = int(os.environ.get("DISPATCHER_MQ_QOS", "1"))
-        timeout = int(os.environ.get("DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS", "5"))
+        qos = int(get_setting("DISPATCHER_MQ_QOS", "1"))
+        timeout = int(get_setting("DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS", "5"))
 
         client = _get_client()
         info = client.publish(_topic(event_type), payload=payload, qos=qos)

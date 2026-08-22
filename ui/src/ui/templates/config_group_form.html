@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ group }}{% endblock %}
+{% block content %}
+<a class="crumb" href="/config">&larr; Back to config</a>
+<div class="page-header"><h1>{{ group }}</h1></div>
+
+<form method="post" action="/config/{{ slug }}" id="config-form">
+  <table class="form-table">
+    {% for f in fields %}
+    <tr class="{{ 'advanced-row' if f.spec.advanced else '' }}">
+      <th>
+        <label for="{{ f.spec.key }}">{{ f.spec.label }}</label>
+        <div class="mono muted" style="font-weight:400; font-size:0.78rem;">{{ f.spec.key }}</div>
+        {% if f.spec.advanced %}<span class="badge badge-warn">wiring</span>{% endif %}
+      </th>
+      <td>
+        {% if f.spec.type == "secret" %}
+          <input id="{{ f.spec.key }}" name="{{ f.spec.key }}" type="text"
+                 autocomplete="off" value="{{ f.value }}"
+                 placeholder="{{ 'leave unchanged to keep current value' if f.overridden else '(not set)' }}">
+        {% elif f.spec.type == "bool" %}
+          <select id="{{ f.spec.key }}" name="{{ f.spec.key }}" data-original="{{ f.value }}">
+            <option value="true" {% if f.value|lower == "true" %}selected{% endif %}>true</option>
+            <option value="false" {% if f.value|lower != "true" %}selected{% endif %}>false</option>
+          </select>
+        {% elif f.spec.type == "select" %}
+          <select id="{{ f.spec.key }}" name="{{ f.spec.key }}" data-original="{{ f.value }}">
+            <option value="" {% if not f.value %}selected{% endif %}></option>
+            {% for choice in f.spec.choices %}
+            <option value="{{ choice }}" {% if f.value == choice %}selected{% endif %}>{{ choice }}</option>
+            {% endfor %}
+          </select>
+        {% elif f.spec.key == "ACTIONS_AI_PROMPT" %}
+          <textarea id="{{ f.spec.key }}" name="{{ f.spec.key }}">{{ f.value }}</textarea>
+        {% else %}
+          <input id="{{ f.spec.key }}" name="{{ f.spec.key }}" type="text"
+                 value="{{ f.value }}" data-original="{{ f.value }}"
+                 {% if f.spec.advanced %}data-advanced{% endif %}>
+        {% endif %}
+        <div class="meta-line">{{ f.spec.description }}</div>
+        {% if f.overridden %}
+        <button type="submit" form="reset-{{ f.spec.key }}" class="secondary">Reset to env/default</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <button type="submit">Save</button>
+</form>
+
+{% for f in fields %}
+{% if f.overridden %}
+<form id="reset-{{ f.spec.key }}" method="post" action="/config/{{ slug }}/{{ f.spec.key }}/reset"></form>
+{% endif %}
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Advanced (wiring) fields change pub/sub topology — confirm only when
+  // one of them actually changed, so routine edits to a non-wiring field
+  // in the same group aren't interrupted.
+  document.getElementById("config-form").addEventListener("submit", function (event) {
+    var advanced = document.querySelectorAll("[data-advanced], .advanced-row select");
+    var changed = false;
+    advanced.forEach(function (el) {
+      if (el.value !== el.dataset.original) changed = true;
+    });
+    if (changed && !confirm("This changes MQTT topic/event wiring — a mistake here can silently break a pipeline. Save anyway?")) {
+      event.preventDefault();
+    }
+  });
+</script>
+{% endblock %}

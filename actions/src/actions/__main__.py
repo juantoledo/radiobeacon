@@ -1,7 +1,6 @@
 import importlib
 import inspect
 import logging
-import os
 import pkgutil
 import signal
 import sys
@@ -11,7 +10,12 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 
-from adapters.storage import DEFAULT_DB_PATH, get_connection, record_audit_event  # noqa: E402
+from adapters.storage import (  # noqa: E402
+    DEFAULT_DB_PATH,
+    get_connection,
+    get_setting,
+    record_audit_event,
+)
 
 import actions  # noqa: E402
 from actions import mq  # noqa: E402
@@ -23,11 +27,11 @@ logger = logging.getLogger(__name__)
 # an optional bonus on top of its real job of SQLite polling) — defaults
 # to the local broker mq/start.sh brings up rather than requiring
 # explicit opt-in, unlike DISPATCHER_MQ_HOST.
-ACTIONS_MQ_HOST = os.environ.get("ACTIONS_MQ_HOST", "localhost")
-ACTIONS_MQ_PORT = int(os.environ.get("ACTIONS_MQ_PORT", "1883"))
-ACTIONS_MQ_QOS = int(os.environ.get("ACTIONS_MQ_QOS", "1"))
+ACTIONS_MQ_HOST = get_setting("ACTIONS_MQ_HOST", "localhost")
+ACTIONS_MQ_PORT = int(get_setting("ACTIONS_MQ_PORT", "1883"))
+ACTIONS_MQ_QOS = int(get_setting("ACTIONS_MQ_QOS", "1"))
 ACTIONS_MQ_RECONNECT_BACKOFF_SECONDS = int(
-    os.environ.get("ACTIONS_MQ_RECONNECT_BACKOFF_SECONDS", "5")
+    get_setting("ACTIONS_MQ_RECONNECT_BACKOFF_SECONDS", "5")
 )
 
 
@@ -58,7 +62,7 @@ def _subscribe_topics(action_class: type[Action]) -> list[str] | None:
     ADAPTERS_DEFAULT_INTERVAL_SECONDS), so returns None if unset; the
     caller logs a warning and skips this action rather than crashing the
     whole process over one misconfigured action."""
-    raw = os.environ.get(f"ACTIONS_{_env_name(action_class)}_SUBSCRIBE_TOPIC")
+    raw = get_setting(f"ACTIONS_{_env_name(action_class)}_SUBSCRIBE_TOPIC")
     if not raw:
         return None
     return [topic.strip() for topic in raw.split(",") if topic.strip()]
@@ -71,8 +75,8 @@ def _output_config(action_class: type[Action]) -> tuple[str | None, str]:
     dropped); output_event_type defaults to the action's own module leaf
     name if not set explicitly."""
     name = _env_name(action_class)
-    output_topic = os.environ.get(f"ACTIONS_{name}_OUTPUT_TOPIC")
-    output_event_type = os.environ.get(
+    output_topic = get_setting(f"ACTIONS_{name}_OUTPUT_TOPIC")
+    output_event_type = get_setting(
         f"ACTIONS_{name}_OUTPUT_EVENT_TYPE", name.lower()
     )
     return output_topic, output_event_type

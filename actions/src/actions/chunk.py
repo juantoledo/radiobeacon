@@ -1,11 +1,10 @@
 import logging
-import os
 import re
 import sqlite3
 import textwrap
 from typing import Any
 
-from adapters.storage import store_chunks
+from adapters.storage import get_setting, store_chunks
 
 from actions.base import Action
 
@@ -60,7 +59,7 @@ class ChunkAction(Action):
 
         contents = _normalize_unicode_escapes(contents)
 
-        max_chars = int(os.environ.get("ACTIONS_CHUNK_MAX_CHARS", "200"))
+        max_chars = int(get_setting("ACTIONS_CHUNK_MAX_CHARS", "200", conn=conn))
         pieces = textwrap.wrap(
             contents, width=max_chars, break_long_words=False, break_on_hyphens=False
         )

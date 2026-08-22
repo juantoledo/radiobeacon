@@ -223,8 +223,18 @@ def test_sql_runner_returns_200_with_no_query(client):
     assert "SQL runner" in response.text
 
 
-def test_sql_runner_executes_select_and_shows_results(client, conn):
-    _insert_item(conn, "csn", "1")
+def test_sql_runner_executes_select_and_shows_results(client, monkeypatch, tmp_path):
+    # /dev/sql reads via ui.db.open_readonly_connection(), which is NOT
+    # wired through the get_db dependency override the `client`/`conn`
+    # fixtures use elsewhere (see that function's docstring) — it opens its
+    # own connection straight at config.UI_DB_PATH (or DEFAULT_DB_PATH), so
+    # this test needs a real file at that path, not the shared in-memory
+    # `conn` fixture.
+    db_path = tmp_path / "radiobeacon.db"
+    monkeypatch.setattr(config, "UI_DB_PATH", str(db_path))
+    file_conn = get_connection(db_path)
+    _insert_item(file_conn, "csn", "1")
+    file_conn.close()
 
     response = client.get("/dev/sql", params={"q": "SELECT source, item_id FROM items"})
 

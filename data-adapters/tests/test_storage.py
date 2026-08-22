@@ -8,8 +8,12 @@ import pytest
 
 import adapters.storage as storage_module
 from adapters.storage import (
+    delete_setting,
     get_connection,
+    get_setting,
+    list_settings,
     record_audit_event,
+    set_setting,
     store_chunks,
     store_reading,
     store_summary,
@@ -789,3 +793,121 @@ def test_store_summary_returns_false_for_unknown_item(tmp_path):
     updated = store_summary(conn, "csn", "does-not-exist", "A short summary.")
 
     assert updated is False
+
+
+# --- settings ---
+
+
+def test_get_setting_returns_db_value_when_row_exists(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "999")
+
+    assert get_setting("ACTIONS_CHUNK_MAX_CHARS", conn=conn) == "999"
+
+
+def test_get_setting_falls_back_to_env_var_when_no_row(tmp_path, monkeypatch):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "42")
+
+    assert get_setting("ACTIONS_CHUNK_MAX_CHARS", conn=conn) == "42"
+
+
+def test_get_setting_falls_back_to_hardcoded_default(tmp_path, monkeypatch):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    monkeypatch.delenv("ACTIONS_CHUNK_MAX_CHARS", raising=False)
+
+    assert get_setting("ACTIONS_CHUNK_MAX_CHARS", "200", conn=conn) == "200"
+    assert get_setting("ACTIONS_CHUNK_MAX_CHARS", conn=conn) is None
+
+
+def test_get_setting_db_row_takes_precedence_over_env_var(tmp_path, monkeypatch):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "42")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "999")
+
+    assert get_setting("ACTIONS_CHUNK_MAX_CHARS", conn=conn) == "999"
+
+
+def test_get_setting_without_conn_opens_and_closes_its_own(tmp_path):
+    db_path = tmp_path / "radiobeacon.db"
+    conn = get_connection(db_path)
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "999")
+
+    assert get_setting("ACTIONS_CHUNK_MAX_CHARS", db_path=db_path) == "999"
+
+
+def test_set_setting_upserts(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "111")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "222")
+
+    rows = list_settings(conn)
+    assert len(rows) == 1
+    assert rows[0][1] == "222"  # (key, value, is_secret, updated_at, updated_by)
+
+
+def test_set_setting_records_audit_event_with_value_for_non_secret(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "111", actor="ui.config")
+
+    row = conn.execute(
+        "SELECT actor, details FROM audit_log WHERE event_type = 'setting.changed'"
+    ).fetchone()
+    assert row[0] == "ui.config"
+    details = json.loads(row[1])
+    assert details == {"key": "ACTIONS_CHUNK_MAX_CHARS", "is_secret": False, "value": "111"}
+
+
+def test_set_setting_never_writes_secret_plaintext_to_audit_log(tmp_path):
+    """The security-critical invariant behind mask-on-read: a secret's
+    audit_log.details must never carry its plaintext value, since /audit
+    is a normal queryable page — writing it there would defeat the whole
+    point of masking it in the config UI."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ANTHROPIC_API_KEY", "sk-super-secret-value", is_secret=True)
+
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'setting.changed'"
+    ).fetchone()
+    details = json.loads(row[0])
+    assert details == {"key": "ANTHROPIC_API_KEY", "is_secret": True}
+    assert "sk-super-secret-value" not in row[0]
+
+
+def test_delete_setting_removes_row_and_reverts_to_env(tmp_path, monkeypatch):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "42")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "999")
+
+    deleted = delete_setting(conn, "ACTIONS_CHUNK_MAX_CHARS")
+
+    assert deleted is True
+    assert get_setting("ACTIONS_CHUNK_MAX_CHARS", conn=conn) == "42"
+
+
+def test_delete_setting_returns_false_for_unknown_key(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert delete_setting(conn, "NOT_A_REAL_KEY") is False
+
+
+def test_delete_setting_records_audit_event(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "999")
+
+    delete_setting(conn, "ACTIONS_CHUNK_MAX_CHARS")
+
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'setting.reset'"
+    ).fetchone()
+    assert json.loads(row[0]) == {"key": "ACTIONS_CHUNK_MAX_CHARS"}
+
+
+def test_list_settings_orders_by_key(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ZZZ_LAST", "1")
+    set_setting(conn, "AAA_FIRST", "2")
+
+    rows = list_settings(conn)
+
+    assert [row[0] for row in rows] == ["AAA_FIRST", "ZZZ_LAST"]

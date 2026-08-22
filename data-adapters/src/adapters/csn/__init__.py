@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -8,6 +7,7 @@ from datetime import datetime
 from typing import Any
 
 from ..base import DataSourceAdapter, SourceReading
+from ..storage import get_setting
 from ..timeutil import to_utc, utc_now
 
 logger = logging.getLogger(__name__)
@@ -15,17 +15,17 @@ logger = logging.getLogger(__name__)
 # Chile's Centro Sismológico Nacional (CSN, Universidad de Chile) has no
 # official public API. This is a widely-used unofficial JSON mirror of its
 # auto-detected earthquake list — no auth, no key required.
-API_URL = os.environ.get(
+API_URL = get_setting(
     "ADAPTERS_CSN_API_URL", "https://api.gael.cloud/general/public/sismos"
 )
 # CSN's site has no per-earthquake detail page in this API's data (no id/slug
 # is provided) — every item links to the same site homepage.
-SITE_URL = os.environ.get("ADAPTERS_CSN_SITE_URL", "https://www.sismologia.cl/")
+SITE_URL = get_setting("ADAPTERS_CSN_SITE_URL", "https://www.sismologia.cl/")
 # Not every earthquake deserves the "urgent" dispatch policy's redelivery
 # — below this magnitude, .dispatch_policy points at "informational"
 # instead (single delivery, no redelivery).
 URGENT_MAGNITUDE_THRESHOLD = float(
-    os.environ.get("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", "4.5")
+    get_setting("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", "4.5")
 )
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # CSN's api.gael.cloud mirror gives no explicit offset on `Fecha` at all.
@@ -34,7 +34,7 @@ _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 # not UTC — but there's no official documentation confirming this. Kept
 # as an env var specifically so this assumption can be corrected in one
 # line, without a code change, if it's ever proven wrong.
-SOURCE_TZ = os.environ.get("ADAPTERS_CSN_SOURCE_TZ", "America/Santiago")
+SOURCE_TZ = get_setting("ADAPTERS_CSN_SOURCE_TZ", "America/Santiago")
 
 
 @dataclass

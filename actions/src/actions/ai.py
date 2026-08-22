@@ -1,9 +1,8 @@
 import logging
-import os
 import sqlite3
 from typing import Any
 
-from adapters.storage import store_summary
+from adapters.storage import get_setting, store_summary
 
 from actions.base import Action
 
@@ -21,10 +20,10 @@ _DEFAULT_PROMPT = (
 )
 
 
-def _call_openai(prompt: str, model: str) -> str:
+def _call_openai(prompt: str, model: str, api_key: str | None) -> str:
     import openai
 
-    client = openai.OpenAI()
+    client = openai.OpenAI(api_key=api_key) if api_key else openai.OpenAI()
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
@@ -32,10 +31,10 @@ def _call_openai(prompt: str, model: str) -> str:
     return response.choices[0].message.content
 
 
-def _call_claude(prompt: str, model: str) -> str:
+def _call_claude(prompt: str, model: str, api_key: str | None) -> str:
     import anthropic
 
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
     response = client.messages.create(
         model=model,
         max_tokens=1024,
@@ -87,7 +86,7 @@ class AiAction(Action):
     return [] instead."""
 
     def run(self, event: dict[str, Any], *, conn: sqlite3.Connection) -> list[dict[str, Any]]:
-        if os.environ.get("ACTIONS_AI_ENABLED", "false").lower() != "true":
+        if get_setting("ACTIONS_AI_ENABLED", "false", conn=conn).lower() != "true":
             return []
 
         data = event.get("data") or {}
@@ -112,7 +111,7 @@ class AiAction(Action):
             )
             return []
 
-        max_chars = int(os.environ.get("ACTIONS_AI_MAX_CHARS", "500"))
+        max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "500", conn=conn))
         if len(extracted_contents) <= max_chars:
             logger.info(
                 "ai: source=%s item_id=%s extracted_contents already <= %d chars, "
@@ -123,7 +122,7 @@ class AiAction(Action):
             )
             return []
 
-        provider = os.environ.get("ACTIONS_AI_PROVIDER")
+        provider = get_setting("ACTIONS_AI_PROVIDER", conn=conn)
         if provider not in ("openai", "claude", "ollama"):
             logger.error(
                 "ai: ACTIONS_AI_PROVIDER=%r invalid (must be openai, claude, or ollama), "
@@ -132,7 +131,7 @@ class AiAction(Action):
             )
             return []
 
-        prompt_template = os.environ.get("ACTIONS_AI_PROMPT", _DEFAULT_PROMPT)
+        prompt_template = get_setting("ACTIONS_AI_PROMPT", _DEFAULT_PROMPT, conn=conn)
         prompt = prompt_template.format(
             extracted_title=extracted_title or "",
             extracted_contents=extracted_contents,
@@ -142,14 +141,16 @@ class AiAction(Action):
         )
 
         if provider == "openai":
-            model = os.environ.get("ACTIONS_AI_OPENAI_MODEL", "gpt-4o-mini")
-            summary = _call_openai(prompt, model)
+            model = get_setting("ACTIONS_AI_OPENAI_MODEL", "gpt-4o-mini", conn=conn)
+            api_key = get_setting("OPENAI_API_KEY", conn=conn)
+            summary = _call_openai(prompt, model, api_key)
         elif provider == "claude":
-            model = os.environ.get("ACTIONS_AI_CLAUDE_MODEL", "claude-haiku-4-5")
-            summary = _call_claude(prompt, model)
+            model = get_setting("ACTIONS_AI_CLAUDE_MODEL", "claude-haiku-4-5", conn=conn)
+            api_key = get_setting("ANTHROPIC_API_KEY", conn=conn)
+            summary = _call_claude(prompt, model, api_key)
         else:
-            model = os.environ.get("ACTIONS_AI_OLLAMA_MODEL", "llama3.2:1b")
-            host = os.environ.get("ACTIONS_AI_OLLAMA_HOST", "http://localhost:11434")
+            model = get_setting("ACTIONS_AI_OLLAMA_MODEL", "llama3.2:1b", conn=conn)
+            host = get_setting("ACTIONS_AI_OLLAMA_HOST", "http://localhost:11434", conn=conn)
             summary = _call_ollama(prompt, model, host)
 
         summary = summary.strip()

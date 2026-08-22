@@ -1,0 +1,153 @@
+from adapters.storage import get_setting, list_settings, set_setting
+
+from ui.routers.config import SECRET_SENTINEL
+
+
+def test_config_list_page_returns_200_and_lists_every_group(client):
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    assert "Adapters — CSN" in response.text
+    assert "Actions — AI" in response.text
+    assert "Secrets" in response.text
+    assert "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD" in response.text
+
+
+def test_config_group_edit_page_returns_200_and_prefills_known_values(client):
+    response = client.get("/config/adapters-csn")
+
+    assert response.status_code == 200
+    assert "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD" in response.text
+    assert "4.5" in response.text  # catalog default shown when no override exists
+
+
+def test_config_group_edit_page_404s_for_unknown_group(client):
+    response = client.get("/config/not-a-real-group")
+
+    assert response.status_code == 404
+
+
+def test_config_group_save_persists_and_redirects(client, conn):
+    response = client.post(
+        "/config/adapters-csn",
+        data={"ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD": "5.0"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"].startswith("/config/adapters-csn?msg=")
+    assert get_setting("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", conn=conn) == "5.0"
+
+
+def test_config_group_save_ignores_blank_fields(client, conn):
+    """A blank field means "no explicit value", not "override to empty
+    string" — get_setting() treats a stored "" as a real override (distinct
+    from no row at all), so writing "" here would force every unfilled
+    field to resolve to "" instead of falling through to its env var or
+    catalog default."""
+    client.post(
+        "/config/adapters-csn",
+        data={
+            "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD": "5.0",
+            "ADAPTERS_CSN_API_URL": "",
+        },
+        follow_redirects=False,
+    )
+
+    rows = list_settings(conn)
+    assert [row[0] for row in rows] == ["ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD"]
+
+
+def test_config_group_edit_page_shows_env_value_when_no_db_override(client, monkeypatch):
+    monkeypatch.setenv("ADAPTERS_CSN_API_URL", "https://example.test/sismos")
+
+    response = client.get("/config/adapters-csn")
+
+    assert "https://example.test/sismos" in response.text
+
+
+def test_config_setting_reset_deletes_override_and_redirects(client, conn):
+    set_setting(conn, "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", "5.0")
+
+    response = client.post(
+        "/config/adapters-csn/ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD/reset",
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert get_setting("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", conn=conn) is None
+
+
+def test_config_setting_reset_404s_for_key_not_in_group(client):
+    response = client.post(
+        "/config/adapters-csn/ANTHROPIC_API_KEY/reset", follow_redirects=False
+    )
+
+    assert response.status_code == 404
+
+
+def test_nav_shows_config_link(client):
+    response = client.get("/")
+
+    assert 'href="/config"' in response.text
+
+
+# --- secret masking: the single most important test in this feature ---
+
+
+def test_secret_round_trip_never_leaks_plaintext(client, conn):
+    real_value = "sk-ant-super-secret-do-not-leak"
+
+    # Set it for the first time.
+    save = client.post(
+        "/config/secrets",
+        data={"ANTHROPIC_API_KEY": real_value, "OPENAI_API_KEY": ""},
+        follow_redirects=False,
+    )
+    assert save.status_code == 303
+    assert get_setting("ANTHROPIC_API_KEY", conn=conn) == real_value
+
+    # GET must show the masked sentinel, never the real value.
+    page = client.get("/config/secrets")
+    assert real_value not in page.text
+    assert SECRET_SENTINEL in page.text
+
+    # The config list page must not leak it either.
+    list_page = client.get("/config")
+    assert real_value not in list_page.text
+
+    # Re-submitting the sentinel (what the browser would send back
+    # unmodified) must NOT overwrite the stored secret.
+    resave = client.post(
+        "/config/secrets",
+        data={"ANTHROPIC_API_KEY": SECRET_SENTINEL, "OPENAI_API_KEY": ""},
+        follow_redirects=False,
+    )
+    assert resave.status_code == 303
+    assert get_setting("ANTHROPIC_API_KEY", conn=conn) == real_value
+
+    # A genuinely new value does overwrite it.
+    new_value = "sk-ant-rotated-value"
+    client.post(
+        "/config/secrets",
+        data={"ANTHROPIC_API_KEY": new_value, "OPENAI_API_KEY": ""},
+        follow_redirects=False,
+    )
+    assert get_setting("ANTHROPIC_API_KEY", conn=conn) == new_value
+
+    # The audit log must never carry the plaintext either.
+    audit_rows = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'setting.changed'"
+    ).fetchall()
+    for (details,) in audit_rows:
+        assert real_value not in (details or "")
+        assert new_value not in (details or "")
+
+
+def test_secret_field_empty_when_nothing_stored(client):
+    response = client.get("/config/secrets")
+
+    # No DB row yet -> field renders empty, not the sentinel, so an
+    # operator can tell "nothing stored" apart from "something is stored".
+    assert f'id="ANTHROPIC_API_KEY"' in response.text
+    assert SECRET_SENTINEL not in response.text

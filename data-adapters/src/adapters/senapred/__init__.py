@@ -1,7 +1,6 @@
 import html
 import json
 import logging
-import os
 import re
 import urllib.error
 import urllib.request
@@ -14,6 +13,7 @@ from botocore.awsrequest import AWSRequest
 from botocore.credentials import Credentials
 
 from ..base import DataSourceAdapter, SourceReading
+from ..storage import get_setting
 from ..timeutil import to_utc, utc_now
 
 logger = logging.getLogger(__name__)
@@ -25,14 +25,14 @@ logger = logging.getLogger(__name__)
 # secret (it's public in senapred.cl's own JS bundle), but it's still
 # environment-configurable in case SENAPRED changes their infra or someone
 # wants to point this at a different instance.
-IDENTITY_POOL_ID = os.environ.get(
+IDENTITY_POOL_ID = get_setting(
     "ADAPTERS_SENAPRED_IDENTITY_POOL_ID", "us-east-1:17c696bc-53e1-49a2-991f-f1b65f752fda"
 )
-COGNITO_REGION = os.environ.get("ADAPTERS_SENAPRED_COGNITO_REGION", "us-east-1")
+COGNITO_REGION = get_setting("ADAPTERS_SENAPRED_COGNITO_REGION", "us-east-1")
 COGNITO_ENDPOINT = f"https://cognito-identity.{COGNITO_REGION}.amazonaws.com/"
 
-APPSYNC_REGION = os.environ.get("ADAPTERS_SENAPRED_APPSYNC_REGION", "us-east-1")
-APPSYNC_HOST = os.environ.get(
+APPSYNC_REGION = get_setting("ADAPTERS_SENAPRED_APPSYNC_REGION", "us-east-1")
+APPSYNC_HOST = get_setting(
     "ADAPTERS_SENAPRED_APPSYNC_HOST",
     "rz2uv7ifxbgflh2bqmp6kmh4le.appsync-api.us-east-1.amazonaws.com",
 )
@@ -44,13 +44,13 @@ APPSYNC_ENDPOINT = f"https://{APPSYNC_HOST}/graphql"
 # defines a dynamic route "/:typePath/:urlPath" alongside separate
 # constants "/alerta/" and "/evento/" used to build these links depending
 # on which feed (Alerta/Evento) an item came from.
-ALERTA_BASE_URL = os.environ.get(
+ALERTA_BASE_URL = get_setting(
     "ADAPTERS_SENAPRED_ALERTA_BASE_URL", "https://senapred.cl/alerta/"
 )
-EVENTO_BASE_URL = os.environ.get(
+EVENTO_BASE_URL = get_setting(
     "ADAPTERS_SENAPRED_EVENTO_BASE_URL", "https://senapred.cl/evento/"
 )
-QUERY_LIMIT = int(os.environ.get("ADAPTERS_SENAPRED_QUERY_LIMIT", "20"))
+QUERY_LIMIT = int(get_setting("ADAPTERS_SENAPRED_QUERY_LIMIT", "20"))
 
 # SENAPRED's backend splits content into two separate feeds/GraphQL fields,
 # not one: "Alerta" (weather/volcanic warnings, has a variableRiesgo risk
