@@ -6,6 +6,7 @@ import adapters.storage as storage_module
 import pytest
 from adapters.storage import get_connection
 from dispatcher.watcher import _ensure_tables
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 # get_setting() (used by the /config routes' get_setting(spec.key, ...,
@@ -54,7 +55,13 @@ def client(conn: sqlite3.Connection):
     from ui.app import app
     from ui.db import get_db
 
-    def _override():
+    def _override(request: Request):
+        # Mirrors the real get_db()'s request.state.db_conn stash — see
+        # its docstring — so ui.templating's is_beacon_configured Jinja
+        # global reuses this exact in-memory `conn` instead of opening a
+        # second connection to DEFAULT_DB_PATH, which would never see
+        # what a test wrote to `conn`.
+        request.state.db_conn = conn
         yield conn
 
     app.dependency_overrides[get_db] = _override

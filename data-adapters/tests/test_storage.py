@@ -828,6 +828,28 @@ def test_get_setting_db_row_takes_precedence_over_env_var(tmp_path, monkeypatch)
     assert get_setting("ACTIONS_CHUNK_MAX_CHARS", conn=conn) == "999"
 
 
+def test_get_setting_env_fallback_false_skips_env_var(tmp_path, monkeypatch):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    monkeypatch.setenv("SOME_KEY", "from-env")
+
+    assert get_setting("SOME_KEY", "default", conn=conn, env_fallback=False) == "default"
+
+
+def test_get_setting_env_fallback_true_is_unchanged_default_behavior(tmp_path, monkeypatch):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    monkeypatch.setenv("SOME_KEY", "from-env")
+
+    assert get_setting("SOME_KEY", "default", conn=conn) == "from-env"
+
+
+def test_get_setting_env_fallback_false_still_prefers_db_row(tmp_path, monkeypatch):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    monkeypatch.setenv("SOME_KEY", "from-env")
+    set_setting(conn, "SOME_KEY", "from-db")
+
+    assert get_setting("SOME_KEY", conn=conn, env_fallback=False) == "from-db"
+
+
 def test_get_setting_without_conn_opens_and_closes_its_own(tmp_path):
     db_path = tmp_path / "radiobeacon.db"
     conn = get_connection(db_path)

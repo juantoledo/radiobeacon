@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Beacon identity{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Beacon identity</h1>
+  {% if configured %}
+    <span class="badge badge-success">configured</span>
+  {% else %}
+    <span class="badge badge-warn">not configured</span>
+  {% endif %}
+</div>
+
+{% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
+
+<form method="post" action="/beacon">
+  <table class="form-table">
+    {% for f in fields %}
+    <tr>
+      <th><label for="{{ f.key }}">{{ f.label }} *</label></th>
+      <td>
+        <input id="{{ f.key }}" name="{{ f.key }}" type="text"
+               value="{{ values[f.key] }}" required>
+        <div class="meta-line">{{ f.description }}</div>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <button type="submit">Save</button>
+</form>
+{% endblock %}

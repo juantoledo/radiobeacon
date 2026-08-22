@@ -5,10 +5,13 @@ routers)."""
 from datetime import datetime
 from pathlib import Path
 
+from adapters.storage import DEFAULT_DB_PATH, get_connection
 from adapters.timeutil import to_display_tz, to_utc
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 
 from . import config
+from .beacon import is_beacon_configured
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
@@ -22,6 +25,37 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # disabled, rather than showing a link that 404s — and lets a test flip
 # the flag with monkeypatch and see both the router and the nav react.
 templates.env.globals["config"] = config
+
+
+@pass_context
+def _beacon_configured_global(context) -> bool:
+    """Jinja global so base.html's sitewide banner/nav badge work on every
+    page without every router adding it to its own context dict.
+
+    @pass_context (not a plain zero-arg global) so this can reuse the
+    current request's own db_conn — stashed onto request.state by
+    ui.db.get_db() — rather than always opening a second, independent
+    connection to DEFAULT_DB_PATH. That distinction matters in tests: the
+    `client` fixture overrides get_db to yield an isolated in-memory
+    connection, which a plain self-opened connection to DEFAULT_DB_PATH
+    would never see, making the banner always render as "not configured"
+    regardless of what a test just set. request.state.db_conn is only
+    absent for a request that never depended on get_db (none currently
+    render a template without it) — the self-opened fallback covers that
+    hypothetical case, same short-lived "owns_conn" idiom
+    adapters.storage.get_setting uses when called without conn=."""
+    request = context["request"]
+    conn = getattr(request.state, "db_conn", None)
+    if conn is not None:
+        return is_beacon_configured(conn)
+    conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        return is_beacon_configured(conn)
+    finally:
+        conn.close()
+
+
+templates.env.globals["is_beacon_configured"] = _beacon_configured_global
 
 
 def _display_dt(value: str | None) -> str:

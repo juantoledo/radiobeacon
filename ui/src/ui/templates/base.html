@@ -11,6 +11,7 @@
     <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
     <nav>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Dashboard</a>
+      <a href="/beacon" class="{{ 'active' if request.url.path.startswith('/beacon') else '' }}">Beacon identity{% if not is_beacon_configured() %} <span class="badge badge-warn">!</span>{% endif %}</a>
       <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">Items</a>
       <a href="/policies" class="{{ 'active' if request.url.path.startswith('/policies') else '' }}">Policies</a>
       <a href="/config" class="{{ 'active' if request.url.path.startswith('/config') else '' }}">Config</a>
@@ -23,6 +24,12 @@
   <main>
     {% if request.query_params.get('msg') %}
       <p class="banner">✓ {{ request.query_params.get('msg') }}</p>
+    {% endif %}
+    {% if request.query_params.get('error') %}
+      <p class="banner-warn">⚠ {{ request.query_params.get('error') }}</p>
+    {% endif %}
+    {% if not is_beacon_configured() and not request.url.path.startswith('/beacon') %}
+      <p class="banner-warn">⚠ Beacon identity not configured — <a href="/beacon">set it up</a>. Browsing is unaffected; the Override/Rearm actions on item pages are blocked until this is done.</p>
     {% endif %}
     {% block content %}{% endblock %}
   </main>

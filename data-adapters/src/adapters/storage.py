@@ -340,12 +340,20 @@ def get_setting(
     *,
     conn: sqlite3.Connection | None = None,
     db_path: str | Path | None = None,
+    env_fallback: bool = True,
 ) -> str | None:
     """Drop-in replacement for os.environ.get(key, default) at every config
     call site across adapters/actions/dispatcher — callers keep doing their
     own int()/float()/bool() casting around the returned string, exactly as
     before. Resolution order: a settings row with a non-NULL value -> the
     env var -> default.
+
+    env_fallback=False skips the os.environ.get step entirely (falling
+    straight through to `default` when no DB row exists) — for a key that
+    is deliberately DB-only and must never be satisfiable by a same-named
+    env var (e.g. the BEACON_* identity fields in ui.beacon, which are
+    edited only through the UI). Every other caller keeps the default
+    True, preserving today's DB -> env -> default behavior unchanged.
 
     Pass conn to reuse an already-open connection (e.g. inside Action.run(),
     which already receives one per message) rather than opening a new one on
@@ -373,6 +381,8 @@ def get_setting(
             conn.close()
     if row is not None and row[0] is not None:
         return row[0]
+    if not env_fallback:
+        return default
     return os.environ.get(key, default)
 
 

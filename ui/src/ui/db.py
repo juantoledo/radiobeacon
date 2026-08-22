@@ -12,6 +12,7 @@ import sqlite3
 
 from adapters.storage import DEFAULT_DB_PATH, get_connection
 from dispatcher.watcher import _ensure_tables
+from fastapi import Request
 
 from . import config
 
@@ -35,7 +36,7 @@ def open_readonly_connection() -> sqlite3.Connection:
     return conn
 
 
-def get_db() -> Iterator[sqlite3.Connection]:
+def get_db(request: Request) -> Iterator[sqlite3.Connection]:
     # check_same_thread=False: FastAPI's threadpool executor may run this
     # generator's setup and the route handler body on two different OS
     # threads for the same request — see get_connection's docstring.
@@ -46,6 +47,12 @@ def get_db() -> Iterator[sqlite3.Connection]:
     # — called unconditionally here, same as override_item.py/policies.py
     # already do regardless of which action is actually requested.
     _ensure_tables(conn)
+    # Stashed so templating.py's is_beacon_configured Jinja global can
+    # reuse this exact connection instead of opening a second one to
+    # DEFAULT_DB_PATH — critical in tests, where the `client` fixture
+    # overrides this dependency to yield an isolated in-memory connection
+    # that a second, independently-opened connection would never see.
+    request.state.db_conn = conn
     try:
         yield conn
     finally:

@@ -41,13 +41,15 @@
     <option value="{{ p[0] }}" {% if item.dispatch_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
     {% endfor %}
   </select>
-  <button type="submit">Override</button>
+  <button type="submit" {% if not is_beacon_configured() %}disabled{% endif %}>Override</button>
+  {% if not is_beacon_configured() %}<span class="meta-line">Requires <a href="/beacon">beacon identity</a> to be configured.</span>{% endif %}
 </form>
 
 <form class="action" method="post" action="/items/{{ item.source }}/{{ item.item_id }}/rearm">
   <label for="consumer">Re-arm for consumer</label>
   <input id="consumer" name="consumer" type="text" value="{{ default_consumer }}">
-  <button type="submit" class="secondary">Rearm</button>
+  <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Rearm</button>
+  {% if not is_beacon_configured() %}<span class="meta-line">Requires <a href="/beacon">beacon identity</a> to be configured.</span>{% endif %}
 </form>
 
 {% if chunks %}

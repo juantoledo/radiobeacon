@@ -1,3 +1,4 @@
+from adapters.storage import set_setting
 from dispatcher.policy import set_policy
 
 from ui import config
@@ -10,6 +11,20 @@ def _insert_item(conn, source, item_id, *, dispatch_policy="informational"):
         (source, item_id, dispatch_policy),
     )
     conn.commit()
+
+
+def _configure_beacon(conn):
+    """Satisfies is_beacon_configured() so override/rearm actions aren't
+    blocked — see ui.beacon.BEACON_FIELDS for the full required set."""
+    for key in (
+        "BEACON_CALLSIGN",
+        "BEACON_DESCRIPTION",
+        "BEACON_SHORT_DESCRIPTION",
+        "BEACON_OPERATOR_CONTACT",
+        "BEACON_GRID_LOCATOR",
+        "BEACON_FREQUENCY",
+    ):
+        set_setting(conn, key, "test-value")
 
 
 def test_dashboard_returns_200(client):
@@ -64,6 +79,7 @@ def test_item_detail_returns_200_for_known_item(client, conn):
 
 
 def test_override_action_redirects_and_updates_row(client, conn):
+    _configure_beacon(conn)
     _insert_item(conn, "csn", "1", dispatch_policy="informational")
 
     response = client.post(
@@ -79,6 +95,7 @@ def test_override_action_redirects_and_updates_row(client, conn):
 
 
 def test_override_action_missing_dispatch_policy_is_rejected(client, conn):
+    _configure_beacon(conn)
     _insert_item(conn, "csn", "1")
 
     response = client.post("/items/csn/1/override", data={}, follow_redirects=False)
@@ -86,7 +103,23 @@ def test_override_action_missing_dispatch_policy_is_rejected(client, conn):
     assert response.status_code == 422
 
 
+def test_override_action_blocked_when_beacon_not_configured(client, conn):
+    _insert_item(conn, "csn", "1", dispatch_policy="informational")
+
+    response = client.post(
+        "/items/csn/1/override", data={"dispatch_policy": "urgent"}, follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT dispatch_policy FROM items WHERE source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row[0] == "informational"
+
+
 def test_rearm_action_redirects(client, conn):
+    _configure_beacon(conn)
     _insert_item(conn, "csn", "1")
 
     response = client.post(
@@ -95,6 +128,17 @@ def test_rearm_action_redirects(client, conn):
 
     assert response.status_code == 303
     assert response.headers["location"].startswith("/items/csn/1")
+
+
+def test_rearm_action_blocked_when_beacon_not_configured(client, conn):
+    _insert_item(conn, "csn", "1")
+
+    response = client.post(
+        "/items/csn/1/rearm", data={"consumer": "log"}, follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
 
 
 def test_policies_list_returns_200(client):

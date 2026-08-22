@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import RedirectResponse
 
 from .. import queries
+from ..beacon import is_beacon_configured
 from ..config import UI_DEFAULT_CONSUMER_NAME, UI_PAGE_SIZE
 from ..db import get_db
 from ..templating import templates
@@ -100,6 +101,11 @@ def override_item_action(
     dispatch_policy: str = Form(...),
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    if not is_beacon_configured(conn):
+        error = "beacon identity not configured — set it up before overriding dispatch_policy"
+        return RedirectResponse(
+            url=f"/items/{source}/{item_id}?{urlencode({'error': error})}", status_code=303
+        )
     updated = override_item(conn, source, item_id, dispatch_policy=dispatch_policy)
     msg = "dispatch_policy updated" if updated else "item not found — nothing updated"
     return RedirectResponse(
@@ -114,6 +120,11 @@ def rearm_item_action(
     consumer: str = Form(...),
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    if not is_beacon_configured(conn):
+        error = "beacon identity not configured — set it up before re-arming"
+        return RedirectResponse(
+            url=f"/items/{source}/{item_id}?{urlencode({'error': error})}", status_code=303
+        )
     rearmed = rearm_item(conn, consumer, source, item_id)
     msg = (
         f"re-armed for consumer={consumer}"
