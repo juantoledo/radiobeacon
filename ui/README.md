@@ -94,15 +94,14 @@ entirely.
 ## No authentication
 
 This first version has no login system — it's meant to be reached only
-from `localhost` or a trusted network, the same convention
-[mq/](../mq/README.md) uses for its broker port. `ui/start.sh` binds
-`127.0.0.1` by default; the Docker Compose setup below publishes the
-container's port to `127.0.0.1` only, for the same reason. Since it can
-trigger write actions against `storage/radiobeacon.db`, don't expose this
-beyond a trusted network without adding auth first — this goes double for
-`/dev` (raw item add/edit/delete), which you may also want to disable
-outright via `UI_DEV_TOOLS_ENABLED=false` on any deployment where you
-don't need it.
+from `localhost` or a trusted network. `ui/start.sh` binds `127.0.0.1` by
+default; the Docker Compose setup below publishes the container's port on
+all host interfaces (e.g. `192.168.200.145:8000`) so it's reachable from
+the LAN. Since it can trigger write actions against
+`storage/radiobeacon.db`, don't expose this beyond a trusted network
+without adding auth first — this goes double for `/dev` (raw item add/
+edit/delete), which you may also want to disable outright via
+`UI_DEV_TOOLS_ENABLED=false` on any deployment where you don't need it.
 
 ## Usage
 
@@ -148,11 +147,14 @@ or, without Compose:
 
 ```bash
 docker build -f ui/Dockerfile -t radiobeacon-ui .
-docker run --rm -p 127.0.0.1:8000:8000 \
+docker run --rm -p 8000:8000 \
   -v "$(pwd)/storage:/app/storage" \
   -e UI_HOST=0.0.0.0 -e UI_DB_PATH=/app/storage/radiobeacon.db \
   radiobeacon-ui
 ```
+
+Use `-p 127.0.0.1:8000:8000` instead if you want it reachable only from
+`localhost`, not the LAN.
 
 The `storage/` directory is bind-mounted read-write (not a named volume,
 and not `:ro`) — the UI writes to `radiobeacon.db` via its override/rearm/
@@ -160,8 +162,9 @@ policy actions, and this is the same file every other process (Dockerized
 or not) reads and writes, so it has to be the real one on disk, not a
 container-private copy. `UI_HOST=0.0.0.0` is required for the app to be
 reachable through the container's port mapping — `127.0.0.1` inside the
-container is unreachable from outside it; the `ports:`/`-p` loopback
-binding is what actually restricts host-side access.
+container is unreachable from outside it; the `ports:`/`-p` binding is
+what actually controls host-side access (loopback-only vs. all
+interfaces).
 
 ## Tests
 

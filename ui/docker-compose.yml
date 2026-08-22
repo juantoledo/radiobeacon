@@ -6,14 +6,15 @@ services:
     container_name: radiobeacon-ui
     restart: unless-stopped
     ports:
-      # Loopback-only, matching mq/docker-compose.yml's convention — this
-      # module has no auth of its own yet (see ui/README.md).
-      - "127.0.0.1:8000:8000"
+      # Published on all host interfaces so it's reachable from the LAN
+      # (e.g. 192.168.200.145:8000). This module still has no auth of its
+      # own (see ui/README.md) — only do this on a trusted network.
+      - "8000:8000"
     environment:
       # Bind all interfaces inside the container; the ports: mapping
-      # above is what actually restricts host access to loopback — same
-      # split mq/ uses (mosquitto binds all interfaces, the host-side
-      # mapping is what's loopback-only).
+      # above is what actually controls host-side access — same split
+      # mq/ uses (mosquitto binds all interfaces, the host-side mapping
+      # decides how far that reaches).
       - UI_HOST=0.0.0.0
       - UI_DB_PATH=/app/storage/radiobeacon.db
     env_file:
