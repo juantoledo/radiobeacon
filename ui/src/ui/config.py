@@ -3,7 +3,7 @@ Naming/prefix convention matches every other package (ADAPTERS_*,
 DISPATCHER_*, ACTIONS_*)."""
 import os
 
-UI_HOST = os.environ.get("UI_HOST", "127.0.0.1")
+UI_HOST = os.environ.get("UI_HOST", "0.0.0.0")
 UI_PORT = int(os.environ.get("UI_PORT", "8000"))
 
 # None means "use adapters.storage.DEFAULT_DB_PATH" — resolved in db.py,

@@ -94,10 +94,10 @@ entirely.
 ## No authentication
 
 This first version has no login system — it's meant to be reached only
-from `localhost` or a trusted network. `ui/start.sh` binds `127.0.0.1` by
-default; the Docker Compose setup below publishes the container's port on
-all host interfaces (e.g. `192.168.200.145:8000`) so it's reachable from
-the LAN. Since it can trigger write actions against
+from `localhost` or a trusted network. `ui/start.sh` binds `0.0.0.0` by
+default (all interfaces, reachable from the LAN, e.g.
+`192.168.200.145:8000`); set `UI_HOST=127.0.0.1` to keep it loopback-only
+instead. Since it can trigger write actions against
 `storage/radiobeacon.db`, don't expose this beyond a trusted network
 without adding auth first — this goes double for `/dev` (raw item add/
 edit/delete), which you may also want to disable outright via
@@ -111,7 +111,8 @@ edit/delete), which you may also want to disable outright via
 
 Same pattern as every other package's `start.sh`: creates a `.venv`,
 installs `requirements.txt`, loads `../.env`, then `exec`s into Uvicorn
-(`PYTHONPATH=src python3 -m ui`). Visit `http://127.0.0.1:8000`.
+(`PYTHONPATH=src python3 -m ui`). Visit `http://127.0.0.1:8000` (or
+whatever LAN address it's reachable at — see "No authentication" above).
 `Ctrl+C`/`SIGTERM` stops it cleanly.
 
 ## Configuration
@@ -120,7 +121,7 @@ Env vars, in `.env` at the repo root (see `.env.example`).
 
 | var | default |
 |---|---|
-| `UI_HOST` | `127.0.0.1` |
+| `UI_HOST` | `0.0.0.0` |
 | `UI_PORT` | `8000` |
 | `UI_DB_PATH` | *(unset — uses `adapters.storage.DEFAULT_DB_PATH`, `storage/radiobeacon.db`)* |
 | `UI_PAGE_SIZE` | `50` |
