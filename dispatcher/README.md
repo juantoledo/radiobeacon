@@ -164,10 +164,15 @@ itself:
 `adapter.fetch`, `item.stored`, `policy.set`, `policy.deleted` are
 recorded in `audit_log` but never published here.
 
-Disabled by default — set `DISPATCHER_MQ_HOST` to enable (see
-`.env.example`); leave it unset and no connection is ever attempted. See
-[mq/README.md](../mq/README.md) for the local Mosquitto broker this is
-meant to point at.
+Enabled by default (`DISPATCHER_MQ_HOST=localhost`, see `.env.example`) —
+leave it unset/commented out to disable, in which case no connection is
+ever attempted. This is also the only way `actions/` (chunk, ai) learns
+about new or re-armed items: it subscribes to the same
+`radiobeacon/events/item.dispatched` topic published here, so disabling
+this leaves `actions` permanently idle even if it and the broker are
+both running. See [mq/README.md](../mq/README.md) for the local
+Mosquitto broker this points at by default (`bootstrap.sh` starts it
+automatically).
 
 Each event is published to the topic `radiobeacon/events/<event_type>`
 (e.g. `radiobeacon/events/item.dispatched`) — subscribe to
@@ -225,7 +230,7 @@ see "Managing policies" above.
 |---|---|
 | `DISPATCHER_INTERVAL_SECONDS` | `5` |
 | `DISPATCHER_CONSUMER_NAME` | `log` |
-| `DISPATCHER_MQ_HOST` | *(unset — MQTT publishing disabled)* |
+| `DISPATCHER_MQ_HOST` | `localhost` |
 | `DISPATCHER_MQ_PORT` | `1883` |
 | `DISPATCHER_MQ_QOS` | `1` |
 | `DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS` | `5` |
