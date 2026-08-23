@@ -624,7 +624,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "dropped to make room for new content. Frame content is one slot "
         "per CHUNK, not per item — a real SENAPRED report has produced 57 "
         "chunks on its own, so keep this comfortably above the largest "
-        "item you expect.",
+        "item you expect. Applies live — no restart needed.",
         "int",
         "200",
     ),

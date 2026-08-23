@@ -39,8 +39,8 @@ def _normalize_unicode_escapes(text: str) -> str:
 
 def _wrap_with_part_markers(contents: str, max_chars: int) -> list[str]:
     """Word-boundary-safe split (textwrap.wrap), then -- only when it
-    actually produced more than one piece -- prefixes each with a 1-based
-    "i/n " part marker (e.g. "1/2 ", "2/2 ") baked directly into the
+    actually produced more than one piece -- suffixes each with a 1-based
+    " i/n" part marker (e.g. " 1/2", " 2/2") baked directly into the
     stored chunk text, so a listener catching just one AX.25 frame out of
     several knows its place in the sequence. A single-piece result is
     left unmarked ("1/1" would be pure noise). Distinct from the stored
@@ -60,14 +60,14 @@ def _wrap_with_part_markers(contents: str, max_chars: int) -> list[str]:
     if len(unmarked) <= 1:
         return unmarked
 
-    marker_width = len(f"{len(unmarked)}/{len(unmarked)} ")
+    marker_width = len(f" {len(unmarked)}/{len(unmarked)}")
     narrowed_width = max(1, max_chars - marker_width)
     pieces = textwrap.wrap(contents, width=narrowed_width, break_long_words=False, break_on_hyphens=False)
     if len(pieces) <= 1:
         return pieces
 
     total = len(pieces)
-    return [f"{i}/{total} {piece}" for i, piece in enumerate(pieces, start=1)]
+    return [f"{piece} {i}/{total}" for i, piece in enumerate(pieces, start=1)]
 
 
 def _effective_max_chars(conn: sqlite3.Connection, configured_max_chars: int) -> int:
@@ -120,8 +120,8 @@ class ChunkAction(Action):
     (ai always publishes — see ai.py's own docstring for why). Looks up
     the item's summary (preferred) or extracted_contents (fallback,
     mirroring beacon.content.resolve_voice_text's exact pattern) and
-    splits it into small, word-boundary-safe chunks (each one prefixed
-    with a "i/n " part marker when there's more than one — see
+    splits it into small, word-boundary-safe chunks (each one suffixed
+    with a " i/n" part marker when there's more than one — see
     _wrap_with_part_markers), durably stored (in order) in the `chunks`
     table — queryable via
     `query_history.sh chunks <source> <item_id>`. Only once every chunk

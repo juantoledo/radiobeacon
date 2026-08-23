@@ -109,7 +109,12 @@ status heartbeat for the drain's duration; `BEACON_QUEUE_MAX_SIZE`
 (default 200 — sized for frame content, where one queue slot is one
 *chunk*, not one item; a real SENAPRED report has been observed
 producing 57 chunks on its own) bounds the worst case to that many
-sequential transmissions before control returns. A deliberate tradeoff —
+sequential transmissions before control returns. Re-applied every tick
+via `BoundedDropOldestQueue.set_maxsize` (`src/beacon/queues.py`), not
+just read once at process start — a `/config` edit takes effect
+immediately, same as every other beacon setting; shrinking it live drops
+the oldest excess items right away rather than waiting for the next
+`put()`. A deliberate tradeoff —
 full-drain priority over strict timing — not an oversight.
 
 ## Enable / disable ("start/stop/restart")

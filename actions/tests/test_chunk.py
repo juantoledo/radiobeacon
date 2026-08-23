@@ -265,14 +265,14 @@ def test_wrap_with_part_markers_no_marker_for_single_piece():
     assert pieces == ["a short piece of text"]
 
 
-def test_wrap_with_part_markers_prefixes_each_piece(tmp_path):
+def test_wrap_with_part_markers_suffixes_each_piece(tmp_path):
     text = "one two three four five six seven eight nine ten"
     pieces = _wrap_with_part_markers(text, max_chars=20)
 
     assert len(pieces) > 1
     total = len(pieces)
     for i, piece in enumerate(pieces, start=1):
-        assert piece.startswith(f"{i}/{total} ")
+        assert piece.endswith(f" {i}/{total}")
 
 
 def test_wrap_with_part_markers_respects_max_chars_budget():
@@ -289,7 +289,7 @@ def test_wrap_with_part_markers_content_recoverable_after_stripping_marker():
     text = "one two three four five six seven eight nine ten"
     pieces = _wrap_with_part_markers(text, max_chars=20)
 
-    stripped = " ".join(piece.split(" ", 1)[1] for piece in pieces)
+    stripped = " ".join(piece.rsplit(" ", 1)[0] for piece in pieces)
     assert stripped == text  # word-boundary splits, rejoined with a single space
 
 
@@ -304,7 +304,7 @@ def test_chunk_stores_part_markers_in_stored_text_for_multi_chunk_item(tmp_path,
     assert len(stored) > 1
     total = len(stored)
     for i, chunk in enumerate(stored, start=1):
-        assert chunk["text"].startswith(f"{i}/{total} ")
+        assert chunk["text"].endswith(f" {i}/{total}")
 
 
 def test_chunk_does_not_add_marker_for_single_chunk_item(tmp_path, monkeypatch):

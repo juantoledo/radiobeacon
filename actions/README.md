@@ -51,8 +51,8 @@ consumers, same as anything else on the broker.)
   (`adapters.ax25.max_frame_content_bytes`) if the current beacon
   callsign/destination/prefix/suffix would otherwise risk an assembled
   AX.25 frame exceeding its ~256-byte limit (see CONTEXT.md). When
-  content splits into more than one chunk, each is prefixed with a
-  1-based "i/n " part marker (e.g. "1/3 ", "2/3 ", "3/3 ") baked directly
+  content splits into more than one chunk, each is suffixed with a
+  1-based " i/n" part marker (e.g. " 1/3", " 2/3", " 3/3") baked directly
   into the stored/transmitted text, so a listener catching only one
   AX.25 frame out of several knows its place in the sequence — a single
   chunk is left unmarked. Every chunk is durably stored, in order, in

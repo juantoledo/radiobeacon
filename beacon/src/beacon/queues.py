@@ -1,7 +1,10 @@
 """Bounded, thread-safe, drop-oldest FIFO queue. Two independent instances
 (voice_queue, frame_queue) get constructed in __main__.py — both fed by
 the MQTT client's background thread (paho's loop_start()), both drained by
-the main TDMA-loop thread.
+the main TDMA-loop thread. __main__.py's TDMA loop re-applies
+BEACON_QUEUE_MAX_SIZE via set_maxsize() every tick, so capacity is
+live-editable like every other beacon setting — maxsize is NOT fixed at
+whatever it was when the queue was constructed.
 
 Backed by collections.deque + a plain lock, not queue.Queue: stdlib
 queue.Queue only offers reject-new (put_nowait raising Full) or blocking
@@ -37,6 +40,23 @@ class BoundedDropOldestQueue(Generic[T]):
         self._items: deque[T] = deque()
         self._lock = threading.Lock()
         self._dropped_total = 0
+
+    def set_maxsize(self, maxsize: int) -> None:
+        """Adjusts capacity on the already-running queue -- lets
+        BEACON_QUEUE_MAX_SIZE be edited via /config and take effect
+        immediately, matching every other beacon setting's live-editable
+        convention, instead of only applying to a queue constructed fresh
+        at the next process restart. If the new size is smaller than the
+        current backlog, the oldest excess items are dropped right away
+        (counted in dropped_total, same as a normal put()-triggered
+        drop) rather than left to overflow lazily on the next put()."""
+        if maxsize <= 0:
+            raise ValueError("maxsize must be > 0")
+        with self._lock:
+            self._maxsize = maxsize
+            while len(self._items) > self._maxsize:
+                self._items.popleft()
+                self._dropped_total += 1
 
     def put(self, item: T) -> bool:
         """Returns True if nothing was dropped, False if the queue was

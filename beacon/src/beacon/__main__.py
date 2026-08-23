@@ -561,9 +561,6 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
         direwolf_name = get_setting("BEACON_DIREWOLF_SERVICE_NAME", "direwolf", conn=conn)
         wav_dir = get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
         tts_voice = get_setting("BEACON_TTS_VOICE", "es", conn=conn)
-        destination = get_setting("BEACON_FRAME_DESTINATION", "WXALRT", conn=conn)
-        frame_prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
-        frame_suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
 
         last_voice_cycle: int | None = None
         last_frame_cycle: int | None = None
@@ -601,6 +598,20 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
             date_format = get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn)
             voice_inter_tx_delay = float(get_setting("BEACON_VOICE_INTER_TX_DELAY_SECONDS", "2", conn=conn))
             frame_inter_tx_delay = float(get_setting("BEACON_FRAME_INTER_TX_DELAY_SECONDS", "2", conn=conn))
+            # Moved here from the one-time setup block above (same bug
+            # class as BEACON_QUEUE_MAX_SIZE, see set_maxsize's docstring)
+            # -- a /config edit now takes effect on the very next tick.
+            destination = get_setting("BEACON_FRAME_DESTINATION", "WXALRT", conn=conn)
+            frame_prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
+            frame_suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
+
+            # Re-applied every tick (not just read once at process start
+            # in main()) so a /config edit takes effect immediately,
+            # matching every other beacon setting -- see queues.py's
+            # set_maxsize docstring for why this one previously didn't.
+            queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", "200", conn=conn))
+            voice_queue.set_maxsize(queue_max_size)
+            frame_queue.set_maxsize(queue_max_size)
 
             if now - last_ntp_check_at >= ntp_interval:
                 _run_ntp_check(conn)
