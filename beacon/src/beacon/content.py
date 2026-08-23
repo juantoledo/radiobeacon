@@ -13,12 +13,12 @@ It also means a later rearm, or the item's summary changing between
 enqueue and transmit, is naturally reflected: whatever's true right now
 is what gets sent.
 
-Also: actions.ai structurally skips summarization for content already at
-or under ACTIONS_AI_MAX_CHARS ("nothing meaningful to condense") — CSN's
-own `contents` (a short templated string) is almost always under that
-threshold, so CSN items never produce a summary regardless of whether AI
-is enabled. resolve_voice_text's summary-else-extracted_contents fallback
-is what keeps CSN (and any other structurally-short source) voice-able."""
+Also: actions.ai ALWAYS populates items.summary once an item has
+extracted_contents — copying extracted_contents in verbatim when there's
+nothing meaningful to condense (AI disabled, content already at or under
+ACTIONS_AI_MAX_CHARS, bad provider config) rather than leaving summary
+NULL (see ai.py). resolve_voice_text can therefore read items.summary
+unconditionally, with no extracted_contents fallback of its own."""
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -53,17 +53,16 @@ def resolve_frame_text(conn: sqlite3.Connection, source: str, item_id: str, chun
 
 
 def resolve_voice_text(conn: sqlite3.Connection, source: str, item_id: str) -> str | None:
-    """items.summary if AI has produced one by now, else
-    items.extracted_contents (the CSN/AI-disabled fallback). None if the
-    item itself is gone, or has no content either way."""
+    """items.summary, read unconditionally — actions.ai guarantees it's
+    populated (a real summary, or extracted_contents copied in verbatim)
+    by the time item.content_ready fires. None if the item itself is
+    gone, or summary is still NULL (e.g. an item from before this
+    guarantee existed, never reprocessed)."""
     row = conn.execute(
-        "SELECT summary, extracted_contents FROM items WHERE source = ? AND item_id = ?",
+        "SELECT summary FROM items WHERE source = ? AND item_id = ?",
         (source, item_id),
     ).fetchone()
-    if row is None:
-        return None
-    summary, extracted_contents = row
-    return summary if summary else extracted_contents
+    return row[0] if row is not None else None
 
 
 def resolve_source_date_time(conn: sqlite3.Connection, source: str, item_id: str) -> datetime | None:

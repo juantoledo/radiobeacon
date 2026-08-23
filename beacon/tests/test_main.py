@@ -569,7 +569,12 @@ def test_try_transmit_voice_skips_when_no_callsign(tmp_path):
 def test_try_transmit_voice_uses_resolved_content_and_transmits(tmp_path, monkeypatch):
     monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
     conn = get_connection(tmp_path / "radiobeacon.db")
-    _insert_item(conn, "csn", "1", extracted_contents="Sismo de magnitud 4.2.")
+    # actions.ai always populates summary now (an identity copy of
+    # extracted_contents when there's nothing to condense) -- resolve_voice_text
+    # reads summary unconditionally, with no extracted_contents fallback of its own.
+    _insert_item(
+        conn, "csn", "1", extracted_contents="Sismo de magnitud 4.2.", summary="Sismo de magnitud 4.2."
+    )
     voice_queue = BoundedDropOldestQueue(10)
     voice_queue.put(QueuedVoice(source="csn", item_id="1"))
     transmitter = _StubVoiceTransmitter()
@@ -591,7 +596,12 @@ def test_try_transmit_voice_resolves_and_renders_date_end_to_end(tmp_path, monke
     conn = get_connection(tmp_path / "radiobeacon.db")
     dt = datetime(2026, 8, 22, 14, 30, tzinfo=timezone.utc)
     _insert_item(
-        conn, "csn", "1", extracted_contents="Sismo de magnitud 4.2.", source_date_time=dt.isoformat()
+        conn,
+        "csn",
+        "1",
+        extracted_contents="Sismo de magnitud 4.2.",
+        summary="Sismo de magnitud 4.2.",
+        source_date_time=dt.isoformat(),
     )
     voice_queue = BoundedDropOldestQueue(10)
     voice_queue.put(QueuedVoice(source="csn", item_id="1"))

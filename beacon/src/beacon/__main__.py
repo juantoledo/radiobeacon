@@ -15,8 +15,10 @@ meaning the `chunks` table already reflects the best available content
 by the time content_ready fires. Frame enqueue is therefore simple: one
 QueuedFrame per existing chunks row, always — no special-casing needed
 here for whether a summary existed. Voice always gets one QueuedVoice —
-its own resolve_voice_text independently prefers items.summary, falling
-back to extracted_contents, at transmit time. See content.py for how the
+its own resolve_voice_text reads items.summary directly at transmit
+time, with no fallback of its own: actions.ai now guarantees summary is
+always populated (a real summary, or extracted_contents copied in
+verbatim) by the time content_ready fires. See content.py for how the
 actual text gets resolved (lazily, at transmit time, not baked in at
 enqueue time) and formatters.py for why length limits reuse
 ACTIONS_CHUNK_MAX_CHARS/ACTIONS_AI_MAX_CHARS instead of new

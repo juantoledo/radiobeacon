@@ -51,48 +51,78 @@ def _call_ollama(prompt: str, model: str, host: str) -> str:
     return response["message"]["content"]
 
 
+def _store_summary_or_log(conn: sqlite3.Connection, source: str, item_id: str, summary: str) -> bool:
+    """Wraps store_summary with the shared no-op-guard log line -- used
+    both when storing a real provider-produced summary and when storing
+    an identity copy of extracted_contents on a skip path. A no-op means
+    the item vanished (or its key changed) between AiAction's own SELECT
+    and this call, e.g. raced by a concurrent adapter re-poll."""
+    if store_summary(conn, source, item_id, summary):
+        return True
+    logger.error(
+        "ai: source=%s item_id=%s store_summary found no matching row -- "
+        "summary NOT persisted, skipping",
+        source,
+        item_id,
+    )
+    return False
+
+
 class AiAction(Action):
     """On an item.dispatched-shaped event, looks up the item and asks a
     configured LLM provider (OpenAI, Claude, or a self-hosted Ollama) to
-    summarize it, storing the result in items.summary (adapters.storage.
-    store_summary) and publishing a single CloudEvent to its output topic
-    (item.ai_settled by default) carrying a `summarized` flag plus, when
-    true, the summary text itself.
+    summarize it, ALWAYS storing a result in items.summary (adapters.
+    storage.store_summary) and publishing a single CloudEvent to its
+    output topic (item.ai_settled by default) carrying a `summarized`
+    flag plus, when true, the summary text itself.
+
+    items.summary is populated on every run that finds a real item with
+    extracted_contents — even when there's nothing to actually condense
+    (AI disabled, content already short, bad provider config): in those
+    cases extracted_contents is copied into summary verbatim rather than
+    left NULL. This makes summary a reliable single source of truth for
+    downstream consumers — most importantly beacon.content.
+    resolve_voice_text, which reads items.summary unconditionally with no
+    fallback to extracted_contents (see content.py). `summarized` keeps
+    its original meaning throughout: True only when a provider actually
+    ran and condensed the text; False on every skip path, identity-copy
+    or not.
 
     Unlike most actions, this one ALWAYS publishes once it has a valid
     (source, item_id) — even when it decided there's nothing to
-    summarize (disabled, item not found, no content, content already
-    short, bad provider config, or a successful provider call whose
-    store_summary write turned out to be a no-op — see run()): `summarized:
-    False` in all of those cases. This is deliberate, not an accident:
-    actions.chunk subscribes
-    to this action's output topic (not item.dispatched directly) so it
-    only ever chunks AFTER ai has settled — preferring the summary when
-    one exists (see chunk.py). If ai stayed silent on every skip path
-    (as it used to, returning [] to mean "nothing happened"), chunk would
-    never fire at all whenever ACTIONS_AI_ENABLED=false — the *default*
-    out-of-the-box state — breaking frame content on a fresh clone. Only
-    a genuinely malformed event (missing source/item_id entirely) still
-    returns [] — there's no (source, item_id) to publish about, and
-    chunk's own independent item lookup would find nothing useful either
-    way.
+    summarize (item not found, no content, or a store_summary write that
+    turned out to be a no-op — see run()): `summarized: False` in all of
+    those cases. This is deliberate, not an accident: actions.chunk
+    subscribes to this action's output topic (not item.dispatched
+    directly) so it only ever chunks AFTER ai has settled — preferring
+    the summary when one exists (see chunk.py). If ai stayed silent on
+    every skip path (as it used to, returning [] to mean "nothing
+    happened"), chunk would never fire at all whenever
+    ACTIONS_AI_ENABLED=false — the *default* out-of-the-box state —
+    breaking frame content on a fresh clone. Only a genuinely malformed
+    event (missing source/item_id entirely) still returns [] — there's
+    no (source, item_id) to publish about, and chunk's own independent
+    item lookup would find nothing useful either way.
 
     Disabled by default (ACTIONS_AI_ENABLED=false) since, unlike chunk,
-    this action has a real per-call cost (a paid API, or a hard
-    dependency on a local Ollama install) — opt in explicitly.
+    real summarization has a per-call cost (a paid API, or a hard
+    dependency on a local Ollama install) — opt in explicitly. Disabled
+    (or any other skip condition) no longer means summary stays empty —
+    only that the provider is never called.
 
     ACTIONS_AI_MAX_CHARS (default 200 — matches ACTIONS_CHUNK_MAX_CHARS's
     default exactly, so both channels share one length budget instead of
     two numbers that happen to both bound length) is a skip threshold on
-    the INPUT,
-    not a cap on the output: if extracted_contents is already at or under
-    that length, there's nothing meaningful to condense, so the provider
-    is never called at all — cheaper than calling it and getting back
-    something close to the original. Whatever the provider actually
-    returns is stored and published verbatim (stripped of surrounding
-    whitespace only) — never truncated. A model asked to chop its own
-    answer to fit a length is far less likely to cut it mid-sentence than
-    a hard slice would; see the prompt's own "en 2 a 3 oraciones" framing.
+    the INPUT, not a cap on the output: if extracted_contents is already
+    at or under that length, there's nothing meaningful to condense, so
+    the provider is never called at all — cheaper than calling it and
+    getting back something close to the original; extracted_contents is
+    copied into summary as-is instead. Whatever the provider actually
+    returns, when it does run, is stored and published verbatim (stripped
+    of surrounding whitespace only) — never truncated. A model asked to
+    chop its own answer to fit a length is far less likely to cut it
+    mid-sentence than a hard slice would; see the prompt's own "en 2 a 3
+    oraciones" framing.
 
     A provider call failure (network error, bad API key, ...) is
     deliberately NOT caught here and propagates out of run(). __main__.py
@@ -109,9 +139,6 @@ class AiAction(Action):
         if not source or not item_id:
             logger.warning("ai: event missing source/item_id, skipping: %r", data)
             return []
-
-        if get_setting("ACTIONS_AI_ENABLED", "false", conn=conn).lower() != "true":
-            return [{"source": source, "item_id": item_id, "summarized": False}]
 
         row = conn.execute(
             "SELECT extracted_title, extracted_contents, url, type, subtype "
@@ -130,23 +157,26 @@ class AiAction(Action):
             return [{"source": source, "item_id": item_id, "summarized": False}]
 
         max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "200", conn=conn))
-        if len(extracted_contents) <= max_chars:
+        provider = get_setting("ACTIONS_AI_PROVIDER", conn=conn)
+
+        skip_reason = None
+        if get_setting("ACTIONS_AI_ENABLED", "false", conn=conn).lower() != "true":
+            skip_reason = "ACTIONS_AI_ENABLED is not true"
+        elif len(extracted_contents) <= max_chars:
+            skip_reason = f"extracted_contents already <= {max_chars} chars, nothing to summarize"
+        elif provider not in ("openai", "claude", "ollama"):
+            skip_reason = (
+                f"ACTIONS_AI_PROVIDER={provider!r} invalid (must be openai, claude, or ollama)"
+            )
+
+        if skip_reason is not None:
             logger.info(
-                "ai: source=%s item_id=%s extracted_contents already <= %d chars, "
-                "nothing to summarize, skipping",
+                "ai: source=%s item_id=%s %s, storing extracted_contents as summary verbatim",
                 source,
                 item_id,
-                max_chars,
+                skip_reason,
             )
-            return [{"source": source, "item_id": item_id, "summarized": False}]
-
-        provider = get_setting("ACTIONS_AI_PROVIDER", conn=conn)
-        if provider not in ("openai", "claude", "ollama"):
-            logger.error(
-                "ai: ACTIONS_AI_PROVIDER=%r invalid (must be openai, claude, or ollama), "
-                "skipping",
-                provider,
-            )
+            _store_summary_or_log(conn, source, item_id, extracted_contents)
             return [{"source": source, "item_id": item_id, "summarized": False}]
 
         prompt_template = get_setting("ACTIONS_AI_PROMPT", _DEFAULT_PROMPT, conn=conn)
@@ -173,7 +203,7 @@ class AiAction(Action):
 
         summary = summary.strip()
 
-        if not store_summary(conn, source, item_id, summary):
+        if not _store_summary_or_log(conn, source, item_id, summary):
             # store_summary's UPDATE matched no row -- the item vanished
             # (or its (source, item_id) key changed) between the SELECT
             # above and here, e.g. raced by a concurrent adapter re-poll
@@ -185,11 +215,6 @@ class AiAction(Action):
             # success. Treating it as an ordinary skip (summarized: False)
             # keeps that contract honest and matches every other skip path
             # above, which already publish rather than raise.
-            logger.error(
-                "ai: source=%s item_id=%s store_summary found no matching row -- "
-                "summary NOT persisted, skipping",
-                source, item_id,
-            )
             return [{"source": source, "item_id": item_id, "summarized": False}]
 
         logger.info(

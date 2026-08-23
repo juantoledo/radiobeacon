@@ -29,13 +29,16 @@ def test_resolve_voice_text_prefers_summary_when_present(tmp_path):
     assert resolve_voice_text(conn, "senapred", "1") == "AI summary"
 
 
-def test_resolve_voice_text_falls_back_to_extracted_contents_when_no_summary(tmp_path):
-    """The CSN scenario: AI never summarizes structurally-short content,
-    so summary stays NULL forever -- voice must still work."""
+def test_resolve_voice_text_returns_none_when_summary_is_null_even_with_extracted_contents(tmp_path):
+    """actions.ai now guarantees summary is populated (real or an
+    identity copy of extracted_contents) whenever extracted_contents
+    exists, so resolve_voice_text no longer falls back on its own --
+    NULL summary means NULL, even if extracted_contents is set (e.g. an
+    item predating that guarantee, never reprocessed)."""
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_item(conn, "csn", "1", extracted_contents="Sismo de magnitud 4.2.", summary=None)
 
-    assert resolve_voice_text(conn, "csn", "1") == "Sismo de magnitud 4.2."
+    assert resolve_voice_text(conn, "csn", "1") is None
 
 
 def test_resolve_voice_text_returns_none_when_item_gone(tmp_path):

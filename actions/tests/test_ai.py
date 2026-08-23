@@ -85,7 +85,7 @@ def test_ai_still_publishes_summarized_false_when_disabled(tmp_path, monkeypatch
 
     assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
     assert called == []
-    assert _stored_summary(conn, "senapred", "1") is None
+    assert _stored_summary(conn, "senapred", "1") == "Some contents."
 
     monkeypatch.setenv("ACTIONS_AI_ENABLED", "false")
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
@@ -158,7 +158,7 @@ def test_ai_skips_when_extracted_contents_already_within_max_chars(tmp_path, mon
 
     assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
     assert called == []
-    assert _stored_summary(conn, "senapred", "1") is None
+    assert _stored_summary(conn, "senapred", "1") == "Short contents, well under the limit."
 
 
 def test_ai_skips_when_item_not_found(tmp_path, monkeypatch):
@@ -200,7 +200,7 @@ def test_ai_skips_when_provider_env_var_unset_or_invalid(tmp_path, monkeypatch, 
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
     assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
-    assert _stored_summary(conn, "senapred", "1") is None
+    assert _stored_summary(conn, "senapred", "1") == "Some contents."
 
 
 def test_ai_propagates_provider_call_errors(tmp_path, monkeypatch):

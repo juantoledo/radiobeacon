@@ -118,9 +118,11 @@ class ChunkAction(Action):
     item.dispatched directly — so this always runs AFTER ai has settled
     for the same dispatch, whether or not it actually produced a summary
     (ai always publishes — see ai.py's own docstring for why). Looks up
-    the item's summary (preferred) or extracted_contents (fallback,
-    mirroring beacon.content.resolve_voice_text's exact pattern) and
-    splits it into small, word-boundary-safe chunks (each one suffixed
+    the item's summary (preferred) or extracted_contents (fallback —
+    ai.py now always populates summary once extracted_contents exists,
+    so this fallback is a belt-and-suspenders guard rather than a
+    load-bearing path) and splits it into small, word-boundary-safe
+    chunks (each one suffixed
     with a " i/n" part marker when there's more than one — see
     _wrap_with_part_markers), durably stored (in order) in the `chunks`
     table — queryable via
