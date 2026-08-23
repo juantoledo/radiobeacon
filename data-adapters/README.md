@@ -40,6 +40,32 @@ New adapters are picked up automatically: `discover_adapters()`
 `DataSourceAdapter` subclasses, so adding one just means adding a new
 submodule — no registration step.
 
+## Sources table
+
+`sources (source PRIMARY KEY, display_name, site_url, updated_at)` —
+per-source display metadata, distinct from an adapter's own internal
+settings (`ADAPTERS_CSN_*`/`ADAPTERS_SENAPRED_*`, above) and from any one
+item's own `url` (for SENAPRED, a per-alert link that changes every
+item). `beacon`'s `{source_name}`/`{source_url}` template placeholders
+(`BEACON_FRAME_PREFIX`/`SUFFIX`, `BEACON_VOICE_PREFIX`/`SUFFIX`/`TEMPLATE`
+— see [beacon/README.md](../beacon/README.md)) read straight from this
+table via `adapters.storage.get_source_fields`; an item's `source_name`
+is looked up fresh at transmit/chunk time, same as everything else in
+that placeholder set. A source with no row falls back to its own raw key
+as `source_name` and `""` as `source_url`, rather than erroring.
+
+Seeded with `csn`/`senapred` on the very first `get_connection()` call
+against a database (see `_ensure_sources_seeded` in `storage.py`) — never
+re-seeded or reset once the table has any row, so an edit or deletion
+sticks. Managed with `sources.sh`, mirroring `dispatcher/policies.sh`'s
+shape exactly:
+
+```bash
+./sources.sh list
+./sources.sh set <source> --display-name "..." [--site-url "..."]
+./sources.sh delete <source>
+```
+
 ## Adapter contract
 
 Every adapter subclasses `DataSourceAdapter` (`src/adapters/base.py`) and

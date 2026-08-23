@@ -145,6 +145,40 @@ CREATE TABLE IF NOT EXISTS item_readiness (
 );
 """
 
+# sources holds per-source display metadata -- a human-readable name and a
+# general site URL -- distinct from items.source (the raw internal key,
+# e.g. "csn") and an individual item's own `url` (which for SENAPRED is a
+# per-alert link, not a general site). Read by both actions.chunk (the
+# AX.25 byte-budget clamp) and beacon.content/beacon.formatters (actual
+# {source_name}/{source_url} template rendering) -- lives here, not in
+# either of those sibling packages, for the same reason adapters.
+# templating/adapters.ax25 do: no import exists between actions and
+# beacon. Same shape as dispatcher's dispatch_policies table
+# (dispatcher/src/dispatcher/watcher.py), just keyed by `source` instead
+# of `name`, and seeded here (see _ensure_sources_seeded) rather than by a
+# dispatcher-only _ensure_tables(), since every package reaches this table
+# via the same get_connection() every other table here already goes
+# through.
+_CREATE_SOURCES = """
+CREATE TABLE IF NOT EXISTS sources (
+    source TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    site_url TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+# Seeded into `sources` on first get_connection() call, only if the table
+# is empty -- the starting set an operator can then edit via sources.sh
+# (list/set/delete), not by changing these constants. site_url here is
+# independent of (and happens to just match, today) ADAPTERS_CSN_SITE_URL,
+# which the CSN adapter uses internally for a different purpose (every
+# CSN item's own `url`, since CSN has no per-earthquake detail page).
+_SEED_SOURCES = (
+    ("csn", "Centro Sismológico Nacional", "https://www.sismologia.cl/"),
+    ("senapred", "Senapred", "https://senapred.cl/"),
+)
+
 # (old_column, new_column): renames applied in order to databases created
 # before a given schema change.
 _COLUMN_RENAMES = (
@@ -256,6 +290,8 @@ def get_connection(
         _ensure_settings_table(conn)
         _ensure_beacon_status_table(conn)
         _ensure_item_readiness_table(conn)
+        _ensure_sources_table(conn)
+        _ensure_sources_seeded(conn)
         conn.commit()
     except Exception:
         conn.close()
@@ -557,6 +593,93 @@ def get_item_ready_published_at(conn: sqlite3.Connection, source: str, item_id: 
         (source, item_id),
     ).fetchone()
     return row[0] if row is not None else None
+
+
+def _ensure_sources_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — same pattern as
+    _ensure_settings_table/_ensure_item_readiness_table."""
+    conn.execute(_CREATE_SOURCES)
+
+
+def _ensure_sources_seeded(conn: sqlite3.Connection) -> None:
+    """Inserts _SEED_SOURCES only if the table is empty — mirrors
+    dispatcher.policy.ensure_seeded exactly, so a fresh database starts
+    with csn/senapred already present, but an operator's later edits (or
+    deletions) via sources.sh are never overwritten on a subsequent
+    get_connection() call."""
+    _ensure_sources_table(conn)
+    count = conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+    if count == 0:
+        conn.executemany(
+            "INSERT INTO sources (source, display_name, site_url) VALUES (?, ?, ?)",
+            _SEED_SOURCES,
+        )
+        conn.commit()
+
+
+def get_source_fields(conn: sqlite3.Connection, source: str) -> dict[str, str]:
+    """{"source_name": ..., "source_url": ...} for template placeholders
+    (see beacon.content.resolve_item_fields / actions.chunk.ChunkAction).
+    A source with no row (never seeded, or deleted via sources.sh) falls
+    back to its own raw key as source_name and "" as source_url, rather
+    than erroring — fail-soft, same spirit as adapters.templating.
+    safe_format: a template referencing {source_name} for an unmanaged
+    source still renders something sane instead of crashing."""
+    _ensure_sources_table(conn)
+    row = conn.execute(
+        "SELECT display_name, site_url FROM sources WHERE source = ?", (source,)
+    ).fetchone()
+    if row is None:
+        return {"source_name": source, "source_url": ""}
+    display_name, site_url = row
+    return {"source_name": display_name, "source_url": site_url or ""}
+
+
+def set_source(
+    conn: sqlite3.Connection, source: str, display_name: str, site_url: str | None = None
+) -> None:
+    """Creates or replaces a source's display metadata — the actual
+    "manage these directly" surface (see data-adapters/sources.py).
+    Mirrors dispatcher.policy.set_policy's upsert-then-audit shape."""
+    _ensure_sources_table(conn)
+    conn.execute(
+        "INSERT INTO sources (source, display_name, site_url, updated_at) "
+        "VALUES (?, ?, ?, datetime('now')) "
+        "ON CONFLICT (source) DO UPDATE SET "
+        "display_name = excluded.display_name, "
+        "site_url = excluded.site_url, "
+        "updated_at = excluded.updated_at",
+        (source, display_name, site_url),
+    )
+    conn.commit()
+    record_audit_event(
+        conn,
+        event_type="source.set",
+        actor="data-adapters.sources",
+        source=source,
+        details={"display_name": display_name, "site_url": site_url},
+    )
+
+
+def list_sources(conn: sqlite3.Connection) -> list[tuple[str, str, str | None]]:
+    """Returns (source, display_name, site_url) rows, ordered by source."""
+    _ensure_sources_table(conn)
+    return conn.execute(
+        "SELECT source, display_name, site_url FROM sources ORDER BY source"
+    ).fetchall()
+
+
+def delete_source(conn: sqlite3.Connection, source: str) -> bool:
+    """Returns whether a row was actually deleted (False if unknown).
+    Mirrors dispatcher.policy.delete_policy."""
+    _ensure_sources_table(conn)
+    cursor = conn.execute("DELETE FROM sources WHERE source = ?", (source,))
+    conn.commit()
+    if cursor.rowcount > 0:
+        record_audit_event(
+            conn, event_type="source.deleted", actor="data-adapters.sources", source=source,
+        )
+    return cursor.rowcount > 0
 
 
 def _json_default(obj: Any) -> Any:

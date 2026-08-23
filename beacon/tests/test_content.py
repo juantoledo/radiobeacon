@@ -90,6 +90,7 @@ def test_resolve_item_fields_returns_all_present_fields(tmp_path):
     assert resolve_item_fields(conn, "senapred", "1") == {
         "type": "alerta", "subtype": "meteorologica",
         "extracted_title": "Alerta importante", "url": "https://example.com/a",
+        "source_name": "Senapred", "source_url": "https://senapred.cl/",
     }
 
 
@@ -99,6 +100,7 @@ def test_resolve_item_fields_coerces_null_columns_to_empty_strings(tmp_path):
 
     assert resolve_item_fields(conn, "csn", "1") == {
         "type": "", "subtype": "", "extracted_title": "", "url": "",
+        "source_name": "Centro Sismológico Nacional", "source_url": "https://www.sismologia.cl/",
     }
 
 
@@ -107,6 +109,7 @@ def test_resolve_item_fields_all_empty_when_item_gone(tmp_path):
 
     assert resolve_item_fields(conn, "csn", "does-not-exist") == {
         "type": "", "subtype": "", "extracted_title": "", "url": "",
+        "source_name": "Centro Sismológico Nacional", "source_url": "https://www.sismologia.cl/",
     }
 
 

@@ -707,6 +707,24 @@ def test_try_transmit_voice_renders_item_field_placeholder_in_template(tmp_path,
     assert transmitter.calls == ["[alerta] Sismo de magnitud 4.2."]
 
 
+def test_try_transmit_voice_renders_source_name_placeholder(tmp_path, monkeypatch):
+    """{source_name} comes from the `sources` table (seeded with csn/
+    senapred), not the item's own row."""
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", extracted_contents="raw", summary="Sismo de magnitud 4.2.")
+    voice_queue = BoundedDropOldestQueue(10)
+    voice_queue.put(QueuedVoice(source="csn", item_id="1"))
+    transmitter = _StubVoiceTransmitter()
+
+    main_module._try_transmit_voice(
+        conn, voice_queue, transmitter, "CD3DXZ-1", "{source_name}: {text}", 200,
+        str(tmp_path), "es", "%d-%m-%Y %H:%M",
+    )
+
+    assert transmitter.calls == ["Centro Sismológico Nacional: Sismo de magnitud 4.2."]
+
+
 class _StubKissClient:
     def __init__(self, result=True):
         self.result = result

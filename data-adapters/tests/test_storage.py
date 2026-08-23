@@ -9,16 +9,20 @@ import pytest
 import adapters.storage as storage_module
 from adapters.storage import (
     delete_setting,
+    delete_source,
     get_beacon_status,
     get_connection,
     get_item_ready_published_at,
     get_setting,
+    get_source_fields,
     list_beacon_status,
     list_settings,
+    list_sources,
     mark_item_ready_published,
     record_audit_event,
     set_beacon_status,
     set_setting,
+    set_source,
     store_chunks,
     store_reading,
     store_summary,
@@ -1057,3 +1061,114 @@ def test_mark_item_ready_published_scoped_per_source_item_id(tmp_path):
 
     assert get_item_ready_published_at(conn, "csn", "1") is None
     assert get_item_ready_published_at(conn, "senapred", "2") is None
+
+
+# --- sources ---
+
+
+def test_get_connection_seeds_csn_and_senapred_sources(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert get_source_fields(conn, "csn") == {
+        "source_name": "Centro Sismológico Nacional", "source_url": "https://www.sismologia.cl/",
+    }
+    assert get_source_fields(conn, "senapred") == {
+        "source_name": "Senapred", "source_url": "https://senapred.cl/",
+    }
+
+
+def test_get_connection_does_not_reseed_or_reset_edited_sources(tmp_path):
+    db_path = tmp_path / "radiobeacon.db"
+    conn = get_connection(db_path)
+    set_source(conn, "csn", "Edited Name", "https://edited.example/")
+
+    # A second, independent get_connection() call against the same DB must
+    # not overwrite the edit -- seeding only ever fires when the table is
+    # empty, same as dispatcher.policy.ensure_seeded.
+    conn2 = get_connection(db_path)
+
+    assert get_source_fields(conn2, "csn") == {
+        "source_name": "Edited Name", "source_url": "https://edited.example/",
+    }
+
+
+def test_get_source_fields_falls_back_for_unknown_source(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert get_source_fields(conn, "some-future-source") == {
+        "source_name": "some-future-source", "source_url": "",
+    }
+
+
+def test_set_source_upserts(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    set_source(conn, "csn", "First Name", "https://first.example/")
+    assert get_source_fields(conn, "csn") == {
+        "source_name": "First Name", "source_url": "https://first.example/",
+    }
+
+    set_source(conn, "csn", "Second Name", "https://second.example/")
+    assert get_source_fields(conn, "csn") == {
+        "source_name": "Second Name", "source_url": "https://second.example/",
+    }
+
+
+def test_set_source_records_audit_event(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    set_source(conn, "csn", "Test Name", "https://test.example/")
+
+    row = conn.execute(
+        "SELECT source, details FROM audit_log WHERE event_type = 'source.set'"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "csn"
+    details = json.loads(row[1])
+    assert details == {"display_name": "Test Name", "site_url": "https://test.example/"}
+
+
+def test_set_source_site_url_optional(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    set_source(conn, "new-source", "New Source")
+
+    assert get_source_fields(conn, "new-source") == {
+        "source_name": "New Source", "source_url": "",
+    }
+
+
+def test_list_sources_orders_by_source(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_source(conn, "zzz-source", "Z Source", "https://z.example/")
+
+    rows = list_sources(conn)
+
+    assert [row[0] for row in rows] == ["csn", "senapred", "zzz-source"]
+
+
+def test_delete_source_removes_row_and_falls_back(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    deleted = delete_source(conn, "csn")
+
+    assert deleted is True
+    assert get_source_fields(conn, "csn") == {"source_name": "csn", "source_url": ""}
+
+
+def test_delete_source_returns_false_for_unknown_source(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert delete_source(conn, "does-not-exist") is False
+
+
+def test_delete_source_records_audit_event(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    delete_source(conn, "csn")
+
+    row = conn.execute(
+        "SELECT source FROM audit_log WHERE event_type = 'source.deleted'"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "csn"

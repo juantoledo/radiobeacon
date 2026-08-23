@@ -238,17 +238,25 @@ not plain literals. Beyond `{date}` (`items.source_date_time`, converted
 to `DISPLAY_TIMEZONE` and formatted per `BEACON_DATE_FORMAT`), each also
 accepts item-derived placeholders — `{source}`, `{item_id}`, `{type}`,
 `{subtype}`, `{extracted_title}`, `{url}` (`content.resolve_item_fields`)
-— resolved fresh at transmit time, same as `text` itself. Rendered via
-`adapters.templating.safe_format`: an invalid placeholder (a typo'd
-setting) logs an error and falls back to `""` rather than raising — the
-TDMA tick loop has no per-tick catch-all, so an uncaught exception here
-would otherwise kill the whole transmit thread until restart.
-`actions.chunk`'s dynamic `ACTIONS_CHUNK_MAX_CHARS` clamp
+— resolved fresh at transmit time, same as `text` itself. Two more,
+`{source_name}`/`{source_url}`, are per-*source* rather than per-item — a
+display name ("Centro Sismológico Nacional" for `csn`) and general site
+URL, read from the `sources` table (`adapters.storage` in
+`data-adapters` — seeded with `csn`/`senapred` on first run, managed live
+via `data-adapters/sources.sh list`/`set`/`delete`) rather than the
+item's own row. Distinct from `{source}` (the raw internal key, e.g.
+`"csn"`) and `{url}` (this specific item's own link — for SENAPRED, a
+per-alert URL that differs from `{source_url}`'s general homepage).
+Rendered via `adapters.templating.safe_format`: an invalid placeholder
+(a typo'd setting) logs an error and falls back to `""` rather than
+raising — the TDMA tick loop has no per-tick catch-all, so an uncaught
+exception here would otherwise kill the whole transmit thread until
+restart. `actions.chunk`'s dynamic `ACTIONS_CHUNK_MAX_CHARS` clamp
 (`data-adapters/src/adapters/ax25.py`) accounts for the CURRENT item's
-real rendered prefix/suffix — both `{date}` and the item fields — not the
-raw template's length, so neither a short `" {date}"` suffix nor a long
-`{extracted_title}` can silently under-clamp and cause an overflow at
-transmit time.
+real rendered prefix/suffix — `{date}` and every item/source field — not
+the raw template's length, so neither a short `" {date}"` suffix nor a
+long `{extracted_title}`/`{source_name}` can silently under-clamp and
+cause an overflow at transmit time.
 
 ## Not addressed
 

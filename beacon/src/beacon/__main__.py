@@ -29,9 +29,14 @@ voice actually speaks. Each channel also has its own prefix/suffix
 (BEACON_FRAME_PREFIX/SUFFIX, BEACON_VOICE_PREFIX/SUFFIX) wrapping its
 content, plus voice's outer BEACON_VOICE_TEMPLATE — all three str.format
 templates, sharing one placeholder vocabulary beyond {date}: {source},
-{item_id}, {type}, {subtype}, {extracted_title}, {url} (see
-content.resolve_item_fields, resolved fresh per item at transmit time,
-same as the text itself).
+{item_id}, {type}, {subtype}, {extracted_title}, {url}, {source_name},
+{source_url} (see content.resolve_item_fields, resolved fresh per item at
+transmit time, same as the text itself). {source_name}/{source_url} are
+per-SOURCE, not per-item — a display name and general site URL from the
+`sources` table (adapters.storage — seeded with csn/senapred, editable
+live via data-adapters/sources.sh), distinct from {source} (the raw
+internal key) and {url} (this specific item's own link, e.g. a per-alert
+SENAPRED URL).
 
 BEACON_ENABLED (decision: soft enable/disable, not real process control —
 see beacon/README.md) is re-read every tick; enqueueing from MQTT happens

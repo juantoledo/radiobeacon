@@ -1,4 +1,4 @@
-from adapters.storage import get_connection, set_setting
+from adapters.storage import get_connection, set_setting, set_source
 
 from actions.chunk import ChunkAction, _effective_max_chars, _wrap_with_part_markers
 
@@ -331,6 +331,27 @@ def test_chunk_action_renders_item_field_placeholder_in_frame_prefix(tmp_path):
     ChunkAction().run(_dispatched_event("senapred", "1"), conn=conn)
     stored = _stored_chunks(conn, "senapred", "1")
 
+    for chunk in stored:
+        assert len(chunk["text"]) < 56  # 256 - len("CD3DXZ-1>WXALRT:") - len("[" + "x"*200 + "] ")
+
+
+def test_chunk_action_renders_source_name_placeholder_in_frame_prefix(tmp_path):
+    """{source_name} comes from the `sources` table (seeded with csn/
+    senapred, editable via data-adapters/sources.sh), not the item's own
+    row -- ChunkAction.run() must still resolve and clamp against it like
+    any other item_fields placeholder."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "200")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_DESTINATION", "WXALRT")
+    set_setting(conn, "BEACON_FRAME_PREFIX", "[{source_name}] ")
+    set_source(conn, "csn", "x" * 200)  # long enough to force clamping
+    _insert_item(conn, "csn", "1", "one two three four five six seven eight nine ten")
+
+    ChunkAction().run(_dispatched_event("csn", "1"), conn=conn)
+    stored = _stored_chunks(conn, "csn", "1")
+
+    assert stored
     for chunk in stored:
         assert len(chunk["text"]) < 56  # 256 - len("CD3DXZ-1>WXALRT:") - len("[" + "x"*200 + "] ")
 

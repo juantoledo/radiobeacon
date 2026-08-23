@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from adapters.ax25 import max_frame_content_bytes
-from adapters.storage import get_setting, store_chunks
+from adapters.storage import get_setting, get_source_fields, store_chunks
 from adapters.templating import safe_format
 
 from actions.base import Action
@@ -14,13 +14,16 @@ from actions.base import Action
 logger = logging.getLogger(__name__)
 
 # item_fields placeholders available to BEACON_FRAME_PREFIX/SUFFIX beyond
-# {date} -- source/item_id/type/subtype/extracted_title/url, mirroring
-# beacon.content.resolve_item_fields exactly (see that docstring for why
-# this set, not the full items row). All-empty is the correct fallback
-# when _effective_max_chars is called without real item context (e.g. the
+# {date} -- source/item_id/type/subtype/extracted_title/url/source_name/
+# source_url, mirroring beacon.content.resolve_item_fields exactly (see
+# that docstring for why this set, not the full items row -- source_name/
+# source_url come from adapters.storage.get_source_fields, the `sources`
+# table, not the item's own row). All-empty is the correct fallback when
+# _effective_max_chars is called without real item context (e.g. the
 # existing unit tests that only exercise the byte-budget math itself).
 _EMPTY_ITEM_FIELDS: dict[str, str] = {
     "source": "", "item_id": "", "type": "", "subtype": "", "extracted_title": "", "url": "",
+    "source_name": "", "source_url": "",
 }
 
 # A fixed, representative datetime used only to measure how many bytes a
@@ -193,6 +196,7 @@ class ChunkAction(Action):
             "extracted_title": extracted_title or "",
             "url": url or "",
         }
+        item_fields.update(get_source_fields(conn, source))
         configured_max_chars = int(get_setting("ACTIONS_CHUNK_MAX_CHARS", "200", conn=conn))
         max_chars = _effective_max_chars(conn, configured_max_chars, item_fields=item_fields)
         pieces = _wrap_with_part_markers(contents, max_chars)
