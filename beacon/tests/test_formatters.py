@@ -7,7 +7,32 @@ def test_format_frame_builds_tnc2_line():
     result = format_frame("hola mundo", callsign="CD3DXZ-1", destination="WXALRT")
 
     assert result.tnc2 == "CD3DXZ-1>WXALRT:hola mundo"
+    assert result.content == "hola mundo"
     assert result.byte_length == len(result.tnc2.encode("utf-8"))
+
+
+def test_format_frame_no_prefix_suffix_by_default_is_backward_compatible():
+    result = format_frame("hola mundo", callsign="CD3DXZ-1", destination="WXALRT")
+
+    assert result.content == "hola mundo"
+
+
+def test_format_frame_applies_prefix_and_suffix_to_content_and_tnc2():
+    result = format_frame(
+        "hola mundo", callsign="CD3DXZ-1", destination="WXALRT",
+        prefix=">> ", suffix=" [EXPERIMENTAL]",
+    )
+
+    assert result.content == ">> hola mundo [EXPERIMENTAL]"
+    assert result.tnc2 == "CD3DXZ-1>WXALRT:>> hola mundo [EXPERIMENTAL]"
+
+
+def test_format_frame_prefix_suffix_pushing_over_limit_still_raises():
+    prefix_len = len("CD3DXZ-1>WXALRT:")
+    body = "x" * (256 - prefix_len)  # exactly at the limit with no suffix
+
+    with pytest.raises(FrameTooLongError):
+        format_frame(body, callsign="CD3DXZ-1", destination="WXALRT", suffix=" [EXPERIMENTAL]")
 
 
 def test_format_frame_raises_when_over_hard_byte_limit():

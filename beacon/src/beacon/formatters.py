@@ -34,6 +34,7 @@ class FrameTooLongError(ValueError):
 @dataclass(frozen=True)
 class FormattedFrame:
     tnc2: str
+    content: str
     byte_length: int
 
 
@@ -43,15 +44,22 @@ class FormattedVoice:
     truncated: bool
 
 
-def format_frame(chunk_text: str, *, callsign: str, destination: str) -> FormattedFrame:
-    tnc2 = f"{callsign}>{destination}:{chunk_text}"
+def format_frame(chunk_text: str, *, callsign: str, destination: str, prefix: str = "", suffix: str = "") -> FormattedFrame:
+    """prefix/suffix (BEACON_FRAME_PREFIX/BEACON_FRAME_SUFFIX) wrap the
+    actual transmitted payload -- applied to every frame, including each
+    chunk of a multi-frame item, not just once per item, so a listener
+    catching only one frame still sees it. Distinct from `destination`
+    (the AX.25 tocall address, e.g. WXALRT) -- this wraps the info field
+    a listener actually decodes as content."""
+    content = f"{prefix}{chunk_text}{suffix}"
+    tnc2 = f"{callsign}>{destination}:{content}"
     byte_length = len(tnc2.encode("utf-8"))
     if byte_length > _AX25_HARD_LIMIT_BYTES:
         raise FrameTooLongError(
             f"assembled frame is {byte_length} bytes, exceeds the "
             f"{_AX25_HARD_LIMIT_BYTES}-byte AX.25 UI frame limit"
         )
-    return FormattedFrame(tnc2=tnc2, byte_length=byte_length)
+    return FormattedFrame(tnc2=tnc2, content=content, byte_length=byte_length)
 
 
 def format_voice(text: str, *, callsign: str, template: str, max_chars: int) -> FormattedVoice:

@@ -54,6 +54,37 @@ New actions are picked up automatically: `discover_actions()`
 registration step (same pattern as
 [data-adapters](../data-adapters/README.md#adapters)' `discover_adapters()`).
 
+## content_ready — not an action, a correlator
+
+`src/actions/content_ready.py` is not an `Action` subclass — it doesn't
+react to one message, it watches for the point where **both** `chunk`
+and `ai` have finished reacting to the same dispatch (`audit_log` rows
+`action.chunk.executed` and `action.ai.executed` both present for a
+given `(source, item_id)`), then publishes one `item.content_ready`
+CloudEvent — the race-free "everything that was going to happen to this
+item's content has happened" signal
+[beacon](../beacon/README.md) subscribes to. `action.<name>.executed` is
+recorded on every normal `run()` return, including skips (short content,
+`ACTIONS_AI_ENABLED=false`) — only an uncaught exception skips it — so
+this is a reliable signal regardless of whether either action actually
+produced output.
+
+Runs on its own poll loop (`_run_content_ready_loop` in
+`src/actions/__main__.py`), not a subscription — polling instead of
+`register_audit_event_hook` deliberately, since `chunk` and `ai` each run
+on independent MQTT threads and two hooks firing at once could both
+observe "both done" and double-publish; a single poll loop serializes
+the check instead. A rearm doesn't delete prior audit rows, so "already
+published" is a timestamp comparison (`item_readiness.published_at` vs.
+the latest `action.*.executed` `recorded_at` — see
+`data-adapters/src/adapters/storage.py`), not row existence — a rearm's
+fresh completions naturally produce a fresh publish.
+
+The published event's `data` includes `has_summary: bool` (whether
+`items.summary` was set at publish time) — beacon's routing signal for
+whether to send one AI-summary frame or one frame per raw chunk; actual
+transmitted text is still resolved fresh from the DB at transmit time.
+
 ## Action contract
 
 Every action subclasses `Action` (`src/actions/base.py`) and implements:
@@ -140,6 +171,10 @@ matches `ACTIONS_CHUNK_MAX_CHARS` exactly, so both channels
 `ACTIONS_AI_<PROVIDER>_MODEL`, `ACTIONS_AI_OLLAMA_HOST`, plus the
 unprefixed `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` read directly by each
 SDK — see `.env.example`.
+
+content_ready-specific: `ACTIONS_CONTENT_READY_POLL_INTERVAL_SECONDS`
+(default `2`), `ACTIONS_CONTENT_READY_OUTPUT_TOPIC` (default
+`radiobeacon/events/item.content_ready`).
 
 ## Tests
 

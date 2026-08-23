@@ -363,6 +363,27 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "text",
         None,
     ),
+    # --- Actions — Content Ready ---
+    SettingSpec(
+        "ACTIONS_CONTENT_READY_POLL_INTERVAL_SECONDS",
+        "Actions — Content Ready",
+        "Poll interval (s)",
+        "How often the content_ready watcher scans for items where both "
+        "chunk and AI have finished, to publish item.content_ready.",
+        "int",
+        "2",
+        advanced=True,
+    ),
+    SettingSpec(
+        "ACTIONS_CONTENT_READY_OUTPUT_TOPIC",
+        "Actions — Content Ready",
+        "Output topic",
+        "MQTT topic item.content_ready events are published to — the "
+        "single trigger beacon subscribes to for both voice and frame.",
+        "text",
+        "radiobeacon/events/item.content_ready",
+        advanced=True,
+    ),
     # --- Secrets ---
     SettingSpec(
         "ANTHROPIC_API_KEY",
@@ -453,6 +474,28 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "2",
         advanced=True,
     ),
+    SettingSpec(
+        "BEACON_VOICE_INTER_TX_DELAY_SECONDS",
+        "Beacon — Schedule",
+        "Voice inter-transmission delay (s)",
+        "Gap between consecutive voice transmissions when draining a full "
+        "backlog within one slot occurrence. A placeholder — needs real "
+        "hardware measurement, same as BEACON_SLOT_LEAD_TIME_SECONDS.",
+        "float",
+        "2",
+        advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_FRAME_INTER_TX_DELAY_SECONDS",
+        "Beacon — Schedule",
+        "Frame inter-transmission delay (s)",
+        "Gap between consecutive frame transmissions when draining a full "
+        "backlog within one slot occurrence. A placeholder — needs real "
+        "hardware measurement, same as BEACON_SLOT_LEAD_TIME_SECONDS.",
+        "float",
+        "2",
+        advanced=True,
+    ),
     # --- Beacon — Templates ---
     SettingSpec(
         "BEACON_VOICE_TEMPLATE",
@@ -473,6 +516,27 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "a real route. WXALRT marks this as experimental, non-APRS traffic.",
         "text",
         "WXALRT",
+    ),
+    SettingSpec(
+        "BEACON_FRAME_PREFIX",
+        "Beacon — AX.25",
+        "Frame content prefix",
+        "Prepended to the actual transmitted payload (not the tocall "
+        "address above) — applied to every frame, including each chunk of "
+        "a multi-frame item.",
+        "text",
+        "",
+    ),
+    SettingSpec(
+        "BEACON_FRAME_SUFFIX",
+        "Beacon — AX.25",
+        "Frame content suffix",
+        "Appended to the actual transmitted payload — e.g. \"[EXPERIMENTAL]\". "
+        "Applied to every frame, including each chunk of a multi-frame item, "
+        "so a listener catching only one still sees it. Counts against the "
+        "same 256-byte AX.25 hard limit as the rest of the frame.",
+        "text",
+        "",
     ),
     SettingSpec(
         "BEACON_AX25_KISS_HOST",
@@ -570,26 +634,15 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "5",
     ),
     SettingSpec(
-        "BEACON_FRAME_SUBSCRIBE_TOPIC",
+        "BEACON_CONTENT_READY_SUBSCRIBE_TOPIC",
         "Beacon — MQ",
-        "Frame subscribe topic",
-        "Frame content trigger — actions.chunk is always-on, so this fires "
-        "out of the box on a fresh clone.",
+        "Content-ready subscribe topic",
+        "The single trigger feeding both the voice and frame queues — "
+        "published by actions.content_ready once both chunk and AI have "
+        "finished with an item, avoiding the race where AX.25 would send "
+        "raw chunked text before an AI summary was ready.",
         "text",
-        "radiobeacon/events/item.chunked",
-        advanced=True,
-    ),
-    SettingSpec(
-        "BEACON_VOICE_SUBSCRIBE_TOPIC",
-        "Beacon — MQ",
-        "Voice subscribe topic",
-        "Voice content trigger — deliberately item.dispatched, not "
-        "item.summarized: actions.ai structurally skips short content "
-        "(e.g. CSN), which would leave it permanently voice-silent "
-        "otherwise. Voice text is resolved (summary if present, else raw "
-        "contents) at transmit time regardless of which topic triggers it.",
-        "text",
-        "radiobeacon/events/item.dispatched",
+        "radiobeacon/events/item.content_ready",
         advanced=True,
     ),
     # --- Beacon — NTP ---

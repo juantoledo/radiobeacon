@@ -54,7 +54,7 @@ data-adapters (fetch)  →  storage/radiobeacon.db  ←  ui/ (browse + override,
                      mq/ (Mosquitto, CloudEvents)
                               ┊ (optional)
                      actions/ (chained MQTT-subscribed pipeline)
-                              ┊ item.chunked / item.dispatched
+                              ┊ item.content_ready
                      beacon/ (TDMA voice/frame transmission orchestrator)
                               ┊ (needs real hardware, out of scope here)
                      SvxLink / Direwolf (voice / AX.25 radio TX)

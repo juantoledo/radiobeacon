@@ -11,9 +11,11 @@ from adapters.storage import (
     delete_setting,
     get_beacon_status,
     get_connection,
+    get_item_ready_published_at,
     get_setting,
     list_beacon_status,
     list_settings,
+    mark_item_ready_published,
     record_audit_event,
     set_beacon_status,
     set_setting,
@@ -989,3 +991,41 @@ def test_list_beacon_status_empty_when_nothing_set(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
     assert list_beacon_status(conn) == {}
+
+
+# --- item_readiness ---
+
+
+def test_get_item_ready_published_at_none_when_never_published(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert get_item_ready_published_at(conn, "senapred", "1") is None
+
+
+def test_mark_item_ready_published_then_get_roundtrip(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    mark_item_ready_published(conn, "senapred", "1")
+
+    assert get_item_ready_published_at(conn, "senapred", "1") is not None
+
+
+def test_mark_item_ready_published_upserts_not_duplicates(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    mark_item_ready_published(conn, "senapred", "1")
+    mark_item_ready_published(conn, "senapred", "1")
+
+    rows = conn.execute(
+        "SELECT COUNT(*) FROM item_readiness WHERE source = 'senapred' AND item_id = '1'"
+    ).fetchone()
+    assert rows[0] == 1
+
+
+def test_mark_item_ready_published_scoped_per_source_item_id(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    mark_item_ready_published(conn, "senapred", "1")
+
+    assert get_item_ready_published_at(conn, "csn", "1") is None
+    assert get_item_ready_published_at(conn, "senapred", "2") is None

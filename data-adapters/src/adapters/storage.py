@@ -126,6 +126,23 @@ CREATE TABLE IF NOT EXISTS beacon_status (
 );
 """
 
+# item_readiness tracks the last time an item.content_ready CloudEvent was
+# published for a given item — a durable dedup marker so a process restart
+# doesn't cause a duplicate publish (see actions.content_ready). Rearm
+# doesn't delete prior audit_log rows, it produces new ones, so "already
+# published" is a timestamp comparison (this table's published_at vs. the
+# latest action.chunk.executed/action.ai.executed recorded_at), not mere
+# row existence — a rearm's fresh completions naturally produce a fresh
+# publish.
+_CREATE_ITEM_READINESS = """
+CREATE TABLE IF NOT EXISTS item_readiness (
+    source TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    published_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (source, item_id)
+);
+"""
+
 # (old_column, new_column): renames applied in order to databases created
 # before a given schema change.
 _COLUMN_RENAMES = (
@@ -236,6 +253,7 @@ def get_connection(
         _ensure_chunks_table(conn)
         _ensure_settings_table(conn)
         _ensure_beacon_status_table(conn)
+        _ensure_item_readiness_table(conn)
         conn.commit()
     except Exception:
         conn.close()
@@ -487,6 +505,37 @@ def list_beacon_status(conn: sqlite3.Connection) -> dict[str, str]:
     _ensure_beacon_status_table(conn)
     rows = conn.execute("SELECT key, value FROM beacon_status").fetchall()
     return {row[0]: row[1] for row in rows}
+
+
+def _ensure_item_readiness_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — mark_item_ready_published/
+    get_item_ready_published_at call this themselves, same pattern as
+    _ensure_settings_table."""
+    conn.execute(_CREATE_ITEM_READINESS)
+
+
+def mark_item_ready_published(conn: sqlite3.Connection, source: str, item_id: str) -> None:
+    """Upserts item_readiness.published_at to now — called right after
+    actions.content_ready publishes an item.content_ready CloudEvent for
+    (source, item_id), so the next poll tick (or a later restart) doesn't
+    republish for the same completion."""
+    _ensure_item_readiness_table(conn)
+    conn.execute(
+        "INSERT INTO item_readiness (source, item_id, published_at) "
+        "VALUES (?, ?, datetime('now')) "
+        "ON CONFLICT(source, item_id) DO UPDATE SET published_at = excluded.published_at",
+        (source, item_id),
+    )
+    conn.commit()
+
+
+def get_item_ready_published_at(conn: sqlite3.Connection, source: str, item_id: str) -> str | None:
+    _ensure_item_readiness_table(conn)
+    row = conn.execute(
+        "SELECT published_at FROM item_readiness WHERE source = ? AND item_id = ?",
+        (source, item_id),
+    ).fetchone()
+    return row[0] if row is not None else None
 
 
 def _json_default(obj: Any) -> Any:

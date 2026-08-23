@@ -15,29 +15,40 @@ Python import connects the two; they only share the DB.
 ## Content flow
 
 ```
-dispatcher --item.dispatched--> actions.chunk --item.chunked--> beacon (frame queue)
-                             \-> actions.ai   --item.summarized-\
-                              \-item.dispatched (direct)---------> beacon (voice queue)
+dispatcher --item.dispatched--> actions.chunk -\
+                             \-> actions.ai    --\-- actions.content_ready --item.content_ready--> beacon (frame + voice queues)
 ```
 
-Frame content comes from `item.chunked` — `actions.chunk` is always-on
-with no skip logic, so this is guaranteed to eventually fire for every
-dispatched item; beacon re-queries the `chunks` table it points at, one
-queue entry per chunk (naturally spreading multi-chunk content across
-consecutive frame slots).
+Both queues are fed by a single trigger: `item.content_ready`, published
+by `actions.content_ready` once — and only once — both `actions.chunk`
+and `actions.ai` have finished reacting to the same dispatch (see
+[actions/README.md](../actions/README.md)). This replaced an earlier
+design where frame subscribed to `item.chunked` and voice subscribed to
+`item.dispatched` independently: those two actions race with no ordering
+guarantee, so AX.25 frames could (and routinely did) go out carrying raw
+chunked text even when an AI summary already existed for the same item.
+`item.content_ready`'s `has_summary` flag is beacon's frame-routing
+signal — it decides *how many* `QueuedFrame` references to enqueue and
+whether they point at `chunks` rows or straight at `items.summary` — but
+the actual text is still resolved lazily, at transmit time, exactly as
+before:
 
-Voice content comes from `item.dispatched` directly, **not**
-`item.summarized`. `actions.ai` structurally skips summarization for
-content already at or under `ACTIONS_AI_MAX_CHARS` — CSN's own short
-templated contents almost always are — so depending solely on
-`item.summarized` would leave CSN permanently voice-silent regardless of
-whether AI is enabled. Instead, the actual text is resolved lazily, at
-transmit time (not baked in at enqueue time): `items.summary` if AI has
-produced one by then, else `items.extracted_contents`. Deferring the read
-to transmit time — well after a same-item AI call would typically have
-finished, given realistic TDMA window lengths — is what avoids a race
-against AI's completion without needing to guess whether a summary is
-coming.
+- **`has_summary=True`**: one `QueuedFrame(chunk_index=None)` — resolved
+  to `items.summary` at transmit time. One frame instead of N raw chunks.
+- **`has_summary=False`**: one `QueuedFrame` per existing `chunks` row
+  (unchanged fallback — keeps CSN, which structurally never gets
+  summarized, working exactly as before).
+- **Voice**, regardless of `has_summary`: always one `QueuedVoice`,
+  resolved via `items.summary` if present else `items.extracted_contents`
+  at transmit time — `actions.ai` structurally skips summarization for
+  content already at or under `ACTIONS_AI_MAX_CHARS` (CSN's own short
+  templated contents almost always are), so this fallback is what keeps
+  CSN voice-able regardless of whether AI is enabled.
+
+Deferring text resolution to transmit time (not baked in at enqueue
+time) still matters even with a settled `item.content_ready` signal: a
+later rearm, or a summary changing between enqueue and transmit, is
+naturally reflected — whatever's true right now is what gets sent.
 
 Length limits are **not** new beacon-specific settings — they reuse
 `ACTIONS_CHUNK_MAX_CHARS` (frame) and `ACTIONS_AI_MAX_CHARS` (voice, a
@@ -64,6 +75,20 @@ custom sync code needed. `src/beacon/ntp.py` adds a purely optional,
 read-only visibility layer on top — periodically checking the measured
 offset against a real NTP server for the `/beacon` status page — and
 never adjusts anything itself.
+
+**A slot's length is a floor, not a hard ceiling.** When a slot opens,
+`_run_tdma_loop` drains its *entire* queue — not one item — pausing
+`BEACON_VOICE_INTER_TX_DELAY_SECONDS`/`BEACON_FRAME_INTER_TX_DELAY_SECONDS`
+(default 2s each, a placeholder pending real-hardware measurement, same
+caveat as `BEACON_SLOT_LEAD_TIME_SECONDS`) between consecutive
+transmissions so PTT can release/re-key and the TNC/listener can clear
+the previous one. If draining runs past the slot's nominal end, it
+finishes the backlog before handing control back — nothing gets cut off
+mid-queue. This blocks `_maybe_control_services`, the NTP check, and the
+status heartbeat for the drain's duration; `BEACON_QUEUE_MAX_SIZE`
+(default 20) bounds the worst case to 20 sequential transmissions before
+control returns. A deliberate tradeoff — full-drain priority over strict
+timing — not an oversight.
 
 ## Enable / disable ("start/stop/restart")
 
@@ -129,6 +154,15 @@ translation, not this hand-rolled encoder talking to the raw socket — one
 real on-air/lab smoke test is recommended before first live use, in
 addition to (not instead of) the unit suite.
 
+`BEACON_FRAME_PREFIX`/`BEACON_FRAME_SUFFIX` (both empty by default) wrap
+the actual transmitted frame payload — distinct from
+`BEACON_FRAME_DESTINATION`, which only labels the AX.25 tocall address,
+not content a listener decodes. Applied to every frame, including each
+chunk of a multi-frame item (not just once per item), so a listener
+catching only one frame still sees it; counts against the same 256-byte
+`FrameTooLongError` ceiling as the rest of the frame (see
+`formatters.py`).
+
 ## Not addressed
 
 Continuous, content-independent periodic station identification (CW ID)
@@ -168,8 +202,11 @@ regulatory requirement).
 | `BEACON_WINDOW_GUARD_SECONDS` | `0` |
 | `BEACON_TICK_SECONDS` | `1` |
 | `BEACON_SLOT_LEAD_TIME_SECONDS` | `2` |
+| `BEACON_VOICE_INTER_TX_DELAY_SECONDS` | `2` |
+| `BEACON_FRAME_INTER_TX_DELAY_SECONDS` | `2` |
 | `BEACON_VOICE_TEMPLATE` | `{callsign}. {text}` |
 | `BEACON_FRAME_DESTINATION` | `WXALRT` |
+| `BEACON_FRAME_PREFIX` / `BEACON_FRAME_SUFFIX` | `""` / `""` |
 | `BEACON_AX25_KISS_HOST` / `_PORT` | `localhost` / `8001` |
 | `BEACON_AX25_CONNECT_TIMEOUT_SECONDS` | `5` |
 | `BEACON_VOICE_TRANSMITTER` | `logging` |
@@ -177,8 +214,7 @@ regulatory requirement).
 | `BEACON_TTS_WAV_DIR` | `storage/beacon_tts` |
 | `BEACON_QUEUE_MAX_SIZE` | `20` |
 | `BEACON_MQ_HOST`/`_PORT`/`_QOS`/`_RECONNECT_BACKOFF_SECONDS` | `localhost`/`1883`/`1`/`5` |
-| `BEACON_FRAME_SUBSCRIBE_TOPIC` | `radiobeacon/events/item.chunked` |
-| `BEACON_VOICE_SUBSCRIBE_TOPIC` | `radiobeacon/events/item.dispatched` |
+| `BEACON_CONTENT_READY_SUBSCRIBE_TOPIC` | `radiobeacon/events/item.content_ready` |
 | `BEACON_NTP_SERVER` | `pool.ntp.org` |
 | `BEACON_NTP_CHECK_INTERVAL_SECONDS` | `3600` |
 | `BEACON_NTP_MAX_OFFSET_SECONDS` | `2.0` |

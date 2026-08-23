@@ -1,13 +1,20 @@
 """The TDMA transmission loop — beacon's entry point.
 
-Content flows in from two independent MQTT subscriptions (not one): frame
-content comes from item.chunked (actions.chunk is always-on, no skip
-logic, so this is guaranteed to eventually fire for every dispatched
-item), voice content comes from item.dispatched directly, NOT
-item.summarized — actions.ai structurally skips summarization for content
-already at or under ACTIONS_AI_MAX_CHARS, which CSN's own short templated
-contents almost always is, so depending solely on item.summarized would
-leave CSN permanently voice-silent. See content.py for how the actual
+Content flows in from a single MQTT subscription: item.content_ready
+(actions.content_ready), published only once BOTH actions.chunk and
+actions.ai have finished reacting to the same dispatch — a race-free
+"everything that was going to happen to this item's content has happened"
+signal, replacing what used to be two independent subscriptions
+(item.chunked for frame, item.dispatched for voice) that raced against
+each other and left AX.25 frames carrying raw chunked text even when an
+AI summary existed. The event's has_summary flag decides what to enqueue
+for frame: one QueuedFrame(chunk_index=None) — resolved to items.summary
+at transmit time — if a summary existed at publish time, else one
+QueuedFrame per existing chunks row (the CSN/AI-disabled fallback, since
+actions.ai structurally skips summarization for content already at or
+under ACTIONS_AI_MAX_CHARS). Voice always gets one QueuedVoice regardless
+of has_summary — its own resolve_voice_text always prefers items.summary,
+falling back to extracted_contents. See content.py for how the actual
 text gets resolved (lazily, at transmit time, not baked in at enqueue
 time) and formatters.py for why length limits reuse ACTIONS_CHUNK_MAX_CHARS/
 ACTIONS_AI_MAX_CHARS instead of new beacon-specific settings.
@@ -56,10 +63,10 @@ BEACON_MQ_QOS = int(get_setting("BEACON_MQ_QOS", "1"))
 BEACON_MQ_RECONNECT_BACKOFF_SECONDS = int(get_setting("BEACON_MQ_RECONNECT_BACKOFF_SECONDS", "5"))
 
 
-# --- MQTT ingest: two independent subscriptions feeding two queues ---
+# --- MQTT ingest: one subscription feeding both queues ---
 
 
-def _already_enqueued(conn, kind: str, event_id: str | None) -> bool:
+def _already_enqueued(conn, event_id: str | None) -> bool:
     """Same event-id-keyed idempotency as actions/__main__.py's
     _already_processed (and the same fix applied there) — a rearm
     publishes a genuinely new CloudEvent for the same (source, item_id),
@@ -67,54 +74,63 @@ def _already_enqueued(conn, kind: str, event_id: str | None) -> bool:
     if not event_id:
         return False
     row = conn.execute(
-        "SELECT 1 FROM audit_log WHERE event_type = ? "
+        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.content_ready.enqueued' "
         "AND json_extract(details, '$.event_id') = ? LIMIT 1",
-        (f"beacon.{kind}.enqueued", event_id),
+        (event_id,),
     ).fetchone()
     return row is not None
 
 
-def _handle_frame_event(conn, frame_queue: BoundedDropOldestQueue, source: str, item_id: str, event_id: str | None) -> None:
-    if _already_enqueued(conn, "frame", event_id):
-        logger.info("beacon: frame event_id=%s already enqueued, skipping", event_id)
+def _handle_content_ready_event(
+    conn, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
+    source: str, item_id: str, has_summary: bool, event_id: str | None,
+) -> None:
+    if _already_enqueued(conn, event_id):
+        logger.info("beacon: content_ready event_id=%s already enqueued, skipping", event_id)
         return
-    rows = conn.execute(
-        "SELECT chunk_index FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
-        (source, item_id),
-    ).fetchall()
-    if not rows:
-        logger.info("beacon: source=%s item_id=%s has no chunks yet, skipping", source, item_id)
-        return
-    for (chunk_index,) in rows:
-        ok = frame_queue.put(content.QueuedFrame(source=source, item_id=item_id, chunk_index=chunk_index))
-        if not ok:
+
+    frame_count = 0
+    if has_summary:
+        ok = frame_queue.put(content.QueuedFrame(source=source, item_id=item_id, chunk_index=None))
+        if ok:
+            frame_count = 1
+        else:
             record_audit_event(
                 conn, event_type="beacon.queue.dropped", actor="beacon",
                 source=source, item_id=item_id, details={"queue": "frame"},
             )
-    record_audit_event(
-        conn, event_type="beacon.frame.enqueued", actor="beacon", source=source, item_id=item_id,
-        details={"event_id": event_id, "chunk_count": len(rows)},
-    )
+    else:
+        rows = conn.execute(
+            "SELECT chunk_index FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
+            (source, item_id),
+        ).fetchall()
+        for (chunk_index,) in rows:
+            ok = frame_queue.put(content.QueuedFrame(source=source, item_id=item_id, chunk_index=chunk_index))
+            if ok:
+                frame_count += 1
+            else:
+                record_audit_event(
+                    conn, event_type="beacon.queue.dropped", actor="beacon",
+                    source=source, item_id=item_id, details={"queue": "frame"},
+                )
 
-
-def _handle_voice_event(conn, voice_queue: BoundedDropOldestQueue, source: str, item_id: str, event_id: str | None) -> None:
-    if _already_enqueued(conn, "voice", event_id):
-        logger.info("beacon: voice event_id=%s already enqueued, skipping", event_id)
-        return
-    ok = voice_queue.put(content.QueuedVoice(source=source, item_id=item_id))
-    if not ok:
+    voice_ok = voice_queue.put(content.QueuedVoice(source=source, item_id=item_id))
+    if not voice_ok:
         record_audit_event(
             conn, event_type="beacon.queue.dropped", actor="beacon",
             source=source, item_id=item_id, details={"queue": "voice"},
         )
+
     record_audit_event(
-        conn, event_type="beacon.voice.enqueued", actor="beacon", source=source, item_id=item_id,
-        details={"event_id": event_id},
+        conn, event_type="beacon.content_ready.enqueued", actor="beacon", source=source, item_id=item_id,
+        details={
+            "event_id": event_id, "has_summary": has_summary,
+            "frame_count": frame_count, "voice_enqueued": voice_ok,
+        },
     )
 
 
-def _make_on_message(frame_topic: str, voice_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue):
+def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue):
     """paho-mqtt re-raises any exception an on_message callback doesn't
     catch, silently killing loop_start()'s background thread — everything
     here is wrapped in one unconditional try/except, same as
@@ -126,6 +142,7 @@ def _make_on_message(frame_topic: str, voice_topic: str, frame_queue: BoundedDro
             event_id = event.get("id")
             data = event.get("data") or {}
             source, item_id = data.get("source"), data.get("item_id")
+            has_summary = bool(data.get("has_summary"))
             if not source or not item_id:
                 logger.warning(
                     "beacon: event missing source/item_id on %s, skipping: %r", message.topic, data
@@ -134,10 +151,8 @@ def _make_on_message(frame_topic: str, voice_topic: str, frame_queue: BoundedDro
 
             conn = get_connection(DEFAULT_DB_PATH)
             try:
-                if message.topic == frame_topic:
-                    _handle_frame_event(conn, frame_queue, source, item_id, event_id)
-                elif message.topic == voice_topic:
-                    _handle_voice_event(conn, voice_queue, source, item_id, event_id)
+                if message.topic == content_ready_topic:
+                    _handle_content_ready_event(conn, frame_queue, voice_queue, source, item_id, has_summary, event_id)
                 else:
                     logger.warning("beacon: message on unexpected topic %s", message.topic)
             finally:
@@ -148,7 +163,7 @@ def _make_on_message(frame_topic: str, voice_topic: str, frame_queue: BoundedDro
     return _handler
 
 
-def _run_mqtt_client(frame_topic: str, voice_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue, stop_event: threading.Event) -> None:
+def _run_mqtt_client(content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue, stop_event: threading.Event) -> None:
     """Mirrors actions/__main__.py's _run_action_loop: loop_start() +
     stop_event.wait() (not loop_forever(), which can't be signaled from a
     threading.Event), stable client_id + clean_session=False (a
@@ -156,18 +171,18 @@ def _run_mqtt_client(frame_topic: str, voice_topic: str, frame_queue: BoundedDro
     offline isn't lost), resubscribe on every (re)connect."""
     import paho.mqtt.client as mqtt_client
 
-    logger.info("beacon: mqtt starting (frame_topic=%s, voice_topic=%s)", frame_topic, voice_topic)
+    logger.info("beacon: mqtt starting (content_ready_topic=%s)", content_ready_topic)
 
     client = mqtt_client.Client(
         mqtt_client.CallbackAPIVersion.VERSION2,
         client_id="radiobeacon-beacon",
         clean_session=False,
     )
-    client.on_message = _make_on_message(frame_topic, voice_topic, frame_queue, voice_queue)
+    client.on_message = _make_on_message(content_ready_topic, frame_queue, voice_queue)
 
     def _on_connect(client, userdata, connect_flags, reason_code, properties) -> None:
         logger.debug("beacon: mqtt connected (reason_code=%s), subscribing", reason_code)
-        client.subscribe([(frame_topic, BEACON_MQ_QOS), (voice_topic, BEACON_MQ_QOS)])
+        client.subscribe([(content_ready_topic, BEACON_MQ_QOS)])
 
     client.on_connect = _on_connect
 
@@ -377,7 +392,10 @@ def _try_transmit_voice(
         )
 
 
-def _try_transmit_frame(conn, frame_queue: BoundedDropOldestQueue, kiss_client: kiss.KissTcpClient, callsign: str | None, destination: str) -> None:
+def _try_transmit_frame(
+    conn, frame_queue: BoundedDropOldestQueue, kiss_client: kiss.KissTcpClient,
+    callsign: str | None, destination: str, prefix: str = "", suffix: str = "",
+) -> None:
     queued = frame_queue.get_nowait()
     if queued is None:
         return
@@ -392,13 +410,15 @@ def _try_transmit_frame(conn, frame_queue: BoundedDropOldestQueue, kiss_client: 
     chunk_text = content.resolve_frame_text(conn, queued.source, queued.item_id, queued.chunk_index)
     if chunk_text is None:
         logger.info(
-            "beacon: source=%s item_id=%s chunk_index=%d no longer exists, skipping",
+            "beacon: source=%s item_id=%s chunk_index=%s no longer resolvable, skipping",
             queued.source, queued.item_id, queued.chunk_index,
         )
         return
 
     try:
-        formatted = formatters.format_frame(chunk_text, callsign=callsign, destination=destination)
+        formatted = formatters.format_frame(
+            chunk_text, callsign=callsign, destination=destination, prefix=prefix, suffix=suffix
+        )
     except formatters.FrameTooLongError as exc:
         logger.error("beacon: frame too long, dropping: %s", exc)
         record_audit_event(
@@ -408,7 +428,7 @@ def _try_transmit_frame(conn, frame_queue: BoundedDropOldestQueue, kiss_client: 
         return
 
     sent = kiss_client.send_ui_frame(
-        source_callsign=callsign, dest_callsign=destination, info=chunk_text.encode("utf-8")
+        source_callsign=callsign, dest_callsign=destination, info=formatted.content.encode("utf-8")
     )
     if sent:
         record_audit_event(
@@ -422,6 +442,31 @@ def _try_transmit_frame(conn, frame_queue: BoundedDropOldestQueue, kiss_client: 
             conn, event_type="beacon.frame.transmit_failed", actor="beacon",
             source=queued.source, item_id=queued.item_id,
         )
+
+
+def _drain_and_transmit(
+    stop_event: threading.Event, queue: BoundedDropOldestQueue, inter_tx_delay: float, transmit_once,
+) -> int:
+    """Repeatedly calls transmit_once() (each call already does one
+    queue.get_nowait() + transmit + audit-record) while `queue` is
+    non-empty, instead of attempting only once per slot occurrence — the
+    slot's nominal length is a floor, not a hard ceiling: this keeps
+    going even past it until the backlog is empty, pausing
+    inter_tx_delay between transmissions (not before the first, not
+    after the last) so real hardware gets a beat for PTT release/re-key
+    between them. See beacon/README.md's TDMA section for the tradeoff
+    this implies (blocks _maybe_control_services/NTP/heartbeat for the
+    drain's duration — bounded by BEACON_QUEUE_MAX_SIZE).
+    stop_event.is_set() is checked so shutdown stays responsive instead
+    of forcing a full backlog to flush first. Returns the number of
+    items attempted (mainly for tests)."""
+    attempted = 0
+    while not stop_event.is_set() and queue.stats().size > 0:
+        if attempted > 0:
+            stop_event.wait(inter_tx_delay)
+        transmit_once()
+        attempted += 1
+    return attempted
 
 
 def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQueue, frame_queue: BoundedDropOldestQueue) -> None:
@@ -442,6 +487,8 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
         wav_dir = get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
         tts_voice = get_setting("BEACON_TTS_VOICE", "es", conn=conn)
         destination = get_setting("BEACON_FRAME_DESTINATION", "WXALRT", conn=conn)
+        frame_prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
+        frame_suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
 
         last_voice_cycle: int | None = None
         last_frame_cycle: int | None = None
@@ -468,6 +515,8 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
             callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
             voice_template = get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}", conn=conn)
             voice_max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "200", conn=conn))
+            voice_inter_tx_delay = float(get_setting("BEACON_VOICE_INTER_TX_DELAY_SECONDS", "2", conn=conn))
+            frame_inter_tx_delay = float(get_setting("BEACON_FRAME_INTER_TX_DELAY_SECONDS", "2", conn=conn))
 
             if now - last_ntp_check_at >= ntp_interval:
                 _run_ntp_check(conn)
@@ -482,13 +531,21 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
             )
 
             if enabled and state.slot is schedule.Slot.VOICE and state.cycle_index != last_voice_cycle:
-                _try_transmit_voice(
-                    conn, voice_queue, voice_transmitter, callsign, voice_template,
-                    voice_max_chars, wav_dir, tts_voice,
+                _drain_and_transmit(
+                    stop_event, voice_queue, voice_inter_tx_delay,
+                    lambda: _try_transmit_voice(
+                        conn, voice_queue, voice_transmitter, callsign, voice_template,
+                        voice_max_chars, wav_dir, tts_voice,
+                    ),
                 )
                 last_voice_cycle = state.cycle_index
             elif enabled and state.slot is schedule.Slot.FRAME and state.cycle_index != last_frame_cycle:
-                _try_transmit_frame(conn, frame_queue, kiss_client, callsign, destination)
+                _drain_and_transmit(
+                    stop_event, frame_queue, frame_inter_tx_delay,
+                    lambda: _try_transmit_frame(
+                        conn, frame_queue, kiss_client, callsign, destination, frame_prefix, frame_suffix
+                    ),
+                )
                 last_frame_cycle = state.cycle_index
 
             stop_event.wait(tick_seconds)
@@ -501,8 +558,9 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
 
 def main() -> None:
     conn = get_connection(DEFAULT_DB_PATH)
-    frame_topic = get_setting("BEACON_FRAME_SUBSCRIBE_TOPIC", "radiobeacon/events/item.chunked", conn=conn)
-    voice_topic = get_setting("BEACON_VOICE_SUBSCRIBE_TOPIC", "radiobeacon/events/item.dispatched", conn=conn)
+    content_ready_topic = get_setting(
+        "BEACON_CONTENT_READY_SUBSCRIBE_TOPIC", "radiobeacon/events/item.content_ready", conn=conn
+    )
     queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", "20", conn=conn))
     conn.close()
 
@@ -520,7 +578,7 @@ def main() -> None:
 
     mqtt_thread = threading.Thread(
         target=_run_mqtt_client,
-        args=(frame_topic, voice_topic, frame_queue, voice_queue, stop_event),
+        args=(content_ready_topic, frame_queue, voice_queue, stop_event),
         name="beacon-mqtt",
         daemon=True,
     )

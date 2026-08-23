@@ -62,3 +62,19 @@ def test_resolve_frame_text_returns_none_when_chunk_gone(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
     assert resolve_frame_text(conn, "csn", "does-not-exist", 0) is None
+
+
+def test_resolve_frame_text_with_none_chunk_index_reads_summary(tmp_path):
+    """chunk_index=None means "use items.summary directly" -- the path
+    beacon takes for an item.content_ready event with has_summary=True,
+    fixing AX.25 previously always sending raw chunked text instead."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "senapred", "1", extracted_contents="raw contents", summary="AI summary")
+
+    assert resolve_frame_text(conn, "senapred", "1", None) == "AI summary"
+
+
+def test_resolve_frame_text_with_none_chunk_index_returns_none_when_item_gone(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert resolve_frame_text(conn, "senapred", "does-not-exist", None) is None

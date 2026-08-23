@@ -18,7 +18,7 @@ from adapters.storage import (  # noqa: E402
 )
 
 import actions  # noqa: E402
-from actions import mq  # noqa: E402
+from actions import content_ready, mq  # noqa: E402
 from actions.base import Action  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -260,11 +260,70 @@ def _run_action_loop(
     logger.info("%s: stopped", name)
 
 
+def _run_content_ready_loop(stop_event: threading.Event) -> None:
+    """Runs actions.content_ready's poll loop forever, on its own MQTT
+    connection (only needs to publish, never subscribes) — same
+    connect/loop_start/stop_event.wait shape as _run_action_loop, but
+    ticking on a plain interval instead of reacting to messages."""
+    import paho.mqtt.client as mqtt_client
+
+    poll_interval = int(get_setting("ACTIONS_CONTENT_READY_POLL_INTERVAL_SECONDS", "2"))
+    output_topic = get_setting(
+        "ACTIONS_CONTENT_READY_OUTPUT_TOPIC", "radiobeacon/events/item.content_ready"
+    )
+    actor = "actions.content_ready"
+
+    logger.info(
+        "content_ready: starting (poll_interval=%ds, output_topic=%s)",
+        poll_interval, output_topic,
+    )
+
+    client = mqtt_client.Client(
+        mqtt_client.CallbackAPIVersion.VERSION2,
+        client_id="radiobeacon-actions-content_ready",
+        clean_session=False,
+    )
+
+    while not stop_event.is_set():
+        try:
+            client.connect(ACTIONS_MQ_HOST, ACTIONS_MQ_PORT)
+            break
+        except Exception:
+            logger.error(
+                "content_ready: failed to connect to %s:%d, retrying in %ds",
+                ACTIONS_MQ_HOST, ACTIONS_MQ_PORT, ACTIONS_MQ_RECONNECT_BACKOFF_SECONDS,
+                exc_info=True,
+            )
+            stop_event.wait(ACTIONS_MQ_RECONNECT_BACKOFF_SECONDS)
+    else:
+        logger.info("content_ready: stopped before connecting")
+        return
+
+    client.loop_start()
+    try:
+        while not stop_event.is_set():
+            conn = get_connection(DEFAULT_DB_PATH)
+            try:
+                published = content_ready.check_and_publish(
+                    conn, client, output_topic=output_topic, actor=actor, qos=ACTIONS_MQ_QOS
+                )
+                if published:
+                    logger.info("content_ready: published %d item(s)", published)
+            except Exception:
+                logger.error("content_ready: poll tick failed", exc_info=True)
+            finally:
+                conn.close()
+            stop_event.wait(poll_interval)
+    finally:
+        client.loop_stop()
+        client.disconnect()
+        logger.info("content_ready: stopped")
+
+
 def main() -> None:
     action_classes = discover_actions()
     if not action_classes:
         logger.warning("no actions found")
-        return
 
     stop_event = threading.Event()
 
@@ -294,7 +353,15 @@ def main() -> None:
 
     if not threads:
         logger.warning("no actions configured (every discovered action is missing SUBSCRIBE_TOPIC)")
-        return
+
+    threads.append(
+        threading.Thread(
+            target=_run_content_ready_loop,
+            args=(stop_event,),
+            name="ContentReady",
+            daemon=True,
+        )
+    )
 
     for thread in threads:
         thread.start()

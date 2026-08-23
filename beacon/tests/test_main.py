@@ -23,26 +23,14 @@ class FakeClient:
         self.published.append((topic, payload, qos))
 
 
-def _dispatched_payload(source="senapred", item_id="1", event_id=None):
+def _content_ready_payload(source="senapred", item_id="1", has_summary=False, event_id=None):
     return json.dumps(
         {
             "specversion": "1.0",
-            "type": "cl.radiobeacon.item.dispatched",
-            "source": "radiobeacon/log_handler",
+            "type": "cl.radiobeacon.item.content_ready",
+            "source": "radiobeacon/actions.content_ready",
             "id": event_id or str(uuid.uuid4()),
-            "data": {"source": source, "item_id": item_id},
-        }
-    ).encode("utf-8")
-
-
-def _chunked_payload(source="senapred", item_id="1", event_id=None):
-    return json.dumps(
-        {
-            "specversion": "1.0",
-            "type": "cl.radiobeacon.item.chunked",
-            "source": "radiobeacon/actions.chunk",
-            "id": event_id or str(uuid.uuid4()),
-            "data": {"source": source, "item_id": item_id, "chunk_count": 1},
+            "data": {"source": source, "item_id": item_id, "has_summary": has_summary},
         }
     ).encode("utf-8")
 
@@ -64,8 +52,7 @@ def _insert_item(conn, source, item_id, *, extracted_contents="raw", summary=Non
     conn.commit()
 
 
-FRAME_TOPIC = "radiobeacon/events/item.chunked"
-VOICE_TOPIC = "radiobeacon/events/item.dispatched"
+CONTENT_READY_TOPIC = "radiobeacon/events/item.content_ready"
 
 
 # --- idempotency ---
@@ -74,145 +61,138 @@ VOICE_TOPIC = "radiobeacon/events/item.dispatched"
 def test_already_enqueued_false_without_event_id(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
-    assert main_module._already_enqueued(conn, "voice", None) is False
+    assert main_module._already_enqueued(conn, None) is False
 
 
 def test_already_enqueued_true_for_matching_event_id(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     record_audit_event(
-        conn, event_type="beacon.voice.enqueued", actor="beacon", details={"event_id": "abc"}
+        conn, event_type="beacon.content_ready.enqueued", actor="beacon", details={"event_id": "abc"}
     )
 
-    assert main_module._already_enqueued(conn, "voice", "abc") is True
-    assert main_module._already_enqueued(conn, "voice", "different") is False
-    assert main_module._already_enqueued(conn, "frame", "abc") is False  # scoped per kind
+    assert main_module._already_enqueued(conn, "abc") is True
+    assert main_module._already_enqueued(conn, "different") is False
 
 
-# --- frame enqueue (from item.chunked) ---
+# --- content_ready enqueue ---
 
 
-def test_handle_frame_event_enqueues_one_reference_per_chunk(tmp_path):
+def test_handle_content_ready_event_with_summary_enqueues_single_frame_and_voice(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "senapred", "1", True, "event-1")
+
+    assert frame_queue.stats().size == 1
+    assert frame_queue.get_nowait() == QueuedFrame(source="senapred", item_id="1", chunk_index=None)
+    assert voice_queue.stats().size == 1
+    assert voice_queue.get_nowait() == QueuedVoice(source="senapred", item_id="1")
+
+
+def test_handle_content_ready_event_without_summary_enqueues_one_frame_per_chunk(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk zero", chunk_count=3)
     _insert_chunk(conn, "csn", "1", 1, "chunk one", chunk_count=3)
     _insert_chunk(conn, "csn", "1", 2, "chunk two", chunk_count=3)
     frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
 
-    main_module._handle_frame_event(conn, frame_queue, "csn", "1", "event-1")
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", False, "event-1")
 
     assert frame_queue.stats().size == 3
-    first = frame_queue.get_nowait()
-    assert first == QueuedFrame(source="csn", item_id="1", chunk_index=0)
+    assert frame_queue.get_nowait() == QueuedFrame(source="csn", item_id="1", chunk_index=0)
+    assert voice_queue.stats().size == 1  # voice enqueued regardless of has_summary
 
 
-def test_handle_frame_event_skips_when_no_chunks_yet(tmp_path):
+def test_handle_content_ready_event_without_summary_and_no_chunks_yet_enqueues_no_frame(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
 
-    main_module._handle_frame_event(conn, frame_queue, "csn", "1", "event-1")
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", False, "event-1")
 
     assert frame_queue.stats().size == 0
-
-
-def test_handle_frame_event_records_audit_event_with_event_id(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
-    frame_queue = BoundedDropOldestQueue(10)
-
-    main_module._handle_frame_event(conn, frame_queue, "csn", "1", "event-1")
-
-    row = conn.execute(
-        "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.enqueued'"
-    ).fetchone()
-    assert json.loads(row[0])["event_id"] == "event-1"
-
-
-# --- voice enqueue (from item.dispatched) ---
-
-
-def test_handle_voice_event_enqueues_reference(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    voice_queue = BoundedDropOldestQueue(10)
-
-    main_module._handle_voice_event(conn, voice_queue, "csn", "1", "event-1")
-
-    assert voice_queue.get_nowait() == QueuedVoice(source="csn", item_id="1")
-
-
-def test_handle_voice_event_idempotent_on_same_event_id(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    voice_queue = BoundedDropOldestQueue(10)
-
-    main_module._handle_voice_event(conn, voice_queue, "csn", "1", "event-1")
-    main_module._handle_voice_event(conn, voice_queue, "csn", "1", "event-1")  # redelivered duplicate
-
     assert voice_queue.stats().size == 1
 
 
-def test_handle_voice_event_rearm_with_new_event_id_enqueues_again(tmp_path):
-    """A rearm publishes a genuinely new event id for the same
-    (source, item_id) -- must be enqueued again, not skipped."""
+def test_handle_content_ready_event_idempotent_on_same_event_id(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    frame_queue = BoundedDropOldestQueue(10)
     voice_queue = BoundedDropOldestQueue(10)
 
-    main_module._handle_voice_event(conn, voice_queue, "csn", "1", "event-1")
-    main_module._handle_voice_event(conn, voice_queue, "csn", "1", "event-2")
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", True, "event-1")
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", True, "event-1")
 
+    assert frame_queue.stats().size == 1
+    assert voice_queue.stats().size == 1
+
+
+def test_handle_content_ready_event_rearm_with_new_event_id_enqueues_again(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", True, "event-1")
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", True, "event-2")
+
+    assert frame_queue.stats().size == 2
     assert voice_queue.stats().size == 2
+
+
+def test_handle_content_ready_event_records_audit_event_with_event_id(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", True, "event-1")
+
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.content_ready.enqueued'"
+    ).fetchone()
+    details = json.loads(row[0])
+    assert details["event_id"] == "event-1"
+    assert details["has_summary"] is True
 
 
 # --- on_message routing ---
 
 
-def test_on_message_routes_frame_topic_to_frame_queue(tmp_path, monkeypatch):
+def test_on_message_routes_content_ready_to_both_queues(tmp_path, monkeypatch):
     monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    _insert_chunk(conn, "senapred", "1", 0, "chunk zero")
 
     frame_queue = BoundedDropOldestQueue(10)
     voice_queue = BoundedDropOldestQueue(10)
-    handler = main_module._make_on_message(FRAME_TOPIC, VOICE_TOPIC, frame_queue, voice_queue)
+    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue)
 
-    handler(FakeClient(), None, FakeMessage(FRAME_TOPIC, _chunked_payload()))
+    handler(FakeClient(), None, FakeMessage(CONTENT_READY_TOPIC, _content_ready_payload(has_summary=True)))
 
     assert frame_queue.stats().size == 1
-    assert voice_queue.stats().size == 0
-
-
-def test_on_message_routes_voice_topic_to_voice_queue(tmp_path, monkeypatch):
-    monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
-
-    frame_queue = BoundedDropOldestQueue(10)
-    voice_queue = BoundedDropOldestQueue(10)
-    handler = main_module._make_on_message(FRAME_TOPIC, VOICE_TOPIC, frame_queue, voice_queue)
-
-    handler(FakeClient(), None, FakeMessage(VOICE_TOPIC, _dispatched_payload()))
-
     assert voice_queue.stats().size == 1
-    assert frame_queue.stats().size == 0
 
 
 def test_on_message_swallows_malformed_payload(tmp_path, monkeypatch):
     monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
     frame_queue = BoundedDropOldestQueue(10)
     voice_queue = BoundedDropOldestQueue(10)
-    handler = main_module._make_on_message(FRAME_TOPIC, VOICE_TOPIC, frame_queue, voice_queue)
+    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue)
 
-    handler(FakeClient(), None, FakeMessage(VOICE_TOPIC, b"not json"))  # must not raise
+    handler(FakeClient(), None, FakeMessage(CONTENT_READY_TOPIC, b"not json"))  # must not raise
 
 
 def test_on_message_skips_event_missing_source_or_item_id(tmp_path, monkeypatch):
     monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
     frame_queue = BoundedDropOldestQueue(10)
     voice_queue = BoundedDropOldestQueue(10)
-    handler = main_module._make_on_message(FRAME_TOPIC, VOICE_TOPIC, frame_queue, voice_queue)
+    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue)
 
     payload = json.dumps(
         {"specversion": "1.0", "type": "x", "source": "s", "id": "1", "data": {}}
     ).encode("utf-8")
-    handler(FakeClient(), None, FakeMessage(VOICE_TOPIC, payload))
+    handler(FakeClient(), None, FakeMessage(CONTENT_READY_TOPIC, payload))
 
     assert voice_queue.stats().size == 0
+    assert frame_queue.stats().size == 0
 
 
 # --- window config ---
@@ -356,6 +336,84 @@ def test_maybe_control_services_resets_flag_outside_lead_time_window(tmp_path):
     assert prepped_voice is False
 
 
+# --- _drain_and_transmit ---
+
+
+def test_drain_and_transmit_calls_once_per_queued_item(tmp_path):
+    import threading
+
+    frame_queue = BoundedDropOldestQueue(10)
+    for i in range(4):
+        frame_queue.put(QueuedFrame(source="csn", item_id=str(i), chunk_index=0))
+
+    calls = []
+
+    def transmit_once():
+        frame_queue.get_nowait()
+        calls.append(1)
+
+    attempted = main_module._drain_and_transmit(threading.Event(), frame_queue, 0.0, transmit_once)
+
+    assert attempted == 4
+    assert len(calls) == 4
+    assert frame_queue.stats().size == 0
+
+
+def test_drain_and_transmit_waits_between_items_not_before_first_or_after_last(tmp_path):
+    import threading
+
+    frame_queue = BoundedDropOldestQueue(10)
+    for i in range(3):
+        frame_queue.put(QueuedFrame(source="csn", item_id=str(i), chunk_index=0))
+
+    waits = []
+
+    class _RecordingStopEvent(threading.Event):
+        def wait(self, timeout=None):
+            waits.append(timeout)
+            return False
+
+    def transmit_once():
+        frame_queue.get_nowait()
+
+    main_module._drain_and_transmit(_RecordingStopEvent(), frame_queue, 2.5, transmit_once)
+
+    # 3 items -> 2 inter-item waits (not before the first, not after the last)
+    assert waits == [2.5, 2.5]
+
+
+def test_drain_and_transmit_stops_early_when_stop_event_set(tmp_path):
+    import threading
+
+    frame_queue = BoundedDropOldestQueue(10)
+    for i in range(5):
+        frame_queue.put(QueuedFrame(source="csn", item_id=str(i), chunk_index=0))
+
+    stop_event = threading.Event()
+    calls = []
+
+    def transmit_once():
+        frame_queue.get_nowait()
+        calls.append(1)
+        if len(calls) == 2:
+            stop_event.set()  # simulate shutdown mid-drain
+
+    attempted = main_module._drain_and_transmit(stop_event, frame_queue, 0.0, transmit_once)
+
+    assert attempted == 2  # stopped early, backlog not fully drained
+    assert frame_queue.stats().size == 3
+
+
+def test_drain_and_transmit_noop_on_empty_queue(tmp_path):
+    import threading
+
+    frame_queue = BoundedDropOldestQueue(10)
+
+    attempted = main_module._drain_and_transmit(threading.Event(), frame_queue, 0.0, lambda: None)
+
+    assert attempted == 0
+
+
 # --- transmit ---
 
 
@@ -467,6 +525,24 @@ def test_try_transmit_frame_records_dropped_too_long(tmp_path):
         "SELECT 1 FROM audit_log WHERE event_type = 'beacon.frame.dropped_too_long'"
     ).fetchone()
     assert row is not None
+
+
+def test_try_transmit_frame_applies_prefix_and_suffix_to_actual_transmitted_bytes(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk text")
+    frame_queue = BoundedDropOldestQueue(10)
+    frame_queue.put(QueuedFrame(source="csn", item_id="1", chunk_index=0))
+    kiss_client = _StubKissClient()
+
+    main_module._try_transmit_frame(
+        conn, frame_queue, kiss_client, "CD3DXZ-1", "WXALRT", prefix=">> ", suffix=" [EXPERIMENTAL]"
+    )
+
+    assert kiss_client.calls == [("CD3DXZ-1", "WXALRT", b">> chunk text [EXPERIMENTAL]")]
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.transmitted'"
+    ).fetchone()
+    assert json.loads(row[0])["tnc2"] == "CD3DXZ-1>WXALRT:>> chunk text [EXPERIMENTAL]"
 
 
 def test_try_transmit_frame_records_transmit_failed_on_send_failure(tmp_path):
