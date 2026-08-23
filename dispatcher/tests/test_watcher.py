@@ -14,6 +14,7 @@ def _make_conn():
         "CREATE TABLE items ("
         "source TEXT NOT NULL, item_id TEXT NOT NULL, "
         "extracted_title TEXT, url TEXT, type TEXT, dispatch_policy TEXT, "
+        "source_date_time TEXT, "
         "PRIMARY KEY (source, item_id))"
     )
     return conn
@@ -26,11 +27,13 @@ def _insert_item(
     dispatch_policy,
     title="Title",
     url="http://example.test",
+    source_date_time=None,
 ):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_title, url, type, dispatch_policy) "
-        "VALUES (?, ?, ?, ?, 'Type', ?)",
-        (source, item_id, title, url, dispatch_policy),
+        "INSERT INTO items "
+        "(source, item_id, extracted_title, url, type, dispatch_policy, source_date_time) "
+        "VALUES (?, ?, ?, ?, 'Type', ?, ?)",
+        (source, item_id, title, url, dispatch_policy, source_date_time),
     )
     conn.commit()
 
@@ -152,6 +155,88 @@ def test_first_poll_skips_existing_backlog_but_records_watermark(clock):
         "SELECT last_seen_rowid FROM dispatcher_state WHERE consumer = ?", ("log",)
     ).fetchone()[0]
     assert watermark == 2
+
+
+def test_discover_new_items_skips_arming_item_whose_source_date_time_predates_not_before(clock):
+    """The fix for a first-ever adapter poll flooding delivery: a fresh
+    fetch can return a batch of already-old real-world events (a backlog
+    of past earthquakes/alerts, not new ones) in one response. Each is a
+    brand-new `items` row from the watermark's point of view, but its own
+    source_date_time is stale relative to not_before (this process's own
+    startup instant) -- it must never be armed for dispatch."""
+    conn = _make_conn()
+    discover_new_items(conn, "log")  # establish watermark before the item exists
+
+    _insert_item(
+        conn, "senapred", "1", "informational",
+        source_date_time="2020-01-01T00:00:00+00:00",  # long before "now" below
+    )
+
+    discovered = discover_new_items(conn, "log", not_before=clock.now)
+
+    assert discovered == 1  # still counted as "seen"
+    assert conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer = 'log' "
+        "AND source = 'senapred' AND item_id = '1'"
+    ).fetchone() is None
+    row = conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = 'item.discovered_stale_skipped' "
+        "AND source = 'senapred' AND item_id = '1'"
+    ).fetchone()
+    assert row is not None
+
+
+def test_discover_new_items_still_arms_item_with_source_date_time_at_or_after_not_before(clock):
+    conn = _make_conn()
+    discover_new_items(conn, "log")
+
+    _insert_item(
+        conn, "senapred", "1", "informational",
+        source_date_time=clock.now.isoformat(),  # right at not_before, not before it
+    )
+
+    discovered = discover_new_items(conn, "log", not_before=clock.now)
+
+    assert discovered == 1
+    assert conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer = 'log' "
+        "AND source = 'senapred' AND item_id = '1'"
+    ).fetchone() is not None
+
+
+def test_discover_new_items_arms_item_with_no_source_date_time_regardless_of_not_before(clock):
+    """A missing source_date_time isn't treated as "infinitely stale" --
+    without a real value to compare, there's nothing to filter on."""
+    conn = _make_conn()
+    discover_new_items(conn, "log")
+
+    _insert_item(conn, "senapred", "1", "informational", source_date_time=None)
+
+    discovered = discover_new_items(conn, "log", not_before=clock.now)
+
+    assert discovered == 1
+    assert conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer = 'log' "
+        "AND source = 'senapred' AND item_id = '1'"
+    ).fetchone() is not None
+
+
+def test_discover_new_items_arms_everything_when_not_before_omitted(clock):
+    conn = _make_conn()
+    discover_new_items(conn, "log")
+
+    _insert_item(
+        conn, "senapred", "1", "informational",
+        source_date_time="2020-01-01T00:00:00+00:00",
+    )
+
+    discovered = discover_new_items(conn, "log")  # not_before defaults to None
+
+    assert discovered == 1
+    assert conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer = 'log' "
+        "AND source = 'senapred' AND item_id = '1'"
+    ).fetchone() is not None
 
 
 def test_informational_item_delivered_once(clock):

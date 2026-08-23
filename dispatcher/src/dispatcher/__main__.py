@@ -13,6 +13,7 @@ from adapters.storage import (  # noqa: E402
     get_setting,
     register_audit_event_hook,
 )
+from adapters.timeutil import utc_now  # noqa: E402
 
 from .mq_publisher import publish_cloud_event  # noqa: E402
 from .watcher import check_for_new_items, log_handler  # noqa: E402
@@ -42,13 +43,23 @@ def main() -> None:
     signal.signal(signal.SIGINT, _handle_shutdown_signal)
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
 
+    # Captured once, at process start: an item whose own source_date_time
+    # (the real-world event time, not when it was fetched/inserted)
+    # predates this is never dispatched — see watcher.discover_new_items'
+    # docstring. Not a rolling window, so a genuinely new event is never
+    # excluded no matter how long this process keeps running.
+    startup_time = utc_now()
+
     logger.info(
-        "dispatcher: starting (consumer=%s, interval=%ds)", CONSUMER_NAME, INTERVAL_SECONDS
+        "dispatcher: starting (consumer=%s, interval=%ds, ignoring source_date_time before %s)",
+        CONSUMER_NAME, INTERVAL_SECONDS, startup_time.isoformat(),
     )
     try:
         while not stop_event.is_set():
             try:
-                dispatched = check_for_new_items(conn, CONSUMER_NAME, HANDLERS)
+                dispatched = check_for_new_items(
+                    conn, CONSUMER_NAME, HANDLERS, not_before=startup_time
+                )
                 if dispatched:
                     logger.info(
                         "dispatched %d item%s",

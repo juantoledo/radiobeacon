@@ -37,6 +37,24 @@ intentionally replay history for a consumer, delete its rows from the
 (`sqlite3 storage/radiobeacon.db "DELETE FROM dispatcher_state WHERE consumer = '...'; DELETE FROM item_policy_state WHERE consumer = '...'"`)
 and restart.
 
+**A brand-new `items` row can still be a stale event**, though: an
+adapter's own first poll can return a batch of already-old real-world
+events in one response (e.g. CSN/SENAPRED returning the last N
+earthquakes/alerts, not just ones from this exact moment) — each lands
+as a genuinely new `rowid`, so the watermark above doesn't catch it.
+Step 1 (`discover_new_items`) additionally compares each new row's own
+`source_date_time` (the event's real-world timestamp — see
+[data-adapters/README.md](../data-adapters/README.md)) against
+`not_before`, this process's own startup instant (captured once in
+`__main__.py`, passed through every poll). Anything whose
+`source_date_time` predates it is recorded as seen (so it's never
+reconsidered) but never armed for dispatch — filtered at the earliest
+possible point, before it ever reaches `trigger_dispatches`, rather than
+downstream. Not a rolling max-age: a genuinely new event is never
+excluded no matter how long this process keeps running afterward. An
+item with no `source_date_time` at all is never treated as stale (there's
+nothing to compare).
+
 ## Delivery repeat policy (`dispatch_policy`)
 
 Every item carries a `dispatch_policy` column (a name, set by the adapter

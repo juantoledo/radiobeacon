@@ -10,6 +10,7 @@ def _make_conn():
         "CREATE TABLE items ("
         "source TEXT NOT NULL, item_id TEXT NOT NULL, "
         "extracted_title TEXT, url TEXT, type TEXT, dispatch_policy TEXT, "
+        "source_date_time TEXT, "
         "PRIMARY KEY (source, item_id))"
     )
     return conn

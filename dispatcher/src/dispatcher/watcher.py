@@ -139,25 +139,72 @@ def _arm(conn: sqlite3.Connection, consumer: str, source: str, item_id: str) -> 
     )
 
 
-def discover_new_items(conn: sqlite3.Connection, consumer: str) -> int:
+def discover_new_items(
+    conn: sqlite3.Connection, consumer: str, *, not_before: datetime | None = None
+) -> int:
     """Finds rows inserted into `items` since this consumer last looked,
-    and schedules each for immediate delivery (due now). Also records
-    each one's current dispatch_policy as its baseline in
-    item_policy_state, so sync_policy_changes doesn't treat this same
-    item as newly-changed on the very next poll. Returns the number of
-    rows discovered."""
+    and schedules each for immediate delivery (due now) — unless
+    `not_before` is given and the row's own `source_date_time` (the
+    event's real-world timestamp, not when this pipeline happened to
+    fetch/insert it) predates it, in which case it's recorded as seen
+    but never armed for dispatch.
+
+    This is what stops an adapter's first-ever poll from flooding
+    delivery: a fresh CSN/SENAPRED fetch can return a batch of
+    already-old real-world events (a backlog of past earthquakes/alerts,
+    not new ones) in one response — each lands as a brand-new `items`
+    row (rowid > last_seen), but its source_date_time is old. Filtering
+    here, at discovery — the earliest point an item could ever be
+    dispatched — means a stale item never enters trigger_dispatches at
+    all, rather than being caught later by some downstream reconciler.
+    `not_before` is meant to be this process's own startup instant
+    (passed in from __main__.py, captured once) — not a rolling
+    max-age, so a genuinely new event is never excluded no matter how
+    long this process has been running since.
+
+    Also records each row's current dispatch_policy as its baseline in
+    item_policy_state (armed or not), so sync_policy_changes doesn't
+    treat this same item as newly-changed on the very next poll.
+    Returns the number of rows discovered (armed or skipped as stale)."""
     _ensure_tables(conn)
     last_seen = _last_seen_rowid(conn, consumer)
 
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT rowid, source, item_id, dispatch_policy FROM items "
+        "SELECT rowid, source, item_id, dispatch_policy, source_date_time FROM items "
         "WHERE rowid > ? ORDER BY rowid",
         (last_seen,),
     ).fetchall()
 
     for row in rows:
-        _arm(conn, consumer, row["source"], row["item_id"])
+        stale = False
+        if not_before is not None and row["source_date_time"]:
+            try:
+                event_dt = datetime.fromisoformat(row["source_date_time"])
+            except ValueError:
+                event_dt = None
+            stale = event_dt is not None and event_dt < not_before
+
+        if stale:
+            record_audit_event(
+                conn,
+                event_type="item.discovered_stale_skipped",
+                actor="dispatcher.watcher",
+                source=row["source"],
+                item_id=row["item_id"],
+                details={"consumer": consumer, "source_date_time": row["source_date_time"]},
+            )
+        else:
+            _arm(conn, consumer, row["source"], row["item_id"])
+            record_audit_event(
+                conn,
+                event_type="item.discovered",
+                actor="dispatcher.watcher",
+                source=row["source"],
+                item_id=row["item_id"],
+                details={"consumer": consumer},
+            )
+
         conn.execute(
             "INSERT OR REPLACE INTO item_policy_state "
             "(consumer, source, item_id, dispatch_policy) VALUES (?, ?, ?, ?)",
@@ -168,14 +215,6 @@ def discover_new_items(conn: sqlite3.Connection, consumer: str) -> int:
             (row["rowid"], consumer),
         )
         conn.commit()
-        record_audit_event(
-            conn,
-            event_type="item.discovered",
-            actor="dispatcher.watcher",
-            source=row["source"],
-            item_id=row["item_id"],
-            details={"consumer": consumer},
-        )
 
     return len(rows)
 
@@ -353,15 +392,21 @@ def dispatch_due_items(
 
 
 def check_for_new_items(
-    conn: sqlite3.Connection, consumer: str, handlers: list[Handler]
+    conn: sqlite3.Connection,
+    consumer: str,
+    handlers: list[Handler],
+    *,
+    not_before: datetime | None = None,
 ) -> int:
     """The poll loop's single entry point:
-    1. discover_new_items — brand-new rows since this consumer last looked.
+    1. discover_new_items — brand-new rows since this consumer last looked
+       (skips arming any whose source_date_time predates `not_before` —
+       see its docstring).
     2. sync_policy_changes — any row (new, in-flight, retired, or backlog)
        whose dispatch_policy has drifted since last recorded.
     3. dispatch_due_items — delivers everything currently due.
     Returns the number of rows dispatched this call."""
-    discover_new_items(conn, consumer)
+    discover_new_items(conn, consumer, not_before=not_before)
     sync_policy_changes(conn, consumer)
     return dispatch_due_items(conn, consumer, handlers)
 
