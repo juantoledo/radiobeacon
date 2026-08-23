@@ -67,3 +67,51 @@ def test_synthesize_speech_produces_a_real_wav_file(tmp_path):
     assert ok is True
     assert out_path.exists()
     assert out_path.stat().st_size > 0
+
+
+def test_synthesize_speech_piper_returns_false_without_model_configured(tmp_path):
+    ok = synthesize_speech("hola", out_path=tmp_path / "out.wav", engine="piper", piper_model="")
+
+    assert ok is False
+
+
+def test_synthesize_speech_piper_returns_false_when_binary_missing(tmp_path, monkeypatch):
+    import subprocess
+
+    def _raise_not_found(*args, **kwargs):
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(subprocess, "run", _raise_not_found)
+
+    ok = synthesize_speech(
+        "hola", out_path=tmp_path / "out.wav", engine="piper", piper_model="/models/es.onnx"
+    )
+
+    assert ok is False
+
+
+def test_synthesize_speech_piper_invokes_binary_with_model_and_stdin_text(tmp_path, monkeypatch):
+    import subprocess
+
+    captured = {}
+
+    class _FakeResult:
+        returncode = 0
+        stderr = b""
+
+    def _fake_run(cmd, *, input, **kwargs):
+        captured["cmd"] = cmd
+        captured["input"] = input
+        return _FakeResult()
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    out_path = tmp_path / "out.wav"
+
+    ok = synthesize_speech(
+        "hola mundo", out_path=out_path, engine="piper",
+        piper_model="/models/es.onnx", piper_binary="piper",
+    )
+
+    assert ok is True
+    assert captured["cmd"] == ["piper", "--model", "/models/es.onnx", "--output_file", str(out_path)]
+    assert captured["input"] == b"hola mundo"

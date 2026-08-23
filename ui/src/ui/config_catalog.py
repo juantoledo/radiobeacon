@@ -600,12 +600,43 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         advanced=True,
     ),
     SettingSpec(
+        "BEACON_TTS_ENGINE",
+        "Beacon — Voice",
+        "TTS engine",
+        "\"espeak\" (default) is offline/zero-setup but sounds robotic. "
+        "\"piper\" is offline neural TTS — much more natural, but needs a "
+        "downloaded voice model (BEACON_TTS_PIPER_MODEL).",
+        "select",
+        "espeak",
+        choices=("espeak", "piper"),
+    ),
+    SettingSpec(
         "BEACON_TTS_VOICE",
         "Beacon — Voice",
-        "TTS voice",
-        "espeak-ng voice/language code used to synthesize speech.",
+        "TTS voice (espeak)",
+        "espeak-ng voice/language code used to synthesize speech. Only "
+        "applies when BEACON_TTS_ENGINE=espeak.",
         "text",
         "es",
+    ),
+    SettingSpec(
+        "BEACON_TTS_PIPER_MODEL",
+        "Beacon — Voice",
+        "Piper voice model path",
+        "Path to a downloaded piper .onnx voice model (its .onnx.json "
+        "sidecar must sit alongside it). Required when "
+        "BEACON_TTS_ENGINE=piper.",
+        "text",
+        "",
+    ),
+    SettingSpec(
+        "BEACON_TTS_PIPER_BINARY",
+        "Beacon — Voice",
+        "Piper binary",
+        "Command used to invoke piper. Only applies when "
+        "BEACON_TTS_ENGINE=piper.",
+        "text",
+        "piper",
     ),
     SettingSpec(
         "BEACON_TTS_WAV_DIR",

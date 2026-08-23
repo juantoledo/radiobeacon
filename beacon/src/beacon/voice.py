@@ -4,7 +4,13 @@ CONTEXT.md itself marks SvxLink's remote-control mechanism as an open TODO
 ("TCL events o comando remoto"), and no real SvxLink instance exists in
 this dev environment to validate against. LoggingVoiceTransmitter (the
 default) is the only voice path this repo can verify end-to-end right
-now."""
+now.
+
+Two TTS engines are selectable (BEACON_TTS_ENGINE): "espeak" (default —
+robotic but zero-setup, apt install espeak-ng) and "piper" (neural,
+noticeably more natural, but requires a separately downloaded .onnx voice
+model — see https://github.com/rhasspy/piper/releases/tag/v0.0.2 for
+voices, e.g. es_ES-*.onnx + its .onnx.json sidecar in the same directory)."""
 import logging
 import subprocess
 from pathlib import Path
@@ -17,11 +23,26 @@ class VoiceTransmitter(Protocol):
     def transmit(self, *, text: str, wav_path: Path) -> bool: ...
 
 
-def synthesize_speech(text: str, *, out_path: Path, voice: str = "es") -> bool:
+def synthesize_speech(
+    text: str,
+    *,
+    out_path: Path,
+    voice: str = "es",
+    engine: str = "espeak",
+    piper_model: str = "",
+    piper_binary: str = "piper",
+) -> bool:
+    """text -> WAV. Dispatches to the configured engine; never raises."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    if engine == "piper":
+        return _synthesize_speech_piper(text, out_path=out_path, model_path=piper_model, binary=piper_binary)
+    return _synthesize_speech_espeak(text, out_path=out_path, voice=voice)
+
+
+def _synthesize_speech_espeak(text: str, *, out_path: Path, voice: str) -> bool:
     """text -> WAV via the espeak-ng subprocess (offline, no API key,
     standard on Debian/Ubuntu — apt install espeak-ng). Returns False
     (logs) on a missing binary or non-zero exit; never raises."""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         result = subprocess.run(
             ["espeak-ng", "-v", voice, "-w", str(out_path), text],
@@ -37,6 +58,37 @@ def synthesize_speech(text: str, *, out_path: Path, voice: str = "es") -> bool:
     if result.returncode != 0:
         logger.error(
             "voice: espeak-ng exited %d: %s", result.returncode, result.stderr.decode(errors="replace")
+        )
+        return False
+    return True
+
+
+def _synthesize_speech_piper(text: str, *, out_path: Path, model_path: str, binary: str) -> bool:
+    """text -> WAV via the piper subprocess (offline neural TTS, no API
+    key — pip install piper-tts, or the standalone binary release). Needs
+    a downloaded .onnx voice model (BEACON_TTS_PIPER_MODEL) plus its
+    .onnx.json sidecar in the same directory; text is piped over stdin,
+    matching piper's own CLI contract. Returns False (logs) on a missing
+    binary, unconfigured model, or non-zero exit; never raises."""
+    if not model_path:
+        logger.error("voice: BEACON_TTS_PIPER_MODEL not configured — cannot synthesize speech via piper")
+        return False
+    try:
+        result = subprocess.run(
+            [binary, "--model", model_path, "--output_file", str(out_path)],
+            input=text.encode(),
+            capture_output=True,
+            timeout=60,
+        )
+    except FileNotFoundError:
+        logger.error("voice: piper not found on PATH — cannot synthesize speech")
+        return False
+    except subprocess.TimeoutExpired:
+        logger.error("voice: piper timed out synthesizing speech")
+        return False
+    if result.returncode != 0:
+        logger.error(
+            "voice: piper exited %d: %s", result.returncode, result.stderr.decode(errors="replace")
         )
         return False
     return True

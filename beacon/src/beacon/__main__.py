@@ -414,6 +414,7 @@ def _format_source_date_time(conn, source: str, item_id: str, date_format: str) 
 def _try_transmit_voice(
     conn, voice_queue: BoundedDropOldestQueue, voice_transmitter: voice.VoiceTransmitter,
     callsign: str | None, template: str, max_chars: int, wav_dir: str, tts_voice: str, date_format: str,
+    tts_engine: str = "espeak", tts_piper_model: str = "", tts_piper_binary: str = "piper",
 ) -> None:
     queued = voice_queue.get_nowait()
     if queued is None:
@@ -439,7 +440,10 @@ def _try_transmit_voice(
         text, callsign=callsign, template=template, max_chars=max_chars, date=date_str
     )
     wav_path = Path(wav_dir) / f"{queued.source}-{queued.item_id}-{int(time.time())}.wav"
-    if not voice.synthesize_speech(formatted.text, out_path=wav_path, voice=tts_voice):
+    if not voice.synthesize_speech(
+        formatted.text, out_path=wav_path, voice=tts_voice,
+        engine=tts_engine, piper_model=tts_piper_model, piper_binary=tts_piper_binary,
+    ):
         record_audit_event(
             conn, event_type="beacon.voice.transmit_failed", actor="beacon",
             source=queued.source, item_id=queued.item_id, details={"reason": "tts_failed"},
@@ -561,6 +565,9 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
         direwolf_name = get_setting("BEACON_DIREWOLF_SERVICE_NAME", "direwolf", conn=conn)
         wav_dir = get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
         tts_voice = get_setting("BEACON_TTS_VOICE", "es", conn=conn)
+        tts_engine = get_setting("BEACON_TTS_ENGINE", "espeak", conn=conn)
+        tts_piper_model = get_setting("BEACON_TTS_PIPER_MODEL", "", conn=conn)
+        tts_piper_binary = get_setting("BEACON_TTS_PIPER_BINARY", "piper", conn=conn)
 
         last_voice_cycle: int | None = None
         last_frame_cycle: int | None = None
@@ -637,6 +644,7 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
                     lambda: _try_transmit_voice(
                         conn, voice_queue, voice_transmitter, callsign, voice_template,
                         voice_max_chars, wav_dir, tts_voice, date_format,
+                        tts_engine, tts_piper_model, tts_piper_binary,
                     ),
                 )
                 last_voice_cycle = state.cycle_index

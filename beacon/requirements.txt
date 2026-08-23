@@ -2,3 +2,7 @@ pytest
 paho-mqtt
 cloudevents>=1.9,<2
 ntplib
+# Only needed when BEACON_TTS_ENGINE=piper (provides the `piper` CLI binary
+# voice.py shells out to) -- espeak-ng, the default engine, is a separate
+# apt package, not a Python dependency.
+piper-tts

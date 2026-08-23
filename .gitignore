@@ -2,6 +2,8 @@
 storage/*.db
 storage/*.db-wal
 storage/*.db-shm
+beacon/storage/piper_voices/
+beacon/storage/beacon_tts/*.wav
 __pycache__/
 *.pyc
 .pytest_cache/

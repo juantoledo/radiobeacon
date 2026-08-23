@@ -158,9 +158,21 @@ independently start/stoppable services on the host.
 
 ## Voice: TTS is real, SvxLink control is an honest stub
 
-`src/beacon/voice.py`'s `synthesize_speech` shells out to `espeak-ng`
-(offline, no API key, standard on Debian/Ubuntu — `apt install espeak-ng`)
-to turn resolved voice text into a WAV file — real and testable.
+`src/beacon/voice.py`'s `synthesize_speech` turns resolved voice text into
+a WAV file — real and testable, via either of two selectable engines
+(`BEACON_TTS_ENGINE`):
+
+- **`espeak`** (default) — shells out to `espeak-ng` (offline, no API key,
+  standard on Debian/Ubuntu — `apt install espeak-ng`). Zero setup, but
+  sounds noticeably robotic (formant synthesis, not neural).
+- **`piper`** — shells out to `piper` (offline neural TTS, still no API
+  key). Sounds much more natural, but needs a voice model downloaded
+  separately (`BEACON_TTS_PIPER_MODEL`, a `.onnx` file with its
+  `.onnx.json` sidecar alongside it — see
+  [piper's releases](https://github.com/rhasspy/piper/releases/tag/v0.0.2)
+  for voices). Text is piped over stdin, matching piper's own CLI
+  contract.
+
 `BEACON_VOICE_TRANSMITTER=logging` (default) just logs what it would
 play. `=svxlink` is an **unverified stub** — `SvxlinkControlTransmitter`
 raises `NotImplementedError` unconditionally. CONTEXT.md itself marks
@@ -245,7 +257,10 @@ regulatory requirement).
 | `BEACON_AX25_KISS_HOST` / `_PORT` | `localhost` / `8001` |
 | `BEACON_AX25_CONNECT_TIMEOUT_SECONDS` | `5` |
 | `BEACON_VOICE_TRANSMITTER` | `logging` |
+| `BEACON_TTS_ENGINE` | `espeak` |
 | `BEACON_TTS_VOICE` | `es` |
+| `BEACON_TTS_PIPER_MODEL` | `""` |
+| `BEACON_TTS_PIPER_BINARY` | `piper` |
 | `BEACON_TTS_WAV_DIR` | `storage/beacon_tts` |
 | `BEACON_QUEUE_MAX_SIZE` | `200` |
 | `BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS` | `30` |
