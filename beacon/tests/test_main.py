@@ -2,7 +2,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from adapters.storage import get_connection, record_audit_event, set_setting
+from adapters.storage import get_connection, mark_item_ready_published, record_audit_event, set_setting
 
 import beacon.__main__ as main_module
 from beacon.content import QueuedFrame, QueuedVoice
@@ -145,6 +145,81 @@ def test_handle_content_ready_event_records_audit_event_with_event_id(tmp_path):
     details = json.loads(row[0])
     assert details["event_id"] == "event-1"
     assert details["frame_count"] == 1
+
+
+# --- _reconcile_missed_content_ready ---
+
+
+def test_reconcile_enqueues_item_readiness_row_never_enqueued(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
+    mark_item_ready_published(conn, "csn", "1")  # published, but beacon never enqueued it
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+
+    reconciled = main_module._reconcile_missed_content_ready(conn, frame_queue, voice_queue)
+
+    assert reconciled == 1
+    assert frame_queue.stats().size == 1
+    assert voice_queue.stats().size == 1
+    row = conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.content_ready.enqueued' "
+        "AND source = 'csn' AND item_id = '1'"
+    ).fetchone()
+    assert row is not None
+
+
+def test_reconcile_skips_item_already_enqueued_via_live_mqtt(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+    # Simulates the normal live-MQTT path already having handled this
+    # item BEFORE the readiness marker below -- published_at is not
+    # newer than the existing enqueue, so nothing should re-fire.
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", "event-1")
+    mark_item_ready_published(conn, "csn", "1")
+
+    reconciled = main_module._reconcile_missed_content_ready(conn, frame_queue, voice_queue)
+
+    assert reconciled == 0
+
+
+def test_reconcile_is_a_noop_with_nothing_pending(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+
+    reconciled = main_module._reconcile_missed_content_ready(conn, frame_queue, voice_queue)
+
+    assert reconciled == 0
+    assert frame_queue.stats().size == 0
+    assert voice_queue.stats().size == 0
+
+
+def test_reconcile_reenqueues_after_a_rearm_republish(tmp_path):
+    """A rearm produces a fresh item_readiness.published_at -- newer than
+    the prior enqueue -- so reconcile must catch that up too, not just
+    the "never enqueued at all" case."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", "event-1")
+    mark_item_ready_published(conn, "csn", "1")
+
+    # rearm: a fresh publish lands, but (for whatever reason -- the exact
+    # bug this reconciliation exists for) beacon's live MQTT handler
+    # never runs for it.
+    conn.execute(
+        "UPDATE item_readiness SET published_at = '2099-01-01 00:00:00' "
+        "WHERE source = 'csn' AND item_id = '1'"
+    )
+    conn.commit()
+
+    reconciled = main_module._reconcile_missed_content_ready(conn, frame_queue, voice_queue)
+
+    assert reconciled == 1
 
 
 # --- on_message routing ---

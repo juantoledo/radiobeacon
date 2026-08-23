@@ -41,6 +41,21 @@ job on that event is therefore simple:
   never get summarized) stays voice-able regardless of whether AI is
   enabled.
 
+**MQTT delivery alone isn't trusted as the sole path in.** beacon's MQTT
+client uses `clean_session=True` (see `_run_mqtt_client`'s docstring for
+why — a persistent session's stale subscriptions caused real
+double-transmission earlier), which means a message published while
+beacon is momentarily disconnected is simply gone at the MQTT layer, not
+queued by the broker. `_reconcile_missed_content_ready` closes that gap:
+periodically (`BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS`, default
+30s — plus once immediately on startup, which is what actually matters
+most), it compares `actions.content_ready`'s own durable publish record
+(`item_readiness`) against beacon's own `beacon.content_ready.enqueued`
+audit trail, and enqueues anything genuinely missed. Confirmed live: on
+one restart, `actions.content_ready` published a backlog of 52 items
+faster than beacon's client finished connecting — all 52 would have been
+silently lost without this.
+
 Text resolution stays lazy (not baked in at enqueue time) for both: a
 later rearm, or a summary changing between enqueue and transmit, is
 naturally reflected — whatever's true right now is what gets sent.
@@ -91,9 +106,11 @@ the previous one. If draining runs past the slot's nominal end, it
 finishes the backlog before handing control back — nothing gets cut off
 mid-queue. This blocks `_maybe_control_services`, the NTP check, and the
 status heartbeat for the drain's duration; `BEACON_QUEUE_MAX_SIZE`
-(default 20) bounds the worst case to 20 sequential transmissions before
-control returns. A deliberate tradeoff — full-drain priority over strict
-timing — not an oversight.
+(default 200 — sized for frame content, where one queue slot is one
+*chunk*, not one item; a real SENAPRED report has been observed
+producing 57 chunks on its own) bounds the worst case to that many
+sequential transmissions before control returns. A deliberate tradeoff —
+full-drain priority over strict timing — not an oversight.
 
 ## Enable / disable ("start/stop/restart")
 
@@ -225,7 +242,8 @@ regulatory requirement).
 | `BEACON_VOICE_TRANSMITTER` | `logging` |
 | `BEACON_TTS_VOICE` | `es` |
 | `BEACON_TTS_WAV_DIR` | `storage/beacon_tts` |
-| `BEACON_QUEUE_MAX_SIZE` | `20` |
+| `BEACON_QUEUE_MAX_SIZE` | `200` |
+| `BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS` | `30` |
 | `BEACON_MQ_HOST`/`_PORT`/`_QOS`/`_RECONNECT_BACKOFF_SECONDS` | `localhost`/`1883`/`1`/`5` |
 | `BEACON_CONTENT_READY_SUBSCRIBE_TOPIC` | `radiobeacon/events/item.content_ready` |
 | `BEACON_NTP_SERVER` | `pool.ntp.org` |

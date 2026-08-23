@@ -120,6 +120,51 @@ def _handle_content_ready_event(
     )
 
 
+def _reconcile_missed_content_ready(conn, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue) -> int:
+    """Catches up on any item.content_ready publish beacon's own MQTT
+    subscription genuinely missed — regardless of why: this process
+    starting up after actions.content_ready already published a backlog
+    (confirmed live: 52 publishes in one burst, all lost, because
+    beacon's client hadn't finished connecting/subscribing yet), a broker
+    restart, or any other brief disconnect. clean_session=True (see
+    _run_mqtt_client's docstring for why) trades away broker-side
+    queueing for a disconnected client, so MQTT delivery alone can no
+    longer be trusted as the sole source of truth here.
+
+    Compares item_readiness (actions.content_ready's own durable "I
+    published for this item" record — see data-adapters/src/adapters/
+    storage.py) against beacon's own beacon.content_ready.enqueued audit
+    trail: any item whose latest content-ready publish is newer than (or
+    has no matching) enqueue gets enqueued now, via the exact same
+    _handle_content_ready_event path a live MQTT message would take
+    (event_id=None — _already_enqueued always treats a missing event_id
+    as "not yet seen", and the resulting audit row's own timestamp is
+    what closes the gap for next time, so this is naturally
+    self-correcting, no separate bookkeeping needed). Returns the count
+    reconciled (for logging)."""
+    rows = conn.execute(
+        """
+        SELECT r.source, r.item_id
+        FROM item_readiness r
+        LEFT JOIN (
+            SELECT source, item_id, MAX(recorded_at) AS last_enqueued
+            FROM audit_log
+            WHERE event_type = 'beacon.content_ready.enqueued'
+            GROUP BY source, item_id
+        ) e ON e.source = r.source AND e.item_id = r.item_id
+        WHERE e.last_enqueued IS NULL OR r.published_at > e.last_enqueued
+        """
+    ).fetchall()
+    for source, item_id in rows:
+        logger.warning(
+            "beacon: reconciling missed item.content_ready for source=%s item_id=%s "
+            "(published but never enqueued — MQTT delivery was missed)",
+            source, item_id,
+        )
+        _handle_content_ready_event(conn, frame_queue, voice_queue, source, item_id, None)
+    return len(rows)
+
+
 def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue):
     """paho-mqtt re-raises any exception an on_message callback doesn't
     catch, silently killing loop_start()'s background thread — everything
@@ -169,8 +214,13 @@ def _run_mqtt_client(content_ready_topic: str, frame_queue: BoundedDropOldestQue
     the same bug on actions.chunk's equivalent stale subscription caused
     real double-transmission — fixed the same way everywhere rather than
     relying on this one handler's defensive check. A message published
-    while beacon is briefly offline is now lost rather than queued —
-    recoverable via a rearm."""
+    while beacon is briefly offline is now lost at the MQTT layer — but
+    unlike actions' own clients, beacon doesn't rely on that alone:
+    _reconcile_missed_content_ready (see _run_tdma_loop) periodically
+    catches up on anything genuinely missed via item_readiness/audit_log,
+    confirmed live to close exactly this gap (52 item.content_ready
+    publishes lost to this startup race in one incident before this
+    existed)."""
     import paho.mqtt.client as mqtt_client
 
     logger.info("beacon: mqtt starting (content_ready_topic=%s)", content_ready_topic)
@@ -520,6 +570,11 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
         prepped_voice = False
         prepped_frame = False
         last_ntp_check_at = 0.0
+        # 0.0 so the very first tick immediately reconciles -- this is
+        # what closes the startup race where actions.content_ready can
+        # publish a backlog before beacon's own MQTT client has finished
+        # connecting/subscribing (see _reconcile_missed_content_ready).
+        last_reconcile_at = 0.0
 
         logger.info(
             "beacon: TDMA loop starting (kiss=%s:%d, voice_transmitter=%s, service_controller=%s)",
@@ -536,6 +591,9 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
 
             enabled = get_setting("BEACON_ENABLED", "false", conn=conn).lower() == "true"
             ntp_interval = int(get_setting("BEACON_NTP_CHECK_INTERVAL_SECONDS", "3600", conn=conn))
+            reconcile_interval = int(
+                get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
+            )
             lead_time = float(get_setting("BEACON_SLOT_LEAD_TIME_SECONDS", "2", conn=conn))
             callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
             voice_template = get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}. {date}", conn=conn)
@@ -547,6 +605,12 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
             if now - last_ntp_check_at >= ntp_interval:
                 _run_ntp_check(conn)
                 last_ntp_check_at = now
+
+            if now - last_reconcile_at >= reconcile_interval:
+                reconciled = _reconcile_missed_content_ready(conn, frame_queue, voice_queue)
+                if reconciled:
+                    logger.warning("beacon: reconciled %d missed item.content_ready publish(es)", reconciled)
+                last_reconcile_at = now
 
             state = schedule.current_slot(window, now)
             _write_heartbeat(conn, state, voice_queue.stats(), frame_queue.stats())
@@ -588,7 +652,7 @@ def main() -> None:
     content_ready_topic = get_setting(
         "BEACON_CONTENT_READY_SUBSCRIBE_TOPIC", "radiobeacon/events/item.content_ready", conn=conn
     )
-    queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", "20", conn=conn))
+    queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", "200", conn=conn))
     conn.close()
 
     voice_queue = BoundedDropOldestQueue(queue_max_size)

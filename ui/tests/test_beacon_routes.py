@@ -221,9 +221,9 @@ def test_beacon_page_shows_queue_depths(client, conn):
 
     response = client.get("/beacon")
 
-    # BEACON_QUEUE_MAX_SIZE defaults to 20 when unset.
-    assert '3<span class="muted"> / 20</span>' in response.text
-    assert '1<span class="muted"> / 20</span>' in response.text
+    # BEACON_QUEUE_MAX_SIZE defaults to 200 when unset.
+    assert '3<span class="muted"> / 200</span>' in response.text
+    assert '1<span class="muted"> / 200</span>' in response.text
 
 
 def test_beacon_page_shows_current_slot(client, conn):

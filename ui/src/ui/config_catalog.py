@@ -621,9 +621,24 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Beacon — Queue",
         "Max queue size",
         "Max items held per channel (voice/frame) before the oldest is "
-        "dropped to make room for new content.",
+        "dropped to make room for new content. Frame content is one slot "
+        "per CHUNK, not per item — a real SENAPRED report has produced 57 "
+        "chunks on its own, so keep this comfortably above the largest "
+        "item you expect.",
         "int",
-        "20",
+        "200",
+    ),
+    SettingSpec(
+        "BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS",
+        "Beacon — Queue",
+        "Reconcile interval (s)",
+        "How often beacon checks for an item.content_ready publish its "
+        "own MQTT subscription missed (e.g. a message published while "
+        "briefly offline, or a startup race) and enqueues it anyway. "
+        "Runs once immediately on startup regardless of this interval.",
+        "int",
+        "30",
+        advanced=True,
     ),
     # --- Beacon — MQ ---
     SettingSpec(
