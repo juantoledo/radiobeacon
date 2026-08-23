@@ -1,6 +1,6 @@
 from adapters.storage import get_connection, set_setting
 
-from actions.chunk import ChunkAction, _effective_max_chars
+from actions.chunk import ChunkAction, _effective_max_chars, _wrap_with_part_markers
 
 
 def _insert_item(conn, source, item_id, extracted_contents, *, summary=None):
@@ -254,3 +254,66 @@ def test_chunk_uses_dynamically_clamped_max_chars(tmp_path):
 
     for chunk in stored:
         assert len(chunk["text"]) < 200
+
+
+# --- part markers (1/n, 2/n, ...) on multi-chunk content ---
+
+
+def test_wrap_with_part_markers_no_marker_for_single_piece():
+    pieces = _wrap_with_part_markers("a short piece of text", max_chars=1000)
+
+    assert pieces == ["a short piece of text"]
+
+
+def test_wrap_with_part_markers_prefixes_each_piece(tmp_path):
+    text = "one two three four five six seven eight nine ten"
+    pieces = _wrap_with_part_markers(text, max_chars=20)
+
+    assert len(pieces) > 1
+    total = len(pieces)
+    for i, piece in enumerate(pieces, start=1):
+        assert piece.startswith(f"{i}/{total} ")
+
+
+def test_wrap_with_part_markers_respects_max_chars_budget():
+    text = "one two three four five six seven eight nine ten eleven twelve"
+    max_chars = 20
+
+    pieces = _wrap_with_part_markers(text, max_chars)
+
+    for piece in pieces:
+        assert len(piece) <= max_chars
+
+
+def test_wrap_with_part_markers_content_recoverable_after_stripping_marker():
+    text = "one two three four five six seven eight nine ten"
+    pieces = _wrap_with_part_markers(text, max_chars=20)
+
+    stripped = " ".join(piece.split(" ", 1)[1] for piece in pieces)
+    assert stripped == text  # word-boundary splits, rejoined with a single space
+
+
+def test_chunk_stores_part_markers_in_stored_text_for_multi_chunk_item(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "20")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "senapred", "1", "one two three four five six seven eight nine ten")
+
+    ChunkAction().run(_dispatched_event("senapred", "1"), conn=conn)
+    stored = _stored_chunks(conn, "senapred", "1")
+
+    assert len(stored) > 1
+    total = len(stored)
+    for i, chunk in enumerate(stored, start=1):
+        assert chunk["text"].startswith(f"{i}/{total} ")
+
+
+def test_chunk_does_not_add_marker_for_single_chunk_item(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "1000")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "senapred", "1", "a short piece of text")
+
+    ChunkAction().run(_dispatched_event("senapred", "1"), conn=conn)
+    stored = _stored_chunks(conn, "senapred", "1")
+
+    assert len(stored) == 1
+    assert stored[0]["text"] == "a short piece of text"  # no "1/1 " marker

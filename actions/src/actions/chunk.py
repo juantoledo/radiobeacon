@@ -37,6 +37,39 @@ def _normalize_unicode_escapes(text: str) -> str:
     return _UNICODE_ESCAPE_RE.sub(lambda m: chr(int(m.group(1), 16)), text)
 
 
+def _wrap_with_part_markers(contents: str, max_chars: int) -> list[str]:
+    """Word-boundary-safe split (textwrap.wrap), then -- only when it
+    actually produced more than one piece -- prefixes each with a 1-based
+    "i/n " part marker (e.g. "1/2 ", "2/2 ") baked directly into the
+    stored chunk text, so a listener catching just one AX.25 frame out of
+    several knows its place in the sequence. A single-piece result is
+    left unmarked ("1/1" would be pure noise). Distinct from the stored
+    chunk_index/chunk_count columns (0-based, for internal lookup) --
+    this marker is purely a human-readable addition to the transmitted
+    content itself.
+
+    The marker eats into max_chars, so pieces are wrapped a second time
+    at a narrower width reserving room for it -- the marker's own width
+    depends on the piece count, which isn't known until after an
+    unmarked first pass. In the rare case where narrowing pushes the
+    piece count past a digit-width boundary (e.g. 9 -> 10), the reserved
+    width could be a character or two short; formatters.format_frame's
+    own byte-exact check at transmit time remains the real backstop, same
+    as the multi-byte-accented-character edge case it already covers."""
+    unmarked = textwrap.wrap(contents, width=max_chars, break_long_words=False, break_on_hyphens=False)
+    if len(unmarked) <= 1:
+        return unmarked
+
+    marker_width = len(f"{len(unmarked)}/{len(unmarked)} ")
+    narrowed_width = max(1, max_chars - marker_width)
+    pieces = textwrap.wrap(contents, width=narrowed_width, break_long_words=False, break_on_hyphens=False)
+    if len(pieces) <= 1:
+        return pieces
+
+    total = len(pieces)
+    return [f"{i}/{total} {piece}" for i, piece in enumerate(pieces, start=1)]
+
+
 def _effective_max_chars(conn: sqlite3.Connection, configured_max_chars: int) -> int:
     """Clamps ACTIONS_CHUNK_MAX_CHARS down to whatever actually fits in
     one AX.25 frame given the CURRENT BEACON_CALLSIGN/BEACON_FRAME_DESTINATION/
@@ -87,8 +120,10 @@ class ChunkAction(Action):
     (ai always publishes — see ai.py's own docstring for why). Looks up
     the item's summary (preferred) or extracted_contents (fallback,
     mirroring beacon.content.resolve_voice_text's exact pattern) and
-    splits it into small, word-boundary-safe chunks, durably stored (in
-    order) in the `chunks` table — queryable via
+    splits it into small, word-boundary-safe chunks (each one prefixed
+    with a "i/n " part marker when there's more than one — see
+    _wrap_with_part_markers), durably stored (in order) in the `chunks`
+    table — queryable via
     `query_history.sh chunks <source> <item_id>`. Only once every chunk
     is stored does run() return, and __main__.py publishes a single
     `item.chunked` CloudEvent as a "chunks are ready, go query them"
@@ -120,9 +155,7 @@ class ChunkAction(Action):
 
         configured_max_chars = int(get_setting("ACTIONS_CHUNK_MAX_CHARS", "200", conn=conn))
         max_chars = _effective_max_chars(conn, configured_max_chars)
-        pieces = textwrap.wrap(
-            contents, width=max_chars, break_long_words=False, break_on_hyphens=False
-        )
+        pieces = _wrap_with_part_markers(contents, max_chars)
         logger.info(
             "chunk: source=%s item_id=%s split into %d chunk(s) (max_chars=%d)",
             source,
