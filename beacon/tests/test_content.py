@@ -1,13 +1,15 @@
+from datetime import datetime, timezone
+
 from adapters.storage import get_connection
 
-from beacon.content import resolve_frame_text, resolve_voice_text
+from beacon.content import resolve_frame_text, resolve_source_date_time, resolve_voice_text
 
 
-def _insert_item(conn, source, item_id, *, extracted_contents=None, summary=None):
+def _insert_item(conn, source, item_id, *, extracted_contents=None, summary=None, source_date_time=None):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_contents, summary, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, datetime('now'), '{}')",
-        (source, item_id, extracted_contents, summary),
+        "INSERT INTO items (source, item_id, extracted_contents, summary, source_date_time, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?, datetime('now'), '{}')",
+        (source, item_id, extracted_contents, summary, source_date_time),
     )
     conn.commit()
 
@@ -62,3 +64,27 @@ def test_resolve_frame_text_returns_none_when_chunk_gone(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
     assert resolve_frame_text(conn, "csn", "does-not-exist", 0) is None
+
+
+def test_resolve_source_date_time_parses_stored_iso_string(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    dt = datetime(2026, 8, 22, 14, 30, tzinfo=timezone.utc)
+    _insert_item(conn, "senapred", "1", source_date_time=dt.isoformat())
+
+    result = resolve_source_date_time(conn, "senapred", "1")
+
+    assert result == dt
+    assert result.tzinfo is not None
+
+
+def test_resolve_source_date_time_returns_none_when_item_gone(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert resolve_source_date_time(conn, "senapred", "does-not-exist") is None
+
+
+def test_resolve_source_date_time_returns_none_when_column_null(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "senapred", "1", source_date_time=None)
+
+    assert resolve_source_date_time(conn, "senapred", "1") is None

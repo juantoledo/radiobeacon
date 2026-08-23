@@ -21,6 +21,7 @@ is enabled. resolve_voice_text's summary-else-extracted_contents fallback
 is what keeps CSN (and any other structurally-short source) voice-able."""
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -63,3 +64,18 @@ def resolve_voice_text(conn: sqlite3.Connection, source: str, item_id: str) -> s
         return None
     summary, extracted_contents = row
     return summary if summary else extracted_contents
+
+
+def resolve_source_date_time(conn: sqlite3.Connection, source: str, item_id: str) -> datetime | None:
+    """items.source_date_time (stored as TEXT via .isoformat(), always
+    UTC per this repo's "always UTC" storage rule) parsed back to a
+    UTC-aware datetime. None if the item is gone, or the column is
+    somehow NULL — a graceful "no date available" case for the caller,
+    not an error."""
+    row = conn.execute(
+        "SELECT source_date_time FROM items WHERE source = ? AND item_id = ?",
+        (source, item_id),
+    ).fetchone()
+    if row is None or row[0] is None:
+        return None
+    return datetime.fromisoformat(row[0])

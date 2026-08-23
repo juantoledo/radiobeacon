@@ -511,10 +511,23 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Beacon — Templates",
         "Voice template",
         "str.format-style template wrapping resolved voice content. "
-        "Placeholders: {callsign}, {text}. Frame content has no template — "
-        "its ORIGEN>DESTINO: structure is fixed protocol code.",
+        "Placeholders: {callsign}, {text}, {date} (blank if the item has "
+        "no source_date_time). Frame content has no template — its "
+        "ORIGEN>DESTINO: structure is fixed protocol code — but "
+        "BEACON_FRAME_PREFIX/SUFFIX support {date} too.",
         "text",
-        "{callsign}. {text}",
+        "{callsign}. {text}. {date}",
+    ),
+    SettingSpec(
+        "BEACON_DATE_FORMAT",
+        "Beacon — Templates",
+        "Date format",
+        "strftime format for {date} above — items.source_date_time "
+        "converted to DISPLAY_TIMEZONE. Stick to fixed-width numeric "
+        "directives (%d/%m/%Y/%H/%M); a weekday/month name (%A/%B) isn't "
+        "accounted for by actions.chunk's AX.25 overflow-safety clamp.",
+        "text",
+        "%d-%m-%Y %H:%M",
     ),
     # --- Beacon — AX.25 ---
     SettingSpec(
@@ -532,7 +545,8 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Frame content prefix",
         "Prepended to the actual transmitted payload (not the tocall "
         "address above) — applied to every frame, including each chunk of "
-        "a multi-frame item.",
+        "a multi-frame item. A str.format template — {date} is available "
+        "(see Beacon — Templates).",
         "text",
         "",
     ),
@@ -540,10 +554,12 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "BEACON_FRAME_SUFFIX",
         "Beacon — AX.25",
         "Frame content suffix",
-        "Appended to the actual transmitted payload — e.g. \"[EXPERIMENTAL]\". "
-        "Applied to every frame, including each chunk of a multi-frame item, "
-        "so a listener catching only one still sees it. Counts against the "
-        "same 256-byte AX.25 hard limit as the rest of the frame.",
+        "Appended to the actual transmitted payload — e.g. \"[EXPERIMENTAL]\" "
+        "or \" {date}\". Applied to every frame, including each chunk of a "
+        "multi-frame item, so a listener catching only one still sees it. "
+        "Counts against the same 256-byte AX.25 hard limit as the rest of "
+        "the frame — actions.chunk's dynamic max-chars clamp accounts for "
+        "{date}'s rendered length, not just this template's raw length.",
         "text",
         "",
     ),

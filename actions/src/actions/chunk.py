@@ -2,6 +2,7 @@ import logging
 import re
 import sqlite3
 import textwrap
+from datetime import datetime, timezone
 from typing import Any
 
 from adapters.ax25 import max_frame_content_bytes
@@ -10,6 +11,14 @@ from adapters.storage import get_setting, store_chunks
 from actions.base import Action
 
 logger = logging.getLogger(__name__)
+
+# A fixed, representative datetime used only to measure how many bytes a
+# {date}-containing BEACON_FRAME_PREFIX/SUFFIX template would actually
+# render to (see _effective_max_chars) -- never used for anything else.
+# Safe as long as BEACON_DATE_FORMAT sticks to fixed-width numeric
+# directives (%d/%m/%Y/%H/%M are always 2 or 4 digits); a format using a
+# weekday/month name (%A/%B) would vary in width and isn't accounted for.
+_SAMPLE_DATE = datetime(2026, 12, 31, 23, 59, tzinfo=timezone.utc)
 
 # Matches only literal 4-hex-digit \uXXXX escape sequences (e.g. "ó"
 # appearing as six literal characters in the text, not a real ó) — a
@@ -41,13 +50,23 @@ def _effective_max_chars(conn: sqlite3.Connection, configured_max_chars: int) ->
 
     BEACON_CALLSIGN unset (beacon not configured yet — a real, common
     early-lifecycle state) means there's nothing to clamp against yet, so
-    this is a no-op in that case, preserving prior behavior exactly."""
+    this is a no-op in that case, preserving prior behavior exactly.
+
+    BEACON_FRAME_PREFIX/SUFFIX are str.format templates, not plain
+    literals (see beacon.formatters.format_frame) — a short template like
+    " {date}" can render to something much longer once BEACON_DATE_FORMAT
+    is applied. Measuring the raw, unrendered template here would
+    silently underestimate real overhead and reopen the exact overflow
+    risk this clamp exists to prevent, so both are rendered against a
+    fixed sample date before their length is measured."""
     callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
     if not callsign:
         return configured_max_chars
     destination = get_setting("BEACON_FRAME_DESTINATION", "WXALRT", conn=conn)
-    prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
-    suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
+    date_format = get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn)
+    sample_date = _SAMPLE_DATE.strftime(date_format)
+    prefix = (get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or "").format(date=sample_date)
+    suffix = (get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or "").format(date=sample_date)
     available = max(
         1,
         max_frame_content_bytes(callsign=callsign, destination=destination, prefix=prefix, suffix=suffix),

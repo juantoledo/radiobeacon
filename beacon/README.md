@@ -159,7 +159,14 @@ not content a listener decodes. Applied to every frame, including each
 chunk of a multi-frame item (not just once per item), so a listener
 catching only one frame still sees it; counts against the same 256-byte
 `FrameTooLongError` ceiling as the rest of the frame (see
-`formatters.py`).
+`formatters.py`). Both are str.format templates, not plain literals —
+`{date}` (`items.source_date_time`, converted to `DISPLAY_TIMEZONE` and
+formatted per `BEACON_DATE_FORMAT`) is the only placeholder currently
+supported, resolved fresh at transmit time same as `text` itself.
+`actions.chunk`'s dynamic `ACTIONS_CHUNK_MAX_CHARS` clamp
+(`data-adapters/src/adapters/ax25.py`) accounts for `{date}`'s actual
+*rendered* length, not the raw template's, so a short `" {date}"` suffix
+can't silently under-clamp and cause an overflow at transmit time.
 
 ## Not addressed
 
@@ -202,7 +209,8 @@ regulatory requirement).
 | `BEACON_SLOT_LEAD_TIME_SECONDS` | `2` |
 | `BEACON_VOICE_INTER_TX_DELAY_SECONDS` | `2` |
 | `BEACON_FRAME_INTER_TX_DELAY_SECONDS` | `2` |
-| `BEACON_VOICE_TEMPLATE` | `{callsign}. {text}` |
+| `BEACON_VOICE_TEMPLATE` | `{callsign}. {text}. {date}` |
+| `BEACON_DATE_FORMAT` | `%d-%m-%Y %H:%M` |
 | `BEACON_FRAME_DESTINATION` | `WXALRT` |
 | `BEACON_FRAME_PREFIX` / `BEACON_FRAME_SUFFIX` | `""` / `""` |
 | `BEACON_AX25_KISS_HOST` / `_PORT` | `localhost` / `8001` |

@@ -1,5 +1,6 @@
 import json
 import uuid
+from datetime import datetime, timezone
 
 from adapters.storage import get_connection, record_audit_event, set_setting
 
@@ -43,11 +44,11 @@ def _insert_chunk(conn, source, item_id, chunk_index=0, text="chunk text", chunk
     conn.commit()
 
 
-def _insert_item(conn, source, item_id, *, extracted_contents="raw", summary=None):
+def _insert_item(conn, source, item_id, *, extracted_contents="raw", summary=None, source_date_time=None):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_contents, summary, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, datetime('now'), '{}')",
-        (source, item_id, extracted_contents, summary),
+        "INSERT INTO items (source, item_id, extracted_contents, summary, source_date_time, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?, datetime('now'), '{}')",
+        (source, item_id, extracted_contents, summary, source_date_time),
     )
     conn.commit()
 
@@ -406,6 +407,27 @@ def test_drain_and_transmit_noop_on_empty_queue(tmp_path):
     assert attempted == 0
 
 
+# --- _format_source_date_time ---
+
+
+def test_format_source_date_time_converts_and_formats(tmp_path, monkeypatch):
+    monkeypatch.setenv("DISPLAY_TIMEZONE", "UTC")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    dt = datetime(2026, 8, 22, 14, 30, tzinfo=timezone.utc)
+    _insert_item(conn, "senapred", "1", source_date_time=dt.isoformat())
+
+    result = main_module._format_source_date_time(conn, "senapred", "1", "%d-%m-%Y %H:%M")
+
+    assert result == "22-08-2026 14:30"
+
+
+def test_format_source_date_time_blank_when_no_source_date_time(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "senapred", "1", source_date_time=None)
+
+    assert main_module._format_source_date_time(conn, "senapred", "1", "%d-%m-%Y %H:%M") == ""
+
+
 # --- transmit ---
 
 
@@ -415,7 +437,7 @@ def test_try_transmit_voice_skips_when_queue_empty(tmp_path):
 
     main_module._try_transmit_voice(
         conn, voice_queue, _StubVoiceTransmitter(), "CD3DXZ-1", "{callsign}. {text}", 200,
-        str(tmp_path), "es",
+        str(tmp_path), "es", "%d-%m-%Y %H:%M",
     )  # no exception, nothing to assert beyond "doesn't crash"
 
 
@@ -436,7 +458,7 @@ def test_try_transmit_voice_skips_when_no_callsign(tmp_path):
     transmitter = _StubVoiceTransmitter()
 
     main_module._try_transmit_voice(
-        conn, voice_queue, transmitter, None, "{callsign}. {text}", 200, str(tmp_path), "es"
+        conn, voice_queue, transmitter, None, "{callsign}. {text}", 200, str(tmp_path), "es", "%d-%m-%Y %H:%M",
     )
 
     assert transmitter.calls == []
@@ -455,7 +477,7 @@ def test_try_transmit_voice_uses_resolved_content_and_transmits(tmp_path, monkey
     transmitter = _StubVoiceTransmitter()
 
     main_module._try_transmit_voice(
-        conn, voice_queue, transmitter, "CD3DXZ-1", "{callsign}. {text}", 200, str(tmp_path), "es"
+        conn, voice_queue, transmitter, "CD3DXZ-1", "{callsign}. {text}", 200, str(tmp_path), "es", "%d-%m-%Y %H:%M",
     )
 
     assert transmitter.calls == ["CD3DXZ-1. Sismo de magnitud 4.2."]
@@ -463,6 +485,26 @@ def test_try_transmit_voice_uses_resolved_content_and_transmits(tmp_path, monkey
         "SELECT 1 FROM audit_log WHERE event_type = 'beacon.voice.transmitted'"
     ).fetchone()
     assert row is not None
+
+
+def test_try_transmit_voice_resolves_and_renders_date_end_to_end(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    monkeypatch.setenv("DISPLAY_TIMEZONE", "UTC")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    dt = datetime(2026, 8, 22, 14, 30, tzinfo=timezone.utc)
+    _insert_item(
+        conn, "csn", "1", extracted_contents="Sismo de magnitud 4.2.", source_date_time=dt.isoformat()
+    )
+    voice_queue = BoundedDropOldestQueue(10)
+    voice_queue.put(QueuedVoice(source="csn", item_id="1"))
+    transmitter = _StubVoiceTransmitter()
+
+    main_module._try_transmit_voice(
+        conn, voice_queue, transmitter, "CD3DXZ-1", "{callsign}. {text}. {date}", 200,
+        str(tmp_path), "es", "%d-%m-%Y %H:%M",
+    )
+
+    assert transmitter.calls == ["CD3DXZ-1. Sismo de magnitud 4.2.. 22-08-2026 14:30"]
 
 
 class _StubKissClient:
@@ -535,6 +577,24 @@ def test_try_transmit_frame_applies_prefix_and_suffix_to_actual_transmitted_byte
         "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.transmitted'"
     ).fetchone()
     assert json.loads(row[0])["tnc2"] == "CD3DXZ-1>WXALRT:>> chunk text [EXPERIMENTAL]"
+
+
+def test_try_transmit_frame_resolves_and_renders_date_end_to_end(tmp_path, monkeypatch):
+    monkeypatch.setenv("DISPLAY_TIMEZONE", "UTC")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    dt = datetime(2026, 8, 22, 14, 30, tzinfo=timezone.utc)
+    _insert_item(conn, "csn", "1", source_date_time=dt.isoformat())
+    _insert_chunk(conn, "csn", "1", 0, "chunk text")
+    frame_queue = BoundedDropOldestQueue(10)
+    frame_queue.put(QueuedFrame(source="csn", item_id="1", chunk_index=0))
+    kiss_client = _StubKissClient()
+
+    main_module._try_transmit_frame(
+        conn, frame_queue, kiss_client, "CD3DXZ-1", "WXALRT",
+        suffix=" {date}", date_format="%d-%m-%Y %H:%M",
+    )
+
+    assert kiss_client.calls == [("CD3DXZ-1", "WXALRT", b"chunk text 22-08-2026 14:30")]
 
 
 def test_try_transmit_frame_records_transmit_failed_on_send_failure(tmp_path):

@@ -218,6 +218,30 @@ def test_effective_max_chars_clamps_down_when_suffix_would_overflow(tmp_path):
     assert result >= 1
 
 
+def test_effective_max_chars_measures_rendered_date_length_not_raw_template(tmp_path):
+    """BEACON_FRAME_SUFFIX is a str.format template -- a short raw
+    template like " {date}" (7 chars) can render to something much
+    longer (e.g. " 22-08-2026 14:30", 18 chars) once BEACON_DATE_FORMAT
+    is applied. Measuring the raw template's length would silently
+    under-clamp and reopen the overflow risk this clamp exists to
+    prevent."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_DESTINATION", "WXALRT")
+    set_setting(conn, "BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M")
+    # 256 - len("CD3DXZ-1>WXALRT:") == 240 bytes available with no suffix.
+    # A raw " {date}" template is only 7 chars, but renders to 17 chars
+    # (" 31-12-2026 23:59", the sample date chunk.py measures against) --
+    # a naive raw-length measurement would (wrongly) leave
+    # configured_max_chars=235 unclamped.
+    set_setting(conn, "BEACON_FRAME_SUFFIX", " {date}")
+
+    result = _effective_max_chars(conn, 235)
+
+    assert result < 235  # must account for the RENDERED suffix length
+    assert result == 256 - len("CD3DXZ-1>WXALRT:") - len(" 31-12-2026 23:59")
+
+
 def test_chunk_uses_dynamically_clamped_max_chars(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "200")

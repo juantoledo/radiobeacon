@@ -53,7 +53,7 @@ from adapters.storage import (  # noqa: E402
     record_audit_event,
     set_beacon_status,
 )
-from adapters.timeutil import utc_now  # noqa: E402
+from adapters.timeutil import to_display_tz, utc_now  # noqa: E402
 
 from beacon import content, formatters, kiss, mq, ntp, schedule, service_control, voice  # noqa: E402
 from beacon.queues import BoundedDropOldestQueue  # noqa: E402
@@ -330,9 +330,22 @@ def _build_service_controller(conn) -> service_control.ServiceController:
     return service_control.LoggingServiceController()
 
 
+def _format_source_date_time(conn, source: str, item_id: str, date_format: str) -> str:
+    """Resolves items.source_date_time (if any), converts UTC -> the
+    configured DISPLAY_TIMEZONE (this is presentation, exactly the case
+    adapters.timeutil.to_display_tz exists for), and renders it via
+    date_format (BEACON_DATE_FORMAT). "" (not None) when there's no
+    source_date_time -- so a template referencing {date} renders a blank
+    rather than crashing."""
+    dt = content.resolve_source_date_time(conn, source, item_id)
+    if dt is None:
+        return ""
+    return to_display_tz(dt).strftime(date_format)
+
+
 def _try_transmit_voice(
     conn, voice_queue: BoundedDropOldestQueue, voice_transmitter: voice.VoiceTransmitter,
-    callsign: str | None, template: str, max_chars: int, wav_dir: str, tts_voice: str,
+    callsign: str | None, template: str, max_chars: int, wav_dir: str, tts_voice: str, date_format: str,
 ) -> None:
     queued = voice_queue.get_nowait()
     if queued is None:
@@ -353,7 +366,10 @@ def _try_transmit_voice(
         )
         return
 
-    formatted = formatters.format_voice(text, callsign=callsign, template=template, max_chars=max_chars)
+    date_str = _format_source_date_time(conn, queued.source, queued.item_id, date_format)
+    formatted = formatters.format_voice(
+        text, callsign=callsign, template=template, max_chars=max_chars, date=date_str
+    )
     wav_path = Path(wav_dir) / f"{queued.source}-{queued.item_id}-{int(time.time())}.wav"
     if not voice.synthesize_speech(formatted.text, out_path=wav_path, voice=tts_voice):
         record_audit_event(
@@ -383,7 +399,7 @@ def _try_transmit_voice(
 
 def _try_transmit_frame(
     conn, frame_queue: BoundedDropOldestQueue, kiss_client: kiss.KissTcpClient,
-    callsign: str | None, destination: str, prefix: str = "", suffix: str = "",
+    callsign: str | None, destination: str, prefix: str = "", suffix: str = "", date_format: str = "",
 ) -> None:
     queued = frame_queue.get_nowait()
     if queued is None:
@@ -404,9 +420,11 @@ def _try_transmit_frame(
         )
         return
 
+    date_str = _format_source_date_time(conn, queued.source, queued.item_id, date_format)
     try:
         formatted = formatters.format_frame(
-            chunk_text, callsign=callsign, destination=destination, prefix=prefix, suffix=suffix
+            chunk_text, callsign=callsign, destination=destination,
+            prefix=prefix, suffix=suffix, date=date_str,
         )
     except formatters.FrameTooLongError as exc:
         logger.error("beacon: frame too long, dropping: %s", exc)
@@ -502,8 +520,9 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
             ntp_interval = int(get_setting("BEACON_NTP_CHECK_INTERVAL_SECONDS", "3600", conn=conn))
             lead_time = float(get_setting("BEACON_SLOT_LEAD_TIME_SECONDS", "2", conn=conn))
             callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
-            voice_template = get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}", conn=conn)
+            voice_template = get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}. {date}", conn=conn)
             voice_max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "200", conn=conn))
+            date_format = get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn)
             voice_inter_tx_delay = float(get_setting("BEACON_VOICE_INTER_TX_DELAY_SECONDS", "2", conn=conn))
             frame_inter_tx_delay = float(get_setting("BEACON_FRAME_INTER_TX_DELAY_SECONDS", "2", conn=conn))
 
@@ -524,7 +543,7 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
                     stop_event, voice_queue, voice_inter_tx_delay,
                     lambda: _try_transmit_voice(
                         conn, voice_queue, voice_transmitter, callsign, voice_template,
-                        voice_max_chars, wav_dir, tts_voice,
+                        voice_max_chars, wav_dir, tts_voice, date_format,
                     ),
                 )
                 last_voice_cycle = state.cycle_index
@@ -532,7 +551,8 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
                 _drain_and_transmit(
                     stop_event, frame_queue, frame_inter_tx_delay,
                     lambda: _try_transmit_frame(
-                        conn, frame_queue, kiss_client, callsign, destination, frame_prefix, frame_suffix
+                        conn, frame_queue, kiss_client, callsign, destination,
+                        frame_prefix, frame_suffix, date_format,
                     ),
                 )
                 last_frame_cycle = state.cycle_index

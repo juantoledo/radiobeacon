@@ -52,6 +52,35 @@ def test_format_frame_accepts_content_right_at_the_limit():
     assert result.byte_length == 256
 
 
+def test_format_frame_renders_date_placeholder_in_suffix():
+    result = format_frame(
+        "hola mundo", callsign="CD3DXZ-1", destination="WXALRT",
+        suffix=" {date}", date="22-08-2026 14:30",
+    )
+
+    assert result.content == "hola mundo 22-08-2026 14:30"
+
+
+def test_format_frame_literal_prefix_suffix_unaffected_by_date_param():
+    """A plain literal with no {date} in it (today's already-deployed
+    style) passes through .format() unchanged regardless of what `date`
+    is passed."""
+    result = format_frame(
+        "hola mundo", callsign="CD3DXZ-1", destination="WXALRT",
+        suffix=" [EXPERIMENTAL]", date="22-08-2026 14:30",
+    )
+
+    assert result.content == "hola mundo [EXPERIMENTAL]"
+
+
+def test_format_frame_date_placeholder_pushing_over_limit_still_raises():
+    prefix_len = len("CD3DXZ-1>WXALRT:")
+    body = "x" * (256 - prefix_len)  # exactly at the limit with no suffix
+
+    with pytest.raises(FrameTooLongError):
+        format_frame(body, callsign="CD3DXZ-1", destination="WXALRT", suffix=" {date}", date="22-08-2026 14:30")
+
+
 def test_format_frame_counts_utf8_bytes_not_chars_for_accented_text():
     """A chunk within ACTIONS_CHUNK_MAX_CHARS chars can still push the
     assembled line over the AX.25 byte limit once multi-byte accented
@@ -94,3 +123,20 @@ def test_format_voice_truncates_word_boundary_safe_when_over_max_chars():
     # word-boundary-safe: every character in the result is a prefix of a
     # real word from the original text, never a mid-word cut
     assert text.startswith(result.text.rstrip())
+
+
+def test_format_voice_renders_date_placeholder():
+    result = format_voice(
+        "un resumen corto", callsign="CD3DXZ-1", template="{callsign}. {text}. {date}",
+        max_chars=500, date="22-08-2026 14:30",
+    )
+
+    assert result.text == "CD3DXZ-1. un resumen corto. 22-08-2026 14:30"
+
+
+def test_format_voice_date_defaults_to_blank():
+    result = format_voice(
+        "un resumen corto", callsign="CD3DXZ-1", template="{callsign}. {text}. {date}", max_chars=500
+    )
+
+    assert result.text == "CD3DXZ-1. un resumen corto. "

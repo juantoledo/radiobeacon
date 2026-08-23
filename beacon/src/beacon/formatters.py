@@ -47,13 +47,23 @@ class FormattedVoice:
     truncated: bool
 
 
-def format_frame(chunk_text: str, *, callsign: str, destination: str, prefix: str = "", suffix: str = "") -> FormattedFrame:
+def format_frame(
+    chunk_text: str, *, callsign: str, destination: str, prefix: str = "", suffix: str = "", date: str = "",
+) -> FormattedFrame:
     """prefix/suffix (BEACON_FRAME_PREFIX/BEACON_FRAME_SUFFIX) wrap the
     actual transmitted payload -- applied to every frame, including each
     chunk of a multi-frame item, not just once per item, so a listener
     catching only one frame still sees it. Distinct from `destination`
     (the AX.25 tocall address, e.g. WXALRT) -- this wraps the info field
-    a listener actually decodes as content."""
+    a listener actually decodes as content.
+
+    prefix/suffix are str.format templates, not plain literals -- {date}
+    (pre-resolved/formatted by the caller, see __main__.py's
+    _format_source_date_time) is the only placeholder currently
+    supported. A literal string with no {date} in it (e.g. today's
+    " [EXPERIMENTAL]") passes through .format() unchanged."""
+    prefix = prefix.format(date=date)
+    suffix = suffix.format(date=date)
     content = f"{prefix}{chunk_text}{suffix}"
     tnc2 = f"{callsign}>{destination}:{content}"
     byte_length = len(tnc2.encode("utf-8"))
@@ -65,11 +75,11 @@ def format_frame(chunk_text: str, *, callsign: str, destination: str, prefix: st
     return FormattedFrame(tnc2=tnc2, content=content, byte_length=byte_length)
 
 
-def format_voice(text: str, *, callsign: str, template: str, max_chars: int) -> FormattedVoice:
+def format_voice(text: str, *, callsign: str, template: str, max_chars: int, date: str = "") -> FormattedVoice:
     truncated = False
     if len(text) > max_chars:
         pieces = textwrap.wrap(text, width=max_chars, break_long_words=False, break_on_hyphens=False)
         text = pieces[0] if pieces else text[:max_chars]
         truncated = True
-    rendered = template.format(callsign=callsign, text=text)
+    rendered = template.format(callsign=callsign, text=text, date=date)
     return FormattedVoice(text=rendered, truncated=truncated)
