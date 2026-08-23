@@ -44,7 +44,7 @@ def test_interval_seconds_falls_back_to_hardcoded_default(monkeypatch):
     monkeypatch.delenv("ADAPTERS_FAKESOURCE_INTERVAL_SECONDS", raising=False)
     monkeypatch.delenv("ADAPTERS_DEFAULT_INTERVAL_SECONDS", raising=False)
 
-    assert _interval_seconds(FakeAdapter) == 600
+    assert _interval_seconds(FakeAdapter) == 10
 
 
 def test_run_adapter_loop_calls_fetch_and_store_until_stopped(monkeypatch):

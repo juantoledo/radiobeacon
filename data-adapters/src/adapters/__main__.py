@@ -12,7 +12,7 @@ from adapters.storage import get_setting
 logger = logging.getLogger(__name__)
 
 DEFAULT_INTERVAL_ENV_VAR = "ADAPTERS_DEFAULT_INTERVAL_SECONDS"
-DEFAULT_INTERVAL_SECONDS = 600
+DEFAULT_INTERVAL_SECONDS = 10
 
 
 def discover_adapters() -> list[type[DataSourceAdapter]]:
@@ -37,7 +37,7 @@ def _interval_seconds(adapter_class: type[DataSourceAdapter]) -> int:
     other ADAPTERS_<NAME>_* env vars (e.g. ADAPTERS_SENAPRED_INTERVAL_SECONDS),
     derived from the adapter's module name so adding a new adapter doesn't
     require touching this file. Falls back to ADAPTERS_DEFAULT_INTERVAL_SECONDS
-    (600s) if the adapter-specific var isn't set."""
+    (10s) if the adapter-specific var isn't set."""
     module_leaf = adapter_class.__module__.rsplit(".", 1)[-1].upper()
     adapter_env_var = f"ADAPTERS_{module_leaf}_INTERVAL_SECONDS"
     value = get_setting(adapter_env_var) or get_setting(DEFAULT_INTERVAL_ENV_VAR)

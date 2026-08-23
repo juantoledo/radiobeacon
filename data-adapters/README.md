@@ -91,8 +91,8 @@ secrets — all are optional and default to the current known-working value.
 
 | var | default |
 |---|---|
-| `ADAPTERS_DEFAULT_INTERVAL_SECONDS` | `600` — fallback poll interval for any adapter without its own `ADAPTERS_<NAME>_INTERVAL_SECONDS` |
-| `ADAPTERS_SENAPRED_INTERVAL_SECONDS` | `600` |
+| `ADAPTERS_DEFAULT_INTERVAL_SECONDS` | `10` — fallback poll interval for any adapter without its own `ADAPTERS_<NAME>_INTERVAL_SECONDS` |
+| `ADAPTERS_SENAPRED_INTERVAL_SECONDS` | `10` |
 | `ADAPTERS_SENAPRED_IDENTITY_POOL_ID` | `us-east-1:17c696bc-53e1-49a2-991f-f1b65f752fda` |
 | `ADAPTERS_SENAPRED_COGNITO_REGION` | `us-east-1` |
 | `ADAPTERS_SENAPRED_APPSYNC_REGION` | `us-east-1` |
@@ -100,7 +100,7 @@ secrets — all are optional and default to the current known-working value.
 | `ADAPTERS_SENAPRED_ALERTA_BASE_URL` | `https://senapred.cl/alerta/` |
 | `ADAPTERS_SENAPRED_EVENTO_BASE_URL` | `https://senapred.cl/evento/` |
 | `ADAPTERS_SENAPRED_QUERY_LIMIT` | `20` |
-| `ADAPTERS_CSN_INTERVAL_SECONDS` | `600` |
+| `ADAPTERS_CSN_INTERVAL_SECONDS` | `10` |
 | `ADAPTERS_CSN_API_URL` | `https://api.gael.cloud/general/public/sismos` |
 | `ADAPTERS_CSN_SITE_URL` | `https://www.sismologia.cl/` |
 | `ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD` | `4.5` |

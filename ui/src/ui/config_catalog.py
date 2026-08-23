@@ -38,7 +38,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Fallback poll interval for any adapter lacking its own "
         "ADAPTERS_<NAME>_INTERVAL_SECONDS.",
         "int",
-        "600",
+        "10",
     ),
     # --- Adapters — SENAPRED ---
     SettingSpec(
@@ -47,7 +47,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Poll interval (s)",
         "How often the SENAPRED adapter polls for new alerts.",
         "int",
-        "600",
+        "10",
     ),
     SettingSpec(
         "ADAPTERS_SENAPRED_IDENTITY_POOL_ID",
@@ -112,7 +112,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Poll interval (s)",
         "How often the CSN adapter polls for new earthquakes.",
         "int",
-        "600",
+        "10",
     ),
     SettingSpec(
         "ADAPTERS_CSN_API_URL",
