@@ -155,9 +155,22 @@ def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQue
 def _run_mqtt_client(content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue, stop_event: threading.Event) -> None:
     """Mirrors actions/__main__.py's _run_action_loop: loop_start() +
     stop_event.wait() (not loop_forever(), which can't be signaled from a
-    threading.Event), stable client_id + clean_session=False (a
-    persistent session so a QoS-1 message published while beacon is
-    offline isn't lost), resubscribe on every (re)connect."""
+    threading.Event), stable client_id + clean_session=True, resubscribe
+    on every (re)connect.
+
+    clean_session=True (flipped from False this session, matching the
+    same fix in actions/__main__.py): MQTT SUBSCRIBE is purely additive,
+    so a persistent session across a topic rename (beacon's own
+    subscription collapsing from item.chunked + item.dispatched to a
+    single item.content_ready earlier this session) kept BOTH old
+    subscriptions alive forever alongside the new one — confirmed
+    directly in the broker's own persistence file. Harmless here only by
+    luck (_make_on_message already ignores an unrecognized topic), but
+    the same bug on actions.chunk's equivalent stale subscription caused
+    real double-transmission — fixed the same way everywhere rather than
+    relying on this one handler's defensive check. A message published
+    while beacon is briefly offline is now lost rather than queued —
+    recoverable via a rearm."""
     import paho.mqtt.client as mqtt_client
 
     logger.info("beacon: mqtt starting (content_ready_topic=%s)", content_ready_topic)
@@ -165,7 +178,7 @@ def _run_mqtt_client(content_ready_topic: str, frame_queue: BoundedDropOldestQue
     client = mqtt_client.Client(
         mqtt_client.CallbackAPIVersion.VERSION2,
         client_id="radiobeacon-beacon",
-        clean_session=False,
+        clean_session=True,
     )
     client.on_message = _make_on_message(content_ready_topic, frame_queue, voice_queue)
 
@@ -286,6 +299,11 @@ def _write_heartbeat(conn, state: schedule.SlotState, voice_stats, frame_stats) 
     set_beacon_status(conn, "process_heartbeat_at", utc_now().isoformat())
     set_beacon_status(conn, "current_slot", state.slot.value)
     set_beacon_status(conn, "current_cycle_index", str(state.cycle_index))
+    # Straight from SlotState, already computed every tick by schedule.py —
+    # the UI (ui/src/ui/routers/beacon.py) uses these for a live cycle
+    # timeline + countdown, rather than re-deriving scheduling logic itself.
+    set_beacon_status(conn, "current_cycle_elapsed_seconds", str(round(state.elapsed_in_cycle, 1)))
+    set_beacon_status(conn, "current_slot_remaining_seconds", str(round(state.remaining_in_slot, 1)))
     set_beacon_status(conn, "voice_queue_depth", str(voice_stats.size))
     set_beacon_status(conn, "voice_queue_dropped_total", str(voice_stats.dropped_total))
     set_beacon_status(conn, "frame_queue_depth", str(frame_stats.size))

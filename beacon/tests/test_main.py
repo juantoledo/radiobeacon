@@ -7,7 +7,8 @@ from adapters.storage import get_connection, record_audit_event, set_setting
 import beacon.__main__ as main_module
 from beacon.content import QueuedFrame, QueuedVoice
 from beacon.queues import BoundedDropOldestQueue
-from beacon.schedule import Slot, WindowConfig
+from beacon.queues import QueueStats
+from beacon.schedule import Slot, SlotState, WindowConfig
 
 
 class FakeMessage:
@@ -186,6 +187,28 @@ def test_on_message_skips_event_missing_source_or_item_id(tmp_path, monkeypatch)
 
     assert voice_queue.stats().size == 0
     assert frame_queue.stats().size == 0
+
+
+# --- _write_heartbeat ---
+
+
+def test_write_heartbeat_persists_elapsed_and_remaining_seconds(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    state = SlotState(
+        slot=Slot.VOICE, cycle_index=3, elapsed_in_cycle=12.34, remaining_in_slot=47.66,
+        cycle_started_at=1000.0,
+    )
+
+    main_module._write_heartbeat(conn, state, QueueStats(size=2, dropped_total=0), QueueStats(size=0, dropped_total=1))
+
+    status = {
+        row[0]: row[1]
+        for row in conn.execute("SELECT key, value FROM beacon_status").fetchall()
+    }
+    assert status["current_slot"] == "voice"
+    assert status["current_cycle_index"] == "3"
+    assert status["current_cycle_elapsed_seconds"] == "12.3"
+    assert status["current_slot_remaining_seconds"] == "47.7"
 
 
 # --- window config ---
@@ -638,3 +661,32 @@ def test_build_service_controller_systemctl_when_configured(tmp_path):
     controller = main_module._build_service_controller(conn)
 
     assert type(controller).__name__ == "SystemctlServiceController"
+
+
+def test_run_mqtt_client_uses_stable_client_id_and_clean_session_true(monkeypatch):
+    """clean_session=True (not False) is deliberate -- see
+    actions/tests/test_main.py's equivalent test for the incident this
+    guards against (MQTT SUBSCRIBE is additive, so a persistent session
+    across a topic rename kept a stale subscription alive forever)."""
+    import threading
+
+    import paho.mqtt.client
+
+    captured = {}
+
+    class FakeClientForConnect:
+        def __init__(self, callback_api_version, client_id=None, clean_session=None):
+            captured["client_id"] = client_id
+            captured["clean_session"] = clean_session
+
+    monkeypatch.setattr(paho.mqtt.client, "Client", FakeClientForConnect)
+
+    stop_event = threading.Event()
+    stop_event.set()
+
+    main_module._run_mqtt_client(
+        "radiobeacon/events/item.content_ready", BoundedDropOldestQueue(10), BoundedDropOldestQueue(10), stop_event
+    )
+
+    assert captured["client_id"] == "radiobeacon-beacon"
+    assert captured["clean_session"] is True

@@ -268,7 +268,12 @@ def test_already_processed_true_for_matching_event_id(tmp_path):
     assert main_module._already_processed(conn, "fakeaction", "different-id") is False
 
 
-def test_run_action_loop_uses_stable_client_id_and_clean_session_false(monkeypatch):
+def test_run_action_loop_uses_stable_client_id_and_clean_session_true(monkeypatch):
+    """clean_session=True (not False) is deliberate: MQTT SUBSCRIBE is
+    purely additive, so a persistent session across a topic rename would
+    keep an old subscription alive forever alongside the new one — this
+    is exactly what caused actions.chunk to double-process every dispatch
+    after ACTIONS_CHUNK_SUBSCRIBE_TOPIC changed earlier this session."""
     captured = {}
 
     class FakeClientForConnect:
@@ -287,4 +292,4 @@ def test_run_action_loop_uses_stable_client_id_and_clean_session_false(monkeypat
     )
 
     assert captured["client_id"] == "radiobeacon-actions-fakeaction"
-    assert captured["clean_session"] is False
+    assert captured["clean_session"] is True

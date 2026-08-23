@@ -3,19 +3,29 @@
 {% block content %}
 <div class="page-header">
   <h1>Beacon identity</h1>
-  {% if configured %}
-    <span class="badge badge-success">configured</span>
-  {% else %}
-    <span class="badge badge-warn">not configured</span>
-  {% endif %}
+  <div class="header-badges">
+    {% if refresh_seconds %}
+    <span class="live-badge">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      Live · every {{ refresh_seconds }}s · <span id="refresh-status">just loaded</span>
+    </span>
+    {% endif %}
+    {% if configured %}
+      <span class="badge badge-success">configured</span>
+    {% else %}
+      <span class="badge badge-warn">not configured</span>
+    {% endif %}
+  </div>
 </div>
 
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
 
+<div id="dashboard-content">
 <h2>Status</h2>
 {% if beacon_enabled and not running %}
 <p class="banner-warn">⚠ Beacon is enabled but the process doesn't appear to be running (no recent heartbeat) — check that <code>beacon/start.sh</code> is up.</p>
 {% endif %}
+
 <table class="form-table">
   <tr>
     <th>Transmission</th>
@@ -35,19 +45,48 @@
       </form>
     </td>
   </tr>
-  <tr><th>Current slot</th><td class="mono">{{ status.get('current_slot', '—') }}</td></tr>
-  <tr>
-    <th>Voice queue</th>
-    <td>{{ status.get('voice_queue_depth', '0') }} queued
-      <span class="muted">({{ status.get('voice_queue_dropped_total', '0') }} dropped total)</span>
-    </td>
-  </tr>
-  <tr>
-    <th>Frame queue</th>
-    <td>{{ status.get('frame_queue_depth', '0') }} queued
-      <span class="muted">({{ status.get('frame_queue_dropped_total', '0') }} dropped total)</span>
-    </td>
-  </tr>
+</table>
+
+{% if timeline_valid %}
+<div class="tdma-timeline{{ ' stale' if not running else '' }}">
+  {% for seg in segments %}
+  <div class="tdma-segment slot-{{ seg.slot }}" style="width: {{ seg.pct }}%;" title="{{ seg.slot }} · {{ seg.seconds }}s">{{ seg.slot }}</div>
+  {% endfor %}
+  {% if marker_pct is not none %}
+  <div class="tdma-marker" style="left: {{ marker_pct }}%;" title="now"></div>
+  {% endif %}
+</div>
+<div class="tdma-labels">
+  {% for seg in segments %}<span>{{ seg.slot }} · {{ seg.seconds }}s</span>{% endfor %}
+</div>
+{% else %}
+<p class="muted">Cycle timeline unavailable — check the window settings under <a href="/config/beacon-schedule">Beacon — Schedule</a>.</p>
+{% endif %}
+
+<div class="card-row">
+  <div class="card">
+    <div class="value {{ 'slot-label-' + current_slot if current_slot else '' }}">{{ current_slot or '—' }}</div>
+    <div class="label">Current slot</div>
+  </div>
+  <div class="card">
+    <div class="value">{{ remaining_display or '—' }}</div>
+    <div class="label">Time left in slot</div>
+  </div>
+  <div class="card">
+    <div class="value">{{ status.get('voice_queue_depth', '0') }}<span class="muted"> / {{ queue_max_size }}</span></div>
+    <div class="label">Voice queue</div>
+    <div class="queue-bar"><div class="queue-bar-fill {{ voice_queue.fill_class }}" style="width: {{ voice_queue.pct }}%;"></div></div>
+    <div class="meta-line">{{ status.get('voice_queue_dropped_total', '0') }} dropped total</div>
+  </div>
+  <div class="card">
+    <div class="value">{{ status.get('frame_queue_depth', '0') }}<span class="muted"> / {{ queue_max_size }}</span></div>
+    <div class="label">Frame queue</div>
+    <div class="queue-bar"><div class="queue-bar-fill {{ frame_queue.fill_class }}" style="width: {{ frame_queue.pct }}%;"></div></div>
+    <div class="meta-line">{{ status.get('frame_queue_dropped_total', '0') }} dropped total</div>
+  </div>
+</div>
+
+<table class="form-table">
   <tr>
     <th>Last NTP check</th>
     <td>
@@ -59,6 +98,7 @@
     </td>
   </tr>
 </table>
+</div>
 
 <h2>Identity</h2>
 <form method="post" action="/beacon">
@@ -76,4 +116,9 @@
   </table>
   <button type="submit">Save</button>
 </form>
+{% endblock %}
+{% block scripts %}
+{% if refresh_seconds %}
+<script src="/static/dashboard-refresh.js" defer data-interval-ms="{{ refresh_seconds * 1000 }}"></script>
+{% endif %}
 {% endblock %}

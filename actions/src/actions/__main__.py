@@ -202,13 +202,24 @@ def _run_action_loop(
     stop_event.wait(), not loop_forever() — loop_forever() blocks
     uninterruptibly until disconnect() is called from inside a callback,
     with no way to signal it from a threading.Event like every other loop
-    in this repo does. Uses a stable client_id + clean_session=False (a
-    persistent MQTT session): without this, the broker forces a clean
-    session for an unnamed client and drops any QoS 1 message published
-    while this action is offline — messages would be silently lost
-    forever with no replay mechanism, unlike dispatcher's own audit_log/
-    rearm_item. A persistent session tells the broker to queue messages
-    for this exact client_id until it reconnects."""
+    in this repo does.
+
+    clean_session=True (a stable client_id, but NOT a persistent MQTT
+    session): a broker restart or reconnect starts this client with zero
+    subscriptions carried over, so it always ends up subscribed to
+    exactly ACTIONS_<NAME>_SUBSCRIBE_TOPIC's CURRENT value — nothing
+    more. This was flipped from clean_session=False (this repo's earlier
+    choice) after a real incident: MQTT SUBSCRIBE is purely additive, so
+    a persistent session across a topic rename (e.g. chunk's own
+    ACTIONS_CHUNK_SUBSCRIBE_TOPIC changing from item.dispatched to
+    item.ai_settled earlier this session) kept the OLD subscription
+    alive forever alongside the new one — confirmed directly in the
+    broker's own persistence file — silently double-triggering this
+    action on every dispatch (chunking raw content AND the AI summary,
+    both, for the same item). A message published while this action is
+    briefly offline is now lost rather than queued — recoverable via a
+    rearm, the same manual-recovery path this repo already relies on for
+    dispatcher redelivery."""
     import paho.mqtt.client as mqtt_client
 
     name = _env_name(action_class).lower()
@@ -217,7 +228,7 @@ def _run_action_loop(
     client = mqtt_client.Client(
         mqtt_client.CallbackAPIVersion.VERSION2,
         client_id=f"radiobeacon-actions-{name}",
-        clean_session=False,
+        clean_session=True,
     )
     client.on_message = _make_on_message(action_class, output_topic, output_event_type)
 
@@ -281,7 +292,7 @@ def _run_content_ready_loop(stop_event: threading.Event) -> None:
     client = mqtt_client.Client(
         mqtt_client.CallbackAPIVersion.VERSION2,
         client_id="radiobeacon-actions-content_ready",
-        clean_session=False,
+        clean_session=True,  # publish-only client, no subscriptions to persist
     )
 
     while not stop_event.is_set():

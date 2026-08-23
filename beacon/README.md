@@ -74,6 +74,13 @@ read-only visibility layer on top — periodically checking the measured
 offset against a real NTP server for the `/beacon` status page — and
 never adjusts anything itself.
 
+Every tick, `_write_heartbeat` persists the current `SlotState` (already
+computed by `schedule.py`, nothing new derived) to `beacon_status`:
+`current_slot`, `current_cycle_index`, `current_cycle_elapsed_seconds`,
+`current_slot_remaining_seconds`, plus both queues' depth/dropped-total.
+`ui/`'s `/beacon` page reads these to render a live cycle timeline and
+slot countdown — see [ui/README.md](../ui/README.md#live-dashboard).
+
 **A slot's length is a floor, not a hard ceiling.** When a slot opens,
 `_run_tdma_loop` drains its *entire* queue — not one item — pausing
 `BEACON_VOICE_INTER_TX_DELAY_SECONDS`/`BEACON_FRAME_INTER_TX_DELAY_SECONDS`

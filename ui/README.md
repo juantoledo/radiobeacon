@@ -91,6 +91,20 @@ framework, no build step). Paused while the tab is backgrounded, resumed
 immediately on refocus. Set `UI_DASHBOARD_REFRESH_SECONDS=0` to disable
 entirely.
 
+`/beacon`'s status section (cycle timeline, slot countdown, queue cards)
+reuses the exact same `dashboard-refresh.js` mechanism, on its own
+`UI_BEACON_REFRESH_SECONDS` (default 2 — tighter than the main
+dashboard's, since a slot countdown only reads as "live" with frequent
+updates). The timeline's segment widths come from the `/config` →
+"Beacon — Schedule" window settings; the "now" marker and time-left
+countdown come from `beacon_status.current_cycle_elapsed_seconds`/
+`current_slot_remaining_seconds`, written every TDMA tick by
+`beacon/src/beacon/__main__.py::_write_heartbeat` straight from
+`schedule.SlotState` (see `beacon/README.md`). The countdown (but not the
+last-known slot name, which stays informative even stale) is hidden
+whenever the heartbeat itself is stale — a frozen number would actively
+mislead in a way a stale-but-static slot name doesn't.
+
 ## No authentication
 
 This first version has no login system — it's meant to be reached only
@@ -127,6 +141,7 @@ Env vars, in `.env` at the repo root (see `.env.example`).
 | `UI_PAGE_SIZE` | `50` |
 | `UI_DEFAULT_CONSUMER_NAME` | *(unset — falls back to `DISPATCHER_CONSUMER_NAME`, then `"log"`)* |
 | `UI_DASHBOARD_REFRESH_SECONDS` | `5` |
+| `UI_BEACON_REFRESH_SECONDS` | `2` |
 | `UI_DEV_TOOLS_ENABLED` | `true` |
 
 Optional MQTT publishing of override/rearm/policy-set/policy-deleted audit

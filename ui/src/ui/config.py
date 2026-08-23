@@ -28,6 +28,13 @@ UI_DEFAULT_CONSUMER_NAME = os.environ.get(
 # of storage/radiobeacon.db in this repo. 0 disables auto-refresh.
 UI_DASHBOARD_REFRESH_SECONDS = int(os.environ.get("UI_DASHBOARD_REFRESH_SECONDS", "5"))
 
+# Same idea, for /beacon's own live status section (cycle timeline +
+# slot countdown + queue cards) — faster than the main dashboard's
+# default since a slot countdown reads as "live" only with tighter
+# updates; reuses the exact same dashboard-refresh.js, just a different
+# interval. 0 disables auto-refresh.
+UI_BEACON_REFRESH_SECONDS = int(os.environ.get("UI_BEACON_REFRESH_SECONDS", "2"))
+
 # Enables the Developers section (/dev) — direct add/edit/delete on raw
 # items (bypassing the "items are immutable after insert" contract
 # adapters.storage.store_reading otherwise enforces), a dispatcher-state

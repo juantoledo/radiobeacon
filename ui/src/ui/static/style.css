@@ -148,6 +148,13 @@ main {
   flex-wrap: wrap;
 }
 
+.header-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
 .crumb {
   display: inline-block;
   margin-bottom: 0.6rem;
@@ -301,6 +308,81 @@ tbody tr:last-child td { border-bottom: none; }
 .badge-warn { background: var(--warn-bg); color: var(--warn); }
 .badge-danger { background: var(--danger-bg); color: var(--danger); }
 .badge-neutral { background: var(--neutral-bg); color: var(--neutral); }
+
+/* --- Beacon TDMA cycle timeline (/beacon) --- */
+
+.tdma-timeline {
+  position: relative;
+  display: flex;
+  height: 2.25rem;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin-bottom: 0.35rem;
+}
+
+.tdma-timeline.stale { opacity: 0.45; filter: grayscale(60%); }
+
+.tdma-segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tdma-segment.slot-voice { background: var(--accent); color: var(--accent-fg); }
+.tdma-segment.slot-guard { background: var(--warn-bg); color: var(--warn); }
+.tdma-segment.slot-frame { background: var(--success); color: var(--accent-fg); }
+.tdma-segment.slot-idle { background: var(--bg-subtle); color: var(--fg-muted); }
+
+.tdma-marker {
+  position: absolute;
+  top: -0.25rem;
+  bottom: -0.25rem;
+  width: 2px;
+  background: var(--fg);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.tdma-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--fg-muted);
+  margin-bottom: 1.5rem;
+}
+
+.slot-label-voice { color: var(--accent); }
+.slot-label-guard { color: var(--warn); }
+.slot-label-frame { color: var(--success); }
+.slot-label-idle { color: var(--fg-muted); }
+
+/* --- Queue capacity bars (/beacon) --- */
+
+.queue-bar {
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  overflow: hidden;
+  margin-top: 0.6rem;
+}
+
+.queue-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+  transition: width 0.4s ease;
+}
+
+.queue-bar-fill.fill-warn { background: var(--warn); }
+.queue-bar-fill.fill-danger { background: var(--danger); }
 
 /* --- Tool cards (Developers hub) --- */
 
