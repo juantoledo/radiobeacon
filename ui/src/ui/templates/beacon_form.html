@@ -12,6 +12,55 @@
 
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
 
+<h2>Status</h2>
+{% if beacon_enabled and not running %}
+<p class="banner-warn">⚠ Beacon is enabled but the process doesn't appear to be running (no recent heartbeat) — check that <code>beacon/start.sh</code> is up.</p>
+{% endif %}
+<table class="form-table">
+  <tr>
+    <th>Transmission</th>
+    <td>
+      {% if beacon_enabled %}
+        <span class="badge badge-success">enabled</span>
+      {% else %}
+        <span class="badge badge-neutral">disabled</span>
+      {% endif %}
+      {% if running %}
+        <span class="badge badge-success">running</span>
+      {% else %}
+        <span class="badge badge-warn">not running</span>
+      {% endif %}
+      <form class="action" method="post" action="/beacon/{{ 'disable' if beacon_enabled else 'enable' }}" style="display:inline;">
+        <button type="submit" class="{{ 'danger' if beacon_enabled else '' }}">{{ 'Disable' if beacon_enabled else 'Enable' }}</button>
+      </form>
+    </td>
+  </tr>
+  <tr><th>Current slot</th><td class="mono">{{ status.get('current_slot', '—') }}</td></tr>
+  <tr>
+    <th>Voice queue</th>
+    <td>{{ status.get('voice_queue_depth', '0') }} queued
+      <span class="muted">({{ status.get('voice_queue_dropped_total', '0') }} dropped total)</span>
+    </td>
+  </tr>
+  <tr>
+    <th>Frame queue</th>
+    <td>{{ status.get('frame_queue_depth', '0') }} queued
+      <span class="muted">({{ status.get('frame_queue_dropped_total', '0') }} dropped total)</span>
+    </td>
+  </tr>
+  <tr>
+    <th>Last NTP check</th>
+    <td>
+      {% if status.get('last_ntp_checked_at') %}
+        offset {{ status.get('last_ntp_offset_seconds', '?') }}s at {{ status.get('last_ntp_checked_at') | display_dt }}
+      {% else %}
+        <span class="muted">not checked yet</span>
+      {% endif %}
+    </td>
+  </tr>
+</table>
+
+<h2>Identity</h2>
 <form method="post" action="/beacon">
   <table class="form-table">
     {% for f in fields %}

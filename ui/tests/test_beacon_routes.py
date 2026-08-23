@@ -1,4 +1,4 @@
-from adapters.storage import get_setting, set_setting
+from adapters.storage import get_setting, set_beacon_status, set_setting
 
 from ui.beacon import BEACON_FIELDS, is_beacon_configured
 
@@ -176,3 +176,99 @@ def test_all_catalog_fields_covered_by_test_values():
     """Guards against BEACON_FIELDS drifting out of sync with this test
     file's ALL_VALUES fixture."""
     assert {f.key for f in BEACON_FIELDS} == set(ALL_VALUES)
+
+
+# --- status section / enable / disable ---
+
+
+def test_beacon_page_shows_disabled_by_default(client):
+    response = client.get("/beacon")
+
+    assert "disabled" in response.text
+
+
+def test_beacon_page_shows_not_running_with_no_heartbeat(client):
+    response = client.get("/beacon")
+
+    assert "not running" in response.text
+
+
+def test_beacon_page_shows_running_with_recent_heartbeat(client, conn):
+    from datetime import datetime, timezone
+
+    set_beacon_status(conn, "process_heartbeat_at", datetime.now(timezone.utc).isoformat())
+
+    response = client.get("/beacon")
+
+    assert "not running" not in response.text
+
+
+def test_beacon_page_shows_not_running_with_stale_heartbeat(client, conn):
+    from datetime import datetime, timedelta, timezone
+
+    stale = datetime.now(timezone.utc) - timedelta(minutes=5)
+    set_beacon_status(conn, "process_heartbeat_at", stale.isoformat())
+
+    response = client.get("/beacon")
+
+    assert "not running" in response.text
+
+
+def test_beacon_page_shows_queue_depths(client, conn):
+    set_beacon_status(conn, "voice_queue_depth", "3")
+    set_beacon_status(conn, "frame_queue_depth", "1")
+
+    response = client.get("/beacon")
+
+    assert "3 queued" in response.text
+    assert "1 queued" in response.text
+
+
+def test_beacon_page_shows_current_slot(client, conn):
+    set_beacon_status(conn, "current_slot", "voice")
+
+    response = client.get("/beacon")
+
+    assert "voice" in response.text
+
+
+def test_beacon_enable_action_sets_flag_and_redirects(client, conn):
+    response = client.post("/beacon/enable", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert get_setting("BEACON_ENABLED", conn=conn) == "true"
+
+
+def test_beacon_disable_action_sets_flag_and_redirects(client, conn):
+    set_setting(conn, "BEACON_ENABLED", "true")
+
+    response = client.post("/beacon/disable", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert get_setting("BEACON_ENABLED", conn=conn) == "false"
+
+
+def test_beacon_page_reflects_enabled_state(client, conn):
+    set_setting(conn, "BEACON_ENABLED", "true")
+
+    response = client.get("/beacon")
+
+    assert ">Disable<" in response.text  # button offers the opposite action
+
+
+def test_beacon_group_settings_appear_in_config(client):
+    response = client.get("/config")
+
+    assert "Beacon — Schedule" in response.text
+    assert "BEACON_WINDOW_TOTAL_SECONDS" in response.text
+
+
+def test_beacon_schedule_group_editable_via_config(client, conn):
+    response = client.post(
+        "/config/beacon-schedule",
+        data={"BEACON_WINDOW_TOTAL_SECONDS": "120"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert get_setting("BEACON_WINDOW_TOTAL_SECONDS", conn=conn) == "120"

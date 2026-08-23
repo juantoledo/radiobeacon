@@ -10,10 +10,12 @@ code coupling between actions, and no code coupling to
 CloudEvents; this package is one possible subscriber, alongside anything
 else that wants to listen).
 
-(Not called "orchestrator": CONTEXT.md already reserves that name for a
-different, future component — the TDMA radio transmit-slot timing
+(Not called "orchestrator": that name belongs to
+[beacon](../beacon/README.md) — the TDMA radio transmit-slot timing
 scheduler, a completely different responsibility from this event-driven
-action-chaining layer.)
+action-chaining layer. `beacon` subscribes to this package's own output
+topics — `item.chunked` for frame content, `item.dispatched` directly for
+voice — as one of its consumers, same as anything else on the broker.)
 
 ## Actions
 
@@ -132,7 +134,9 @@ Chunk-specific: `ACTIONS_CHUNK_MAX_CHARS` (default `200`).
 
 AI-specific: `ACTIONS_AI_ENABLED` (default `false`), `ACTIONS_AI_PROVIDER`
 (`openai`/`claude`/`ollama`, required once enabled), `ACTIONS_AI_PROMPT`
-(optional template override), `ACTIONS_AI_MAX_CHARS` (default `500`),
+(optional template override), `ACTIONS_AI_MAX_CHARS` (default `200` —
+matches `ACTIONS_CHUNK_MAX_CHARS` exactly, so both channels
+[beacon](../beacon/README.md) reads from share one length budget),
 `ACTIONS_AI_<PROVIDER>_MODEL`, `ACTIONS_AI_OLLAMA_HOST`, plus the
 unprefixed `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` read directly by each
 SDK — see `.env.example`.

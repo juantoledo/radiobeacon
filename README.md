@@ -1,10 +1,15 @@
 # radiobeacon
 
-Data pipeline for **CD3DXZ-1**, an experimental VHF (2m) propagation beacon
-project. This repo currently covers the data side of that project: pulling
-in raw data (starting with SENAPRED early-warning alerts) and storing it.
-The radio/AX.25/voice side of the project is designed but not yet
-implemented here — see [CONTEXT.md](CONTEXT.md) for the full system design.
+Data pipeline (and, as of [beacon/](beacon/README.md), the transmission
+orchestrator) for **CD3DXZ-1**, an experimental VHF (2m) propagation
+beacon project: pulling in raw data (starting with SENAPRED early-warning
+alerts and CSN earthquake reports), storing it, and delivering it to voice
+(SvxLink) or AX.25 frame (Direwolf) channels on a TDMA schedule.
+Deploying Direwolf/SvxLink themselves — their Dockerfiles, compose, and
+the host-level audio setup CONTEXT.md describes — remains out of scope
+here; `beacon/` assumes both already run as independently controllable
+services on the host. See [CONTEXT.md](CONTEXT.md) for the full system
+design.
 
 ## Layout
 
@@ -15,6 +20,8 @@ mq/             optional local MQTT broker (Docker), dispatcher can publish Clou
 actions/        optional MQTT-subscribed pipeline of N configurable actions (e.g. chunking)
 ui/             server-rendered ops dashboard (FastAPI) — browse/override items, manage
                 dispatch policies, view the audit log; dockerizable, localhost-only by default
+beacon/         TDMA transmission orchestrator — queues content, delivers it to voice
+                (SvxLink) or AX.25 frame (Direwolf) channels; disabled by default
 storage/        the shared SQLite database (radiobeacon.db) all packages read/write
 query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
 bootstrap.sh    one-command fresh-clone setup — see Quick start below
@@ -27,6 +34,7 @@ Each package folder has its own README with setup and usage details:
 [mq/README.md](mq/README.md),
 [actions/README.md](actions/README.md),
 [ui/README.md](ui/README.md),
+[beacon/README.md](beacon/README.md),
 [storage/README.md](storage/README.md).
 
 ### Architecture
@@ -46,15 +54,20 @@ data-adapters (fetch)  →  storage/radiobeacon.db  ←  ui/ (browse + override,
                      mq/ (Mosquitto, CloudEvents)
                               ┊ (optional)
                      actions/ (chained MQTT-subscribed pipeline)
+                              ┊ item.chunked / item.dispatched
+                     beacon/ (TDMA voice/frame transmission orchestrator)
+                              ┊ (needs real hardware, out of scope here)
+                     SvxLink / Direwolf (voice / AX.25 radio TX)
 ```
 
 ## Quick start
 
 ```bash
 ./bootstrap.sh   # fresh clone: creates .env, sets up every .venv, starts
-                 # mq + data-adapters + dispatcher + actions + ui together
-                 # (Ctrl+C stops all of them). No secrets required — every
-                 # .env.example default is safe to run as-is.
+                 # mq + data-adapters + dispatcher + actions + ui + beacon
+                 # together (Ctrl+C stops all of them). No secrets required
+                 # — every .env.example default is safe to run as-is, and
+                 # beacon starts disabled (BEACON_ENABLED=false).
 ./query_history.sh --help   # explore what's in radiobeacon.db
 ```
 
@@ -63,9 +76,9 @@ dashboard.
 
 To run just one piece instead of everything, use that package's own
 `start.sh` directly (`./data-adapters/start.sh`, `./dispatcher/start.sh`,
-`./mq/start.sh`, `./actions/start.sh`, `./ui/start.sh`) — each is
-self-contained (creates its own `.venv` on first run) and independent of
-the others.
+`./mq/start.sh`, `./actions/start.sh`, `./ui/start.sh`, `./beacon/start.sh`)
+— each is self-contained (creates its own `.venv` on first run) and
+independent of the others.
 
 ## Configuration
 

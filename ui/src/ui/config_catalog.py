@@ -349,9 +349,10 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Actions — AI",
         "Max input chars",
         "Skip-summarization threshold on input length — items at or under this "
-        "length aren't summarized.",
+        "length aren't summarized. Also reused by beacon as its voice-length "
+        "ceiling — matches ACTIONS_CHUNK_MAX_CHARS's default exactly.",
         "int",
-        "500",
+        "200",
     ),
     SettingSpec(
         "ACTIONS_AI_PROMPT",
@@ -382,6 +383,273 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "secret",
         None,
         is_secret=True,
+    ),
+    # --- Beacon — Schedule ---
+    # BEACON_ENABLED also gets a first-class Enable/Disable control on
+    # /beacon itself (see ui/src/ui/routers/beacon.py) — it stays listed
+    # here too for discoverability/consistency with every other setting.
+    SettingSpec(
+        "BEACON_ENABLED",
+        "Beacon — Schedule",
+        "Enabled",
+        "Whether the beacon TDMA loop actually transmits queued voice/frame "
+        "content. Re-read every tick — no restart needed to flip it.",
+        "bool",
+        "false",
+    ),
+    SettingSpec(
+        "BEACON_WINDOW_TOTAL_SECONDS",
+        "Beacon — Schedule",
+        "Window total (s)",
+        "Length of one full TDMA cycle: voice + guard + frame + idle.",
+        "int",
+        "90",
+    ),
+    SettingSpec(
+        "BEACON_WINDOW_VOICE_SECONDS",
+        "Beacon — Schedule",
+        "Voice slot (s)",
+        "Seconds of the cycle reserved for voice transmission.",
+        "int",
+        "60",
+    ),
+    SettingSpec(
+        "BEACON_WINDOW_FRAME_SECONDS",
+        "Beacon — Schedule",
+        "Frame slot (s)",
+        "Seconds of the cycle reserved for AX.25 frame transmission.",
+        "int",
+        "30",
+    ),
+    SettingSpec(
+        "BEACON_WINDOW_GUARD_SECONDS",
+        "Beacon — Schedule",
+        "Guard time (s)",
+        "Gap between the voice and frame slots, letting the outgoing "
+        "transmitter release the shared audio device before the next one "
+        "opens it. 0 collapses voice straight into frame.",
+        "int",
+        "0",
+    ),
+    SettingSpec(
+        "BEACON_TICK_SECONDS",
+        "Beacon — Schedule",
+        "Tick interval (s)",
+        "How often the TDMA loop re-evaluates the schedule. Small relative to "
+        "the slot lengths so short slots aren't missed.",
+        "int",
+        "1",
+        advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_SLOT_LEAD_TIME_SECONDS",
+        "Beacon — Schedule",
+        "Slot lead time (s)",
+        "How long before a content slot's start to stop/start SvxLink or "
+        "Direwolf, so the target service is ready by the time the slot "
+        "actually begins. A placeholder — CONTEXT.md's own PTT_LATENCY_S/ "
+        "TNC_LATENCY_S need measuring on the real hardware.",
+        "int",
+        "2",
+        advanced=True,
+    ),
+    # --- Beacon — Templates ---
+    SettingSpec(
+        "BEACON_VOICE_TEMPLATE",
+        "Beacon — Templates",
+        "Voice template",
+        "str.format-style template wrapping resolved voice content. "
+        "Placeholders: {callsign}, {text}. Frame content has no template — "
+        "its ORIGEN>DESTINO: structure is fixed protocol code.",
+        "text",
+        "{callsign}. {text}",
+    ),
+    # --- Beacon — AX.25 ---
+    SettingSpec(
+        "BEACON_FRAME_DESTINATION",
+        "Beacon — AX.25",
+        "Frame destination (tocall)",
+        "The AX.25 destination address — a software/project identifier, not "
+        "a real route. WXALRT marks this as experimental, non-APRS traffic.",
+        "text",
+        "WXALRT",
+    ),
+    SettingSpec(
+        "BEACON_AX25_KISS_HOST",
+        "Beacon — AX.25",
+        "Direwolf KISS host",
+        "Host of Direwolf's KISS TCP socket.",
+        "text",
+        "localhost",
+    ),
+    SettingSpec(
+        "BEACON_AX25_KISS_PORT",
+        "Beacon — AX.25",
+        "Direwolf KISS port",
+        "Port of Direwolf's KISS TCP socket.",
+        "int",
+        "8001",
+    ),
+    SettingSpec(
+        "BEACON_AX25_CONNECT_TIMEOUT_SECONDS",
+        "Beacon — AX.25",
+        "Connect timeout (s)",
+        "How long to wait when connecting to Direwolf's KISS socket.",
+        "int",
+        "5",
+    ),
+    # --- Beacon — Voice ---
+    SettingSpec(
+        "BEACON_VOICE_TRANSMITTER",
+        "Beacon — Voice",
+        "Voice transmitter",
+        "\"logging\" (default, safe) just logs what would be played. "
+        "\"svxlink\" is an unverified stub — see beacon/README.md.",
+        "select",
+        "logging",
+        choices=("logging", "svxlink"),
+        advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_TTS_VOICE",
+        "Beacon — Voice",
+        "TTS voice",
+        "espeak-ng voice/language code used to synthesize speech.",
+        "text",
+        "es",
+    ),
+    SettingSpec(
+        "BEACON_TTS_WAV_DIR",
+        "Beacon — Voice",
+        "TTS output directory",
+        "Where synthesized WAV files are written before playback.",
+        "text",
+        "storage/beacon_tts",
+    ),
+    # --- Beacon — Queue ---
+    SettingSpec(
+        "BEACON_QUEUE_MAX_SIZE",
+        "Beacon — Queue",
+        "Max queue size",
+        "Max items held per channel (voice/frame) before the oldest is "
+        "dropped to make room for new content.",
+        "int",
+        "20",
+    ),
+    # --- Beacon — MQ ---
+    SettingSpec(
+        "BEACON_MQ_HOST",
+        "Beacon — MQ",
+        "MQTT host",
+        "Broker host beacon subscribes to for incoming content.",
+        "text",
+        "localhost",
+    ),
+    SettingSpec(
+        "BEACON_MQ_PORT",
+        "Beacon — MQ",
+        "MQTT port",
+        "Broker port for beacon.",
+        "int",
+        "1883",
+    ),
+    SettingSpec(
+        "BEACON_MQ_QOS",
+        "Beacon — MQ",
+        "MQTT QoS",
+        "QoS level for beacon's subscriptions.",
+        "int",
+        "1",
+    ),
+    SettingSpec(
+        "BEACON_MQ_RECONNECT_BACKOFF_SECONDS",
+        "Beacon — MQ",
+        "Reconnect backoff (s)",
+        "Seconds between beacon's MQTT reconnect attempts.",
+        "int",
+        "5",
+    ),
+    SettingSpec(
+        "BEACON_FRAME_SUBSCRIBE_TOPIC",
+        "Beacon — MQ",
+        "Frame subscribe topic",
+        "Frame content trigger — actions.chunk is always-on, so this fires "
+        "out of the box on a fresh clone.",
+        "text",
+        "radiobeacon/events/item.chunked",
+        advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_VOICE_SUBSCRIBE_TOPIC",
+        "Beacon — MQ",
+        "Voice subscribe topic",
+        "Voice content trigger — deliberately item.dispatched, not "
+        "item.summarized: actions.ai structurally skips short content "
+        "(e.g. CSN), which would leave it permanently voice-silent "
+        "otherwise. Voice text is resolved (summary if present, else raw "
+        "contents) at transmit time regardless of which topic triggers it.",
+        "text",
+        "radiobeacon/events/item.dispatched",
+        advanced=True,
+    ),
+    # --- Beacon — NTP ---
+    SettingSpec(
+        "BEACON_NTP_SERVER",
+        "Beacon — NTP",
+        "NTP server",
+        "Queried for clock-offset visibility only — never used to correct "
+        "the clock, which stays the OS's own NTP daemon's job.",
+        "text",
+        "pool.ntp.org",
+    ),
+    SettingSpec(
+        "BEACON_NTP_CHECK_INTERVAL_SECONDS",
+        "Beacon — NTP",
+        "Check interval (s)",
+        "How often to query the NTP server for the current offset.",
+        "int",
+        "3600",
+    ),
+    SettingSpec(
+        "BEACON_NTP_MAX_OFFSET_SECONDS",
+        "Beacon — NTP",
+        "Max offset before warning (s)",
+        "Log loudly (does not block transmission) if the measured clock "
+        "offset exceeds this.",
+        "float",
+        "2.0",
+    ),
+    # --- Beacon — Service control ---
+    SettingSpec(
+        "BEACON_SERVICE_CONTROLLER",
+        "Beacon — Service control",
+        "Service controller",
+        "\"logging\" (default, safe) just logs the start/stop it would "
+        "issue. \"systemctl\" actually controls SvxLink/Direwolf via "
+        "systemd — requires a scoped passwordless sudoers rule on the "
+        "host, see beacon/README.md.",
+        "select",
+        "logging",
+        choices=("logging", "systemctl"),
+        advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_SVXLINK_SERVICE_NAME",
+        "Beacon — Service control",
+        "SvxLink service name",
+        "systemd unit name stopped/started around the voice slot.",
+        "text",
+        "svxlink",
+        advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_DIREWOLF_SERVICE_NAME",
+        "Beacon — Service control",
+        "Direwolf service name",
+        "systemd unit name stopped/started around the frame slot.",
+        "text",
+        "direwolf",
+        advanced=True,
     ),
 ]
 

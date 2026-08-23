@@ -82,22 +82,36 @@ def _output_config(action_class: type[Action]) -> tuple[str | None, str]:
     return output_topic, output_event_type
 
 
-def _already_processed(conn, name: str, source: str | None, item_id: str | None) -> bool:
+def _already_processed(conn, name: str, event_id: str | None) -> bool:
     """Framework-level idempotency check, shared by every action — not
     each action's own responsibility to remember. Defense-in-depth
-    against duplicate delivery of the same logical event: dispatcher's
+    against duplicate delivery of the *same* logical event: dispatcher's
     mq_publisher already filters out item.dispatched redeliveries at the
     source, but this also covers the crash-window case (a delivery whose
     audit/publish committed but whose trigger_dispatches state update
     didn't, replayed on restart) and any other future duplicate-delivery
-    source. Uses the existing idx_audit_log_source_item index — no schema
-    change. A source/item_id-less event (missing data) is never
-    considered "already processed", so it's always attempted."""
-    if not source or not item_id:
+    source.
+
+    Keyed on the triggering CloudEvent's own `id` (assigned by the
+    cloudevents SDK, unique per publish — see mq.build_cloud_event_payload),
+    not on (source, item_id) as an earlier version of this check did.
+    (source, item_id) alone is wrong: a rearm (dispatcher.override.
+    rearm_item) publishes a genuinely NEW item.dispatched CloudEvent for
+    the same (source, item_id) — keying on that pair would make this
+    action permanently skip an item after its first successful run,
+    silently defeating rearm's whole purpose of re-entering it into the
+    pipeline. Keying on event_id still catches true duplicates (the exact
+    same event redelivered) while correctly treating a rearm's fresh
+    event as new work. Uses SQLite's JSON1 json_extract — no schema
+    change (details is already a JSON TEXT column). An event with no id
+    (shouldn't happen — cloudevents always assigns one — but defensive)
+    is never considered "already processed", so it's always attempted."""
+    if not event_id:
         return False
     row = conn.execute(
-        "SELECT 1 FROM audit_log WHERE event_type = ? AND source = ? AND item_id = ? LIMIT 1",
-        (f"action.{name}.executed", source, item_id),
+        "SELECT 1 FROM audit_log WHERE event_type = ? "
+        "AND json_extract(details, '$.event_id') = ? LIMIT 1",
+        (f"action.{name}.executed", event_id),
     ).fetchone()
     return row is not None
 
@@ -119,10 +133,12 @@ def _make_on_message(action_class: type[Action], output_topic: str | None, outpu
             conn = get_connection(DEFAULT_DB_PATH)
             try:
                 data = event.get("data") or {}
-                if _already_processed(conn, name, data.get("source"), data.get("item_id")):
+                event_id = event.get("id")
+                if _already_processed(conn, name, event_id):
                     logger.info(
-                        "%s: already processed source=%s item_id=%s, skipping",
+                        "%s: already processed event_id=%s (source=%s item_id=%s), skipping",
                         name,
+                        event_id,
                         data.get("source"),
                         data.get("item_id"),
                     )
@@ -138,6 +154,7 @@ def _make_on_message(action_class: type[Action], output_topic: str | None, outpu
                         details={
                             "input_type": event.get("type"),
                             "output_count": len(outputs),
+                            "event_id": event_id,
                         },
                     )
                 except Exception:

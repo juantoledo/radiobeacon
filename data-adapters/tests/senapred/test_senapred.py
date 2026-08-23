@@ -14,8 +14,15 @@ from adapters.senapred import (
 )
 
 _ADAPTERS_SRC = str(Path(__file__).resolve().parents[2] / "src")
+# Redirects adapters.storage.DEFAULT_DB_PATH to an isolated path BEFORE
+# importing adapters.senapred — see the equivalent comment in
+# tests/csn/test_csn.py for why this matters (a stray settings-table row
+# in the real repo DB would otherwise silently outrank the env var
+# override these tests exist to check).
 _PRINT_CONFIG_SNIPPET = (
-    "import json; from adapters.senapred import ("
+    "import json, sys; import adapters.storage as storage_module; "
+    "storage_module.DEFAULT_DB_PATH = sys.argv[1]; "
+    "from adapters.senapred import ("
     "IDENTITY_POOL_ID, COGNITO_REGION, APPSYNC_HOST, APPSYNC_ENDPOINT, "
     "ALERTA_BASE_URL, EVENTO_BASE_URL, QUERY_LIMIT); "
     "print(json.dumps({"
@@ -37,10 +44,12 @@ _ADAPTERS_SENAPRED_ENV_VARS = (
 )
 
 
-def _read_config_in_subprocess(env_overrides: dict) -> dict:
+def _read_config_in_subprocess(env_overrides: dict, *, db_path) -> dict:
     """Runs a fresh Python process (isolated from this test session's
     already-imported adapters.senapred module) to verify the module-level
-    config constants pick up env vars at import time."""
+    config constants pick up env vars at import time. db_path (a pytest
+    tmp_path-derived path, never the real repo DB) keeps this hermetic —
+    see _PRINT_CONFIG_SNIPPET's comment."""
     import os as os_module
 
     env = {k: v for k, v in os_module.environ.items() if k not in _ADAPTERS_SENAPRED_ENV_VARS}
@@ -48,7 +57,7 @@ def _read_config_in_subprocess(env_overrides: dict) -> dict:
     env.update(env_overrides)
 
     result = subprocess.run(
-        [sys.executable, "-c", _PRINT_CONFIG_SNIPPET],
+        [sys.executable, "-c", _PRINT_CONFIG_SNIPPET, str(db_path)],
         env=env,
         capture_output=True,
         text=True,
@@ -270,8 +279,8 @@ def test_fetch_against_live_senapred_backend():
         pytest.fail(f"live SENAPRED fetch failed: {reading.error}")
 
 
-def test_config_defaults_when_env_vars_unset():
-    config = _read_config_in_subprocess({})
+def test_config_defaults_when_env_vars_unset(tmp_path):
+    config = _read_config_in_subprocess({}, db_path=tmp_path / "radiobeacon.db")
 
     assert config["IDENTITY_POOL_ID"] == (
         "us-east-1:17c696bc-53e1-49a2-991f-f1b65f752fda"
@@ -285,7 +294,7 @@ def test_config_defaults_when_env_vars_unset():
     assert config["QUERY_LIMIT"] == 20
 
 
-def test_config_overridable_via_env_vars():
+def test_config_overridable_via_env_vars(tmp_path):
     config = _read_config_in_subprocess(
         {
             "ADAPTERS_SENAPRED_IDENTITY_POOL_ID": "us-west-2:fake-pool-id",
@@ -294,7 +303,8 @@ def test_config_overridable_via_env_vars():
             "ADAPTERS_SENAPRED_ALERTA_BASE_URL": "https://example.test/alerta/",
             "ADAPTERS_SENAPRED_EVENTO_BASE_URL": "https://example.test/evento/",
             "ADAPTERS_SENAPRED_QUERY_LIMIT": "5",
-        }
+        },
+        db_path=tmp_path / "radiobeacon.db",
     )
 
     assert config["IDENTITY_POOL_ID"] == "us-west-2:fake-pool-id"

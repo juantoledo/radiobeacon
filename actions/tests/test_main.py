@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import threading
+import uuid
 from typing import Any
 
 import paho.mqtt.client
@@ -43,12 +44,25 @@ class FakeClient:
         self.published.append((topic, payload, qos))
 
 
-def _dispatched_payload(source="senapred", item_id="1"):
+def _dispatched_payload(source="senapred", item_id="1", event_id=None):
+    # A real id is essential here, not cosmetic: cloudevents' from_dict()
+    # (used by mq.parse_cloud_event) auto-generates a fresh random id
+    # whenever one is missing from the input dict — so an id-less payload
+    # would get a NEW random id on every single parse, making even a
+    # byte-for-byte-identical redelivery look like a distinct event to
+    # _already_processed. Real payloads always carry one (assigned once,
+    # at CloudEvent-construction time, by mq.build_cloud_event_payload /
+    # dispatcher.mq_publisher.publish_cloud_event) — this fixture mirrors
+    # that. Omit event_id to get a fresh one per call (two logically
+    # different events, e.g. an original dispatch and a later rearm);
+    # pass the same event_id explicitly to simulate a redelivered
+    # duplicate of the exact same event.
     return json.dumps(
         {
             "specversion": "1.0",
             "type": "cl.radiobeacon.item.dispatched",
             "source": "radiobeacon/log_handler",
+            "id": event_id or str(uuid.uuid4()),
             "data": {"source": source, "item_id": item_id},
         }
     ).encode("utf-8")
@@ -208,14 +222,50 @@ def test_on_message_processes_item_not_previously_seen(tmp_path, monkeypatch):
     assert FakeAction.run_calls == 2  # distinct item_ids — both processed
 
 
-def test_already_processed_returns_false_without_source_or_item_id(tmp_path):
-    conn = sqlite3.connect(tmp_path / "radiobeacon.db")
-    conn.execute(
-        "CREATE TABLE audit_log (event_type TEXT, source TEXT, item_id TEXT)"
+def test_on_message_processes_rearm_as_new_event_despite_same_source_item_id(tmp_path, monkeypatch):
+    """A rearm (dispatcher.override.rearm_item) publishes a genuinely new
+    item.dispatched CloudEvent — different event id — for the SAME
+    (source, item_id) as an earlier, already-processed delivery. Keying
+    idempotency on event id (not (source, item_id)) means this second,
+    distinct event is correctly processed rather than silently skipped —
+    the bug this fix addresses."""
+    monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
+    FakeAction.outputs = []
+    FakeAction.raises = False
+    FakeAction.run_calls = 0
+
+    handler = main_module._make_on_message(FakeAction, None, "fakeaction")
+    handler(
+        FakeClient(),
+        None,
+        FakeMessage("radiobeacon/events/item.dispatched", _dispatched_payload(source="csn", item_id="1")),
+    )
+    handler(
+        FakeClient(),
+        None,
+        FakeMessage("radiobeacon/events/item.dispatched", _dispatched_payload(source="csn", item_id="1")),
     )
 
-    assert main_module._already_processed(conn, "fakeaction", None, "1") is False
-    assert main_module._already_processed(conn, "fakeaction", "senapred", None) is False
+    assert FakeAction.run_calls == 2  # same (source, item_id), distinct event ids — both processed
+
+
+def test_already_processed_returns_false_without_event_id(tmp_path):
+    conn = sqlite3.connect(tmp_path / "radiobeacon.db")
+    conn.execute("CREATE TABLE audit_log (event_type TEXT, details TEXT)")
+
+    assert main_module._already_processed(conn, "fakeaction", None) is False
+
+
+def test_already_processed_true_for_matching_event_id(tmp_path):
+    conn = sqlite3.connect(tmp_path / "radiobeacon.db")
+    conn.execute("CREATE TABLE audit_log (event_type TEXT, details TEXT)")
+    conn.execute(
+        "INSERT INTO audit_log (event_type, details) VALUES (?, ?)",
+        ("action.fakeaction.executed", json.dumps({"event_id": "abc-123"})),
+    )
+
+    assert main_module._already_processed(conn, "fakeaction", "abc-123") is True
+    assert main_module._already_processed(conn, "fakeaction", "different-id") is False
 
 
 def test_run_action_loop_uses_stable_client_id_and_clean_session_false(monkeypatch):

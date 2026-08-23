@@ -17,8 +17,19 @@ from adapters.csn import (
 from adapters.timeutil import to_utc
 
 _ADAPTERS_SRC = str(Path(__file__).resolve().parents[2] / "src")
+# Redirects adapters.storage.DEFAULT_DB_PATH to an isolated path BEFORE
+# importing adapters.csn (whose module-level constants call get_setting(),
+# which — with no conn/db_path passed — resolves against DEFAULT_DB_PATH).
+# Without this, a subprocess with no other DB path configured would open
+# the real repo's storage/radiobeacon.db; a stray settings-table row there
+# (e.g. from someone using the /config UI) would silently outrank the env
+# var override this helper is trying to test, exactly as get_setting's
+# real DB-row-beats-env-var precedence intends — just not what this test
+# wants to exercise.
 _PRINT_CONFIG_SNIPPET = (
-    "import json; from adapters.csn import API_URL, SITE_URL, SOURCE_TZ, URGENT_MAGNITUDE_THRESHOLD; "
+    "import json, sys; import adapters.storage as storage_module; "
+    "storage_module.DEFAULT_DB_PATH = sys.argv[1]; "
+    "from adapters.csn import API_URL, SITE_URL, SOURCE_TZ, URGENT_MAGNITUDE_THRESHOLD; "
     "print(json.dumps({'API_URL': API_URL, 'SITE_URL': SITE_URL, 'SOURCE_TZ': SOURCE_TZ, "
     "'URGENT_MAGNITUDE_THRESHOLD': URGENT_MAGNITUDE_THRESHOLD}))"
 )
@@ -31,10 +42,12 @@ _ADAPTERS_CSN_ENV_VARS = (
 )
 
 
-def _read_config_in_subprocess(env_overrides: dict) -> dict:
+def _read_config_in_subprocess(env_overrides: dict, *, db_path) -> dict:
     """Runs a fresh Python process (isolated from this test session's
     already-imported adapters.csn module) to verify the module-level
-    config constants pick up env vars at import time."""
+    config constants pick up env vars at import time. db_path (a pytest
+    tmp_path-derived path, never the real repo DB) keeps this hermetic —
+    see _PRINT_CONFIG_SNIPPET's comment."""
     import os as os_module
 
     env = {k: v for k, v in os_module.environ.items() if k not in _ADAPTERS_CSN_ENV_VARS}
@@ -42,7 +55,7 @@ def _read_config_in_subprocess(env_overrides: dict) -> dict:
     env.update(env_overrides)
 
     result = subprocess.run(
-        [sys.executable, "-c", _PRINT_CONFIG_SNIPPET],
+        [sys.executable, "-c", _PRINT_CONFIG_SNIPPET, str(db_path)],
         env=env,
         capture_output=True,
         text=True,
@@ -146,8 +159,10 @@ def test_id_and_event_key_are_unaffected_by_utc_conversion():
     assert earthquake.id != earthquake.source_date_time.isoformat()
 
 
-def test_source_tz_overridable_via_env_var():
-    config = _read_config_in_subprocess({"ADAPTERS_CSN_SOURCE_TZ": "UTC"})
+def test_source_tz_overridable_via_env_var(tmp_path):
+    config = _read_config_in_subprocess(
+        {"ADAPTERS_CSN_SOURCE_TZ": "UTC"}, db_path=tmp_path / "radiobeacon.db"
+    )
 
     assert config["SOURCE_TZ"] == "UTC"
 
@@ -205,8 +220,8 @@ def test_fetch_against_live_csn_api():
         pytest.fail(f"live CSN fetch failed: {reading.error}")
 
 
-def test_config_defaults_when_env_vars_unset():
-    config = _read_config_in_subprocess({})
+def test_config_defaults_when_env_vars_unset(tmp_path):
+    config = _read_config_in_subprocess({}, db_path=tmp_path / "radiobeacon.db")
 
     assert config["API_URL"] == "https://api.gael.cloud/general/public/sismos"
     assert config["SITE_URL"] == "https://www.sismologia.cl/"
@@ -214,13 +229,14 @@ def test_config_defaults_when_env_vars_unset():
     assert config["URGENT_MAGNITUDE_THRESHOLD"] == 4.5
 
 
-def test_config_overridable_via_env_vars():
+def test_config_overridable_via_env_vars(tmp_path):
     config = _read_config_in_subprocess(
         {
             "ADAPTERS_CSN_API_URL": "https://example.test/sismos",
             "ADAPTERS_CSN_SITE_URL": "https://example.test/",
             "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD": "5.0",
-        }
+        },
+        db_path=tmp_path / "radiobeacon.db",
     )
 
     assert config["API_URL"] == "https://example.test/sismos"

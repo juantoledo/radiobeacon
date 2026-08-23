@@ -64,7 +64,10 @@ class AiAction(Action):
     this action has a real per-call cost (a paid API, or a hard
     dependency on a local Ollama install) — opt in explicitly.
 
-    ACTIONS_AI_MAX_CHARS (default 500) is a skip threshold on the INPUT,
+    ACTIONS_AI_MAX_CHARS (default 200 — matches ACTIONS_CHUNK_MAX_CHARS's
+    default exactly, so both channels share one length budget instead of
+    two numbers that happen to both bound length) is a skip threshold on
+    the INPUT,
     not a cap on the output: if extracted_contents is already at or under
     that length, there's nothing meaningful to condense, so the provider
     is never called at all — cheaper than calling it and getting back
@@ -111,7 +114,7 @@ class AiAction(Action):
             )
             return []
 
-        max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "500", conn=conn))
+        max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "200", conn=conn))
         if len(extracted_contents) <= max_chars:
             logger.info(
                 "ai: source=%s item_id=%s extracted_contents already <= %d chars, "

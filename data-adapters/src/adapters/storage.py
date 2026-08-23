@@ -111,6 +111,21 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+# beacon_status holds machine-written telemetry from the beacon/ package's
+# TDMA loop (current slot, queue depths, last NTP check, a heartbeat) — NOT
+# operator config (that's `settings`, above). beacon/ and ui/ are separate
+# OS processes with no shared memory, so this table is the only way the UI
+# can show "is beacon actually running / what's it doing right now"; plain
+# upserts via set_beacon_status, no audit_log entries (telemetry updated
+# every tick would drown out real config-change events).
+_CREATE_BEACON_STATUS = """
+CREATE TABLE IF NOT EXISTS beacon_status (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 # (old_column, new_column): renames applied in order to databases created
 # before a given schema change.
 _COLUMN_RENAMES = (
@@ -220,6 +235,7 @@ def get_connection(
         _ensure_audit_log_table(conn)
         _ensure_chunks_table(conn)
         _ensure_settings_table(conn)
+        _ensure_beacon_status_table(conn)
         conn.commit()
     except Exception:
         conn.close()
@@ -435,6 +451,42 @@ def list_settings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
     override"."""
     _ensure_settings_table(conn)
     return conn.execute("SELECT * FROM settings ORDER BY key").fetchall()
+
+
+def _ensure_beacon_status_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — set_beacon_status/
+    get_beacon_status/list_beacon_status all call this themselves, same
+    pattern as _ensure_settings_table."""
+    conn.execute(_CREATE_BEACON_STATUS)
+
+
+def set_beacon_status(conn: sqlite3.Connection, key: str, value: str | None) -> None:
+    """Upserts one beacon_status row. Plain telemetry write — no audit_log
+    entry (see beacon_status's schema comment above) and no actor, unlike
+    set_setting, since this is never a human-initiated config change."""
+    _ensure_beacon_status_table(conn)
+    conn.execute(
+        "INSERT INTO beacon_status (key, value, updated_at) "
+        "VALUES (?, ?, datetime('now')) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        (key, value),
+    )
+    conn.commit()
+
+
+def get_beacon_status(conn: sqlite3.Connection, key: str) -> str | None:
+    _ensure_beacon_status_table(conn)
+    row = conn.execute("SELECT value FROM beacon_status WHERE key = ?", (key,)).fetchone()
+    return row[0] if row is not None else None
+
+
+def list_beacon_status(conn: sqlite3.Connection) -> dict[str, str]:
+    """All beacon_status rows as a plain {key: value} dict — the UI's
+    /beacon status section reads this to show current slot, queue depths,
+    last NTP check, etc. without needing to know the individual keys."""
+    _ensure_beacon_status_table(conn)
+    rows = conn.execute("SELECT key, value FROM beacon_status").fetchall()
+    return {row[0]: row[1] for row in rows}
 
 
 def _json_default(obj: Any) -> Any:

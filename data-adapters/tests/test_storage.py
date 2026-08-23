@@ -9,10 +9,13 @@ import pytest
 import adapters.storage as storage_module
 from adapters.storage import (
     delete_setting,
+    get_beacon_status,
     get_connection,
     get_setting,
+    list_beacon_status,
     list_settings,
     record_audit_event,
+    set_beacon_status,
     set_setting,
     store_chunks,
     store_reading,
@@ -933,3 +936,56 @@ def test_list_settings_orders_by_key(tmp_path):
     rows = list_settings(conn)
 
     assert [row[0] for row in rows] == ["AAA_FIRST", "ZZZ_LAST"]
+
+
+# --- beacon_status ---
+
+
+def test_set_beacon_status_and_get_roundtrip(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    set_beacon_status(conn, "current_slot", "voice")
+
+    assert get_beacon_status(conn, "current_slot") == "voice"
+
+
+def test_get_beacon_status_returns_none_for_unknown_key(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert get_beacon_status(conn, "does_not_exist") is None
+
+
+def test_set_beacon_status_upserts(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    set_beacon_status(conn, "current_slot", "voice")
+    set_beacon_status(conn, "current_slot", "frame")
+
+    assert get_beacon_status(conn, "current_slot") == "frame"
+    rows = conn.execute("SELECT COUNT(*) FROM beacon_status").fetchone()
+    assert rows[0] == 1
+
+
+def test_set_beacon_status_does_not_write_audit_log(tmp_path):
+    """Telemetry updated every tick must not drown out real config-change
+    audit events — unlike set_setting, this is plain machine telemetry."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    set_beacon_status(conn, "process_heartbeat_at", "2026-08-23T00:00:00")
+
+    row = conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()
+    assert row[0] == 0
+
+
+def test_list_beacon_status_returns_all_as_dict(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_beacon_status(conn, "current_slot", "voice")
+    set_beacon_status(conn, "voice_queue_depth", "3")
+
+    assert list_beacon_status(conn) == {"current_slot": "voice", "voice_queue_depth": "3"}
+
+
+def test_list_beacon_status_empty_when_nothing_set(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert list_beacon_status(conn) == {}
