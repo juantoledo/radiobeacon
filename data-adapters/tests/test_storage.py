@@ -747,19 +747,22 @@ def test_store_chunks_persists_rows_in_order(tmp_path):
 
 
 def test_store_chunks_is_idempotent_for_the_same_batch(tmp_path):
+    """The end DB state is idempotent (still exactly one row) even though
+    the mechanism is now delete-then-reinsert rather than a true no-op —
+    see test_store_chunks_replaces_stale_rows_when_content_changes for
+    why insert-or-ignore was replaced."""
     conn = get_connection(tmp_path / "radiobeacon.db")
     chunks = [
         {"source": "csn", "item_id": "1", "chunk_index": 0, "chunk_count": 1, "text": "only"},
     ]
 
     store_chunks(conn, chunks)
-    second = store_chunks(conn, chunks)
+    store_chunks(conn, chunks)
 
-    assert second == 0
-    count = conn.execute(
-        "SELECT COUNT(*) FROM chunks WHERE source = ? AND item_id = ?", ("csn", "1")
-    ).fetchone()[0]
-    assert count == 1
+    rows = conn.execute(
+        "SELECT chunk_index, text FROM chunks WHERE source = ? AND item_id = ?", ("csn", "1")
+    ).fetchall()
+    assert rows == [(0, "only")]
 
 
 def test_store_chunks_returns_count_of_newly_stored_rows(tmp_path):
@@ -772,6 +775,31 @@ def test_store_chunks_returns_count_of_newly_stored_rows(tmp_path):
     stored = store_chunks(conn, chunks)
 
     assert stored == 2
+
+
+def test_store_chunks_replaces_stale_rows_when_content_changes(tmp_path):
+    """The bug this fixes: actions.chunk's input can now be raw content
+    on one run and an AI summary on a later run for the SAME item (e.g.
+    a rearm, or a race during a process restart) — a re-chunk with fewer
+    chunks than before must fully replace the old set, not leave stale
+    rows behind at chunk_index positions the new run didn't touch."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    raw_chunks = [
+        {"source": "csn", "item_id": "1", "chunk_index": i, "chunk_count": 3, "text": f"raw {i}"}
+        for i in range(3)
+    ]
+    store_chunks(conn, raw_chunks)
+
+    summary_chunks = [
+        {"source": "csn", "item_id": "1", "chunk_index": 0, "chunk_count": 1, "text": "the summary"},
+    ]
+    store_chunks(conn, summary_chunks)
+
+    rows = conn.execute(
+        "SELECT chunk_index, text FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
+        ("csn", "1"),
+    ).fetchall()
+    assert rows == [(0, "the summary")]  # no leftover raw chunk_index 1/2
 
 
 def test_store_summary_updates_existing_item(tmp_path):

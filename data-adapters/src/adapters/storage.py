@@ -75,12 +75,14 @@ _CREATE_AUDIT_LOG_EVENT_TYPE_INDEX = (
 # chunks is a durable, ordered record of every chunk a "chunk"-family
 # action has produced — independent of whether anything was subscribed on
 # MQTT to receive it. chunk_index/chunk_count preserve each chunk's
-# position within its batch; UNIQUE(source, item_id, chunk_index) + the
-# writer's INSERT OR IGNORE make storing the same batch twice a no-op
-# (e.g. if a duplicate delivery somehow reaches run() despite the
-# framework-level idempotency check in actions.__main__). No separate
-# index needed beyond the UNIQUE constraint's own — it already covers
-# (source, item_id) as a prefix, same as items' PRIMARY KEY does.
+# position within its batch; UNIQUE(source, item_id, chunk_index) guards
+# against a corrupt double-write within a single store_chunks() call
+# (store_chunks itself deletes any prior rows for (source, item_id)
+# before inserting, so a full re-chunk of the same item — a duplicate
+# delivery, or a rearm whose input changed — always replaces cleanly
+# rather than silently keeping stale rows alongside new ones). No
+# separate index needed beyond the UNIQUE constraint's own — it already
+# covers (source, item_id) as a prefix, same as items' PRIMARY KEY does.
 _CREATE_CHUNKS = """
 CREATE TABLE IF NOT EXISTS chunks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -327,13 +329,32 @@ def store_chunks(conn: sqlite3.Connection, chunks: list[dict[str, Any]]) -> int:
     builds) in order. Querying back with `ORDER BY chunk_index` always
     reconstructs the original sequence — insertion order alone isn't
     relied on for correctness, chunk_index is the authoritative position.
-    Returns the number of newly stored rows (0 for a chunk_index already
-    on file for that source/item_id — a duplicate batch, not an error)."""
+
+    Replaces any existing chunks for each (source, item_id) pair in this
+    batch before inserting the new ones — deliberately NOT insert-or-
+    ignore-and-keep-the-old-rows. actions.chunk's input can now change
+    between runs (raw extracted_contents vs. an AI summary that appears
+    later, or changes on a rearm), unlike historically when
+    extracted_contents was immutable and re-chunking the same item always
+    produced byte-identical output. With insert-or-ignore, a later,
+    correct re-chunk would silently fail to overwrite stale rows sharing
+    a chunk_index with an earlier run — exactly the bug this replaced
+    (confirmed live: a raw-content chunk run that raced ahead of AI
+    settling left permanently stale chunks even after a correct
+    summary-based re-chunk followed moments later). Still fully
+    idempotent for a genuine duplicate delivery of the same batch — the
+    end state is identical either way.
+
+    Returns the number of rows written this call (not a "newly stored"
+    count anymore, since nothing is silently skipped now)."""
     _ensure_chunks_table(conn)
+    pairs = {(chunk["source"], chunk["item_id"]) for chunk in chunks}
+    for source, item_id in pairs:
+        conn.execute("DELETE FROM chunks WHERE source = ? AND item_id = ?", (source, item_id))
     stored = 0
     for chunk in chunks:
         cursor = conn.execute(
-            "INSERT OR IGNORE INTO chunks (source, item_id, chunk_index, chunk_count, text) "
+            "INSERT INTO chunks (source, item_id, chunk_index, chunk_count, text) "
             "VALUES (?, ?, ?, ?, ?)",
             (
                 chunk["source"],
