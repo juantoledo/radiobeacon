@@ -7,10 +7,21 @@ from typing import Any
 
 from adapters.ax25 import max_frame_content_bytes
 from adapters.storage import get_setting, store_chunks
+from adapters.templating import safe_format
 
 from actions.base import Action
 
 logger = logging.getLogger(__name__)
+
+# item_fields placeholders available to BEACON_FRAME_PREFIX/SUFFIX beyond
+# {date} -- source/item_id/type/subtype/extracted_title/url, mirroring
+# beacon.content.resolve_item_fields exactly (see that docstring for why
+# this set, not the full items row). All-empty is the correct fallback
+# when _effective_max_chars is called without real item context (e.g. the
+# existing unit tests that only exercise the byte-budget math itself).
+_EMPTY_ITEM_FIELDS: dict[str, str] = {
+    "source": "", "item_id": "", "type": "", "subtype": "", "extracted_title": "", "url": "",
+}
 
 # A fixed, representative datetime used only to measure how many bytes a
 # {date}-containing BEACON_FRAME_PREFIX/SUFFIX template would actually
@@ -70,7 +81,9 @@ def _wrap_with_part_markers(contents: str, max_chars: int) -> list[str]:
     return [f"{piece} {i}/{total}" for i, piece in enumerate(pieces, start=1)]
 
 
-def _effective_max_chars(conn: sqlite3.Connection, configured_max_chars: int) -> int:
+def _effective_max_chars(
+    conn: sqlite3.Connection, configured_max_chars: int, *, item_fields: dict[str, str] | None = None
+) -> int:
     """Clamps ACTIONS_CHUNK_MAX_CHARS down to whatever actually fits in
     one AX.25 frame given the CURRENT BEACON_CALLSIGN/BEACON_FRAME_DESTINATION/
     BEACON_FRAME_PREFIX/BEACON_FRAME_SUFFIX — those all eat into the same
@@ -88,18 +101,31 @@ def _effective_max_chars(conn: sqlite3.Connection, configured_max_chars: int) ->
     BEACON_FRAME_PREFIX/SUFFIX are str.format templates, not plain
     literals (see beacon.formatters.format_frame) — a short template like
     " {date}" can render to something much longer once BEACON_DATE_FORMAT
-    is applied. Measuring the raw, unrendered template here would
-    silently underestimate real overhead and reopen the exact overflow
-    risk this clamp exists to prevent, so both are rendered against a
-    fixed sample date before their length is measured."""
+    is applied, and can now also reference item_fields (source, item_id,
+    type, subtype, extracted_title, url — see ChunkAction.run()), which
+    vary per item and can be arbitrarily long (an item's extracted_title
+    or url, unlike {date}, has no fixed-width guarantee). Measuring the
+    raw, unrendered template here would silently underestimate real
+    overhead and reopen the exact overflow risk this clamp exists to
+    prevent, so both are rendered -- {date} against a fixed sample date
+    (its width is bounded by BEACON_DATE_FORMAT's fixed-width numeric
+    directives, so one representative render is enough), item_fields
+    against the CURRENT item's real values (item_fields defaults to all
+    empty strings when the caller has no item context, e.g. these unit
+    tests) -- before their length is measured. A misconfigured template
+    (invalid placeholder) falls back to "" via adapters.templating.
+    safe_format rather than raising."""
     callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
     if not callsign:
         return configured_max_chars
-    destination = get_setting("BEACON_FRAME_DESTINATION", "WXALRT", conn=conn)
+    destination = get_setting("BEACON_FRAME_DESTINATION", "NFO", conn=conn)
     date_format = get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn)
     sample_date = _SAMPLE_DATE.strftime(date_format)
-    prefix = (get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or "").format(date=sample_date)
-    suffix = (get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or "").format(date=sample_date)
+    fields = item_fields if item_fields is not None else _EMPTY_ITEM_FIELDS
+    raw_prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
+    raw_suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
+    prefix = safe_format(raw_prefix, "BEACON_FRAME_PREFIX", date=sample_date, **fields)
+    suffix = safe_format(raw_suffix, "BEACON_FRAME_SUFFIX", date=sample_date, **fields)
     available = max(
         1,
         max_frame_content_bytes(callsign=callsign, destination=destination, prefix=prefix, suffix=suffix),
@@ -140,10 +166,14 @@ class ChunkAction(Action):
             return []
 
         row = conn.execute(
-            "SELECT summary, extracted_contents FROM items WHERE source = ? AND item_id = ?",
+            "SELECT summary, extracted_contents, extracted_title, url, type, subtype "
+            "FROM items WHERE source = ? AND item_id = ?",
             (source, item_id),
         ).fetchone()
-        summary, extracted_contents = row if row else (None, None)
+        if row is None:
+            summary = extracted_contents = extracted_title = url = item_type = subtype = None
+        else:
+            summary, extracted_contents, extracted_title, url, item_type, subtype = row
         contents = summary if summary else extracted_contents
         if not contents:
             logger.info(
@@ -155,8 +185,16 @@ class ChunkAction(Action):
 
         contents = _normalize_unicode_escapes(contents)
 
+        item_fields = {
+            "source": source,
+            "item_id": item_id,
+            "type": item_type or "",
+            "subtype": subtype or "",
+            "extracted_title": extracted_title or "",
+            "url": url or "",
+        }
         configured_max_chars = int(get_setting("ACTIONS_CHUNK_MAX_CHARS", "200", conn=conn))
-        max_chars = _effective_max_chars(conn, configured_max_chars)
+        max_chars = _effective_max_chars(conn, configured_max_chars, item_fields=item_fields)
         pieces = _wrap_with_part_markers(contents, max_chars)
         logger.info(
             "chunk: source=%s item_id=%s split into %d chunk(s) (max_chars=%d)",

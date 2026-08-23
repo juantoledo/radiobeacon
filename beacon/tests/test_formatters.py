@@ -140,3 +140,70 @@ def test_format_voice_date_defaults_to_blank():
     )
 
     assert result.text == "CD3DXZ-1. un resumen corto. "
+
+
+# --- item_fields placeholders (source, item_id, type, subtype, extracted_title, url) ---
+
+
+def test_format_frame_renders_item_field_placeholder_in_prefix():
+    result = format_frame(
+        "hola mundo", callsign="CD3DXZ-1", destination="WXALRT",
+        prefix="[{type}] ", type="alerta", subtype="", extracted_title="", url="", source="", item_id="",
+    )
+
+    assert result.content == "[alerta] hola mundo"
+
+
+def test_format_frame_falls_back_to_empty_on_invalid_placeholder():
+    """A typo'd placeholder must not crash format_frame -- the TDMA loop
+    has no per-tick catch-all around this call."""
+    result = format_frame(
+        "hola mundo", callsign="CD3DXZ-1", destination="WXALRT", prefix="[{typeo}] ", type="alerta",
+    )
+
+    assert result.content == "hola mundo"  # prefix fell back to ""
+
+
+def test_format_voice_wraps_text_with_prefix_and_suffix():
+    result = format_voice(
+        "un resumen corto", callsign="CD3DXZ-1", template="{text}", max_chars=500,
+        prefix=">> ", suffix=" <<",
+    )
+
+    assert result.text == ">> un resumen corto <<"
+
+
+def test_format_voice_prefix_suffix_added_outside_max_chars_budget():
+    """Mirrors format_frame: prefix/suffix wrap the already-truncated
+    text, they don't count against max_chars themselves."""
+    text = "one two three four five six seven eight nine ten"
+    result = format_voice(
+        text, callsign="X", template="{text}", max_chars=20,
+        prefix="PREFIX ", suffix=" SUFFIX",
+    )
+
+    assert result.truncated is True
+    assert result.text.startswith("PREFIX ")
+    assert result.text.endswith(" SUFFIX")
+
+
+def test_format_voice_renders_item_field_placeholder_in_template_and_prefix():
+    result = format_voice(
+        "un resumen corto", callsign="CD3DXZ-1", template="{callsign}. [{type}] {text}",
+        max_chars=500, prefix="({extracted_title}) ",
+        type="alerta", subtype="", extracted_title="Alerta importante", url="", source="", item_id="",
+    )
+
+    assert result.text == "CD3DXZ-1. [alerta] (Alerta importante) un resumen corto"
+
+
+def test_format_voice_falls_back_to_empty_on_invalid_placeholder():
+    """A typo'd placeholder in prefix/suffix/template must not crash
+    format_voice -- the TDMA loop has no per-tick catch-all around this
+    call."""
+    result = format_voice(
+        "un resumen corto", callsign="CD3DXZ-1", template="{callsign}. {text}",
+        max_chars=500, prefix="[{typeo}] ",
+    )
+
+    assert result.text == "CD3DXZ-1. un resumen corto"  # prefix fell back to ""

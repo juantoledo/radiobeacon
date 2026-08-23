@@ -60,15 +60,22 @@ Text resolution stays lazy (not baked in at enqueue time) for both: a
 later rearm, or a summary changing between enqueue and transmit, is
 naturally reflected — whatever's true right now is what gets sent.
 
-Length limits are **not** new beacon-specific settings — they reuse
-`ACTIONS_CHUNK_MAX_CHARS` (frame) and `ACTIONS_AI_MAX_CHARS` (voice, a
-defensive ceiling only). `ACTIONS_CHUNK_MAX_CHARS` is itself a *ceiling*,
-not a fixed size — `actions.chunk` dynamically clamps it down further at
-runtime (`data-adapters/src/adapters/ax25.py`) against the current
+Frame's length limit is **not** a new beacon-specific setting — it reuses
+`ACTIONS_CHUNK_MAX_CHARS`, itself a *ceiling*, not a fixed size —
+`actions.chunk` dynamically clamps it down further at runtime
+(`data-adapters/src/adapters/ax25.py`) against the current
 `BEACON_CALLSIGN`/`BEACON_FRAME_DESTINATION`/`BEACON_FRAME_PREFIX`/
 `BEACON_FRAME_SUFFIX`, so an assembled frame can't silently exceed
 AX.25's ~256-byte limit and get dropped
 (`beacon.frame.dropped_too_long`) regardless of how those change later.
+
+Voice's length limit **is** its own dedicated setting,
+`BEACON_VOICE_MAX_CHARS` — deliberately not `ACTIONS_AI_MAX_CHARS`, whose
+job is gating whether `actions.ai`'s LLM call runs at all, not bounding how
+much of `items.summary` (always populated — see `actions/README.md`) voice
+actually speaks. It's a time-budget cap, not a protocol limit like frame's:
+text beyond it is word-boundary truncated to the first piece and the rest
+is silently dropped, no part markers.
 
 ## TDMA schedule
 
@@ -196,18 +203,32 @@ addition to (not instead of) the unit suite.
 `BEACON_FRAME_PREFIX`/`BEACON_FRAME_SUFFIX` (both empty by default) wrap
 the actual transmitted frame payload — distinct from
 `BEACON_FRAME_DESTINATION`, which only labels the AX.25 tocall address,
-not content a listener decodes. Applied to every frame, including each
-chunk of a multi-frame item (not just once per item), so a listener
-catching only one frame still sees it; counts against the same 256-byte
-`FrameTooLongError` ceiling as the rest of the frame (see
-`formatters.py`). Both are str.format templates, not plain literals —
-`{date}` (`items.source_date_time`, converted to `DISPLAY_TIMEZONE` and
-formatted per `BEACON_DATE_FORMAT`) is the only placeholder currently
-supported, resolved fresh at transmit time same as `text` itself.
+not content a listener decodes. `BEACON_VOICE_PREFIX`/`BEACON_VOICE_SUFFIX`
+are the equivalent for voice — separate settings, wrapping the spoken text
+before it's substituted into `BEACON_VOICE_TEMPLATE`'s `{text}`, added
+outside `BEACON_VOICE_MAX_CHARS`'s truncation budget the same way frame's
+wrap an already-sized chunk. Frame's prefix/suffix are applied to every
+frame, including each chunk of a multi-frame item (not just once per
+item), so a listener catching only one frame still sees it; counts
+against the same 256-byte `FrameTooLongError` ceiling as the rest of the
+frame (see `formatters.py`).
+
+All four (plus `BEACON_VOICE_TEMPLATE` itself) are str.format templates,
+not plain literals. Beyond `{date}` (`items.source_date_time`, converted
+to `DISPLAY_TIMEZONE` and formatted per `BEACON_DATE_FORMAT`), each also
+accepts item-derived placeholders — `{source}`, `{item_id}`, `{type}`,
+`{subtype}`, `{extracted_title}`, `{url}` (`content.resolve_item_fields`)
+— resolved fresh at transmit time, same as `text` itself. Rendered via
+`adapters.templating.safe_format`: an invalid placeholder (a typo'd
+setting) logs an error and falls back to `""` rather than raising — the
+TDMA tick loop has no per-tick catch-all, so an uncaught exception here
+would otherwise kill the whole transmit thread until restart.
 `actions.chunk`'s dynamic `ACTIONS_CHUNK_MAX_CHARS` clamp
-(`data-adapters/src/adapters/ax25.py`) accounts for `{date}`'s actual
-*rendered* length, not the raw template's, so a short `" {date}"` suffix
-can't silently under-clamp and cause an overflow at transmit time.
+(`data-adapters/src/adapters/ax25.py`) accounts for the CURRENT item's
+real rendered prefix/suffix — both `{date}` and the item fields — not the
+raw template's length, so neither a short `" {date}"` suffix nor a long
+`{extracted_title}` can silently under-clamp and cause an overflow at
+transmit time.
 
 ## Not addressed
 
@@ -251,8 +272,10 @@ regulatory requirement).
 | `BEACON_VOICE_INTER_TX_DELAY_SECONDS` | `2` |
 | `BEACON_FRAME_INTER_TX_DELAY_SECONDS` | `2` |
 | `BEACON_VOICE_TEMPLATE` | `{callsign}. {text}. {date}` |
+| `BEACON_VOICE_PREFIX` / `BEACON_VOICE_SUFFIX` | `""` / `""` |
+| `BEACON_VOICE_MAX_CHARS` | `500` |
 | `BEACON_DATE_FORMAT` | `%d-%m-%Y %H:%M` |
-| `BEACON_FRAME_DESTINATION` | `WXALRT` |
+| `BEACON_FRAME_DESTINATION` | `NFO` |
 | `BEACON_FRAME_PREFIX` / `BEACON_FRAME_SUFFIX` | `""` / `""` |
 | `BEACON_AX25_KISS_HOST` / `_PORT` | `localhost` / `8001` |
 | `BEACON_AX25_CONNECT_TIMEOUT_SECONDS` | `5` |

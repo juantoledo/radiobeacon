@@ -2,14 +2,24 @@ from datetime import datetime, timezone
 
 from adapters.storage import get_connection
 
-from beacon.content import resolve_frame_text, resolve_source_date_time, resolve_voice_text
+from beacon.content import (
+    resolve_frame_text,
+    resolve_item_fields,
+    resolve_source_date_time,
+    resolve_voice_text,
+)
 
 
-def _insert_item(conn, source, item_id, *, extracted_contents=None, summary=None, source_date_time=None):
+def _insert_item(
+    conn, source, item_id, *,
+    extracted_contents=None, summary=None, source_date_time=None,
+    extracted_title=None, url=None, item_type=None, subtype=None,
+):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_contents, summary, source_date_time, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, ?, datetime('now'), '{}')",
-        (source, item_id, extracted_contents, summary, source_date_time),
+        "INSERT INTO items (source, item_id, extracted_contents, summary, source_date_time, "
+        "extracted_title, url, type, subtype, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), '{}')",
+        (source, item_id, extracted_contents, summary, source_date_time, extracted_title, url, item_type, subtype),
     )
     conn.commit()
 
@@ -67,6 +77,37 @@ def test_resolve_frame_text_returns_none_when_chunk_gone(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
     assert resolve_frame_text(conn, "csn", "does-not-exist", 0) is None
+
+
+def test_resolve_item_fields_returns_all_present_fields(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(
+        conn, "senapred", "1",
+        extracted_title="Alerta importante", url="https://example.com/a",
+        item_type="alerta", subtype="meteorologica",
+    )
+
+    assert resolve_item_fields(conn, "senapred", "1") == {
+        "type": "alerta", "subtype": "meteorologica",
+        "extracted_title": "Alerta importante", "url": "https://example.com/a",
+    }
+
+
+def test_resolve_item_fields_coerces_null_columns_to_empty_strings(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1")
+
+    assert resolve_item_fields(conn, "csn", "1") == {
+        "type": "", "subtype": "", "extracted_title": "", "url": "",
+    }
+
+
+def test_resolve_item_fields_all_empty_when_item_gone(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert resolve_item_fields(conn, "csn", "does-not-exist") == {
+        "type": "", "subtype": "", "extracted_title": "", "url": "",
+    }
 
 
 def test_resolve_source_date_time_parses_stored_iso_string(tmp_path):

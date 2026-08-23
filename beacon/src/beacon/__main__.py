@@ -20,9 +20,18 @@ time, with no fallback of its own: actions.ai now guarantees summary is
 always populated (a real summary, or extracted_contents copied in
 verbatim) by the time content_ready fires. See content.py for how the
 actual text gets resolved (lazily, at transmit time, not baked in at
-enqueue time) and formatters.py for why length limits reuse
-ACTIONS_CHUNK_MAX_CHARS/ACTIONS_AI_MAX_CHARS instead of new
-beacon-specific settings.
+enqueue time) and formatters.py for how each channel's length limit is
+sourced: frame reuses actions.chunk's ACTIONS_CHUNK_MAX_CHARS, while voice
+has its own dedicated BEACON_VOICE_MAX_CHARS — deliberately NOT
+ACTIONS_AI_MAX_CHARS, whose job is gating whether actions.ai's LLM call
+runs at all, not bounding how much of a (now always-populated) summary
+voice actually speaks. Each channel also has its own prefix/suffix
+(BEACON_FRAME_PREFIX/SUFFIX, BEACON_VOICE_PREFIX/SUFFIX) wrapping its
+content, plus voice's outer BEACON_VOICE_TEMPLATE — all three str.format
+templates, sharing one placeholder vocabulary beyond {date}: {source},
+{item_id}, {type}, {subtype}, {extracted_title}, {url} (see
+content.resolve_item_fields, resolved fresh per item at transmit time,
+same as the text itself).
 
 BEACON_ENABLED (decision: soft enable/disable, not real process control —
 see beacon/README.md) is re-read every tick; enqueueing from MQTT happens
@@ -417,6 +426,7 @@ def _try_transmit_voice(
     conn, voice_queue: BoundedDropOldestQueue, voice_transmitter: voice.VoiceTransmitter,
     callsign: str | None, template: str, max_chars: int, wav_dir: str, tts_voice: str, date_format: str,
     tts_engine: str = "espeak", tts_piper_model: str = "", tts_piper_binary: str = "piper",
+    prefix: str = "", suffix: str = "",
 ) -> None:
     queued = voice_queue.get_nowait()
     if queued is None:
@@ -438,8 +448,11 @@ def _try_transmit_voice(
         return
 
     date_str = _format_source_date_time(conn, queued.source, queued.item_id, date_format)
+    item_fields = content.resolve_item_fields(conn, queued.source, queued.item_id)
+    item_fields.update(source=queued.source, item_id=queued.item_id)
     formatted = formatters.format_voice(
-        text, callsign=callsign, template=template, max_chars=max_chars, date=date_str
+        text, callsign=callsign, template=template, max_chars=max_chars,
+        prefix=prefix, suffix=suffix, date=date_str, **item_fields,
     )
     wav_path = Path(wav_dir) / f"{queued.source}-{queued.item_id}-{int(time.time())}.wav"
     if not voice.synthesize_speech(
@@ -495,10 +508,12 @@ def _try_transmit_frame(
         return
 
     date_str = _format_source_date_time(conn, queued.source, queued.item_id, date_format)
+    item_fields = content.resolve_item_fields(conn, queued.source, queued.item_id)
+    item_fields.update(source=queued.source, item_id=queued.item_id)
     try:
         formatted = formatters.format_frame(
             chunk_text, callsign=callsign, destination=destination,
-            prefix=prefix, suffix=suffix, date=date_str,
+            prefix=prefix, suffix=suffix, date=date_str, **item_fields,
         )
     except formatters.FrameTooLongError as exc:
         logger.error("beacon: frame too long, dropping: %s", exc)
@@ -603,16 +618,18 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
             lead_time = float(get_setting("BEACON_SLOT_LEAD_TIME_SECONDS", "2", conn=conn))
             callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
             voice_template = get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}. {date}", conn=conn)
-            voice_max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "200", conn=conn))
+            voice_max_chars = int(get_setting("BEACON_VOICE_MAX_CHARS", "500", conn=conn))
             date_format = get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn)
             voice_inter_tx_delay = float(get_setting("BEACON_VOICE_INTER_TX_DELAY_SECONDS", "2", conn=conn))
             frame_inter_tx_delay = float(get_setting("BEACON_FRAME_INTER_TX_DELAY_SECONDS", "2", conn=conn))
             # Moved here from the one-time setup block above (same bug
             # class as BEACON_QUEUE_MAX_SIZE, see set_maxsize's docstring)
             # -- a /config edit now takes effect on the very next tick.
-            destination = get_setting("BEACON_FRAME_DESTINATION", "WXALRT", conn=conn)
+            destination = get_setting("BEACON_FRAME_DESTINATION", "NFO", conn=conn)
             frame_prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
             frame_suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
+            voice_prefix = get_setting("BEACON_VOICE_PREFIX", "", conn=conn) or ""
+            voice_suffix = get_setting("BEACON_VOICE_SUFFIX", "", conn=conn) or ""
 
             # Re-applied every tick (not just read once at process start
             # in main()) so a /config edit takes effect immediately,
@@ -647,6 +664,7 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
                         conn, voice_queue, voice_transmitter, callsign, voice_template,
                         voice_max_chars, wav_dir, tts_voice, date_format,
                         tts_engine, tts_piper_model, tts_piper_binary,
+                        voice_prefix, voice_suffix,
                     ),
                 )
                 last_voice_cycle = state.cycle_index

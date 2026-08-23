@@ -18,7 +18,11 @@ extracted_contents — copying extracted_contents in verbatim when there's
 nothing meaningful to condense (AI disabled, content already at or under
 ACTIONS_AI_MAX_CHARS, bad provider config) rather than leaving summary
 NULL (see ai.py). resolve_voice_text can therefore read items.summary
-unconditionally, with no extracted_contents fallback of its own."""
+unconditionally, with no extracted_contents fallback of its own.
+
+resolve_item_fields resolves the same way (fresh, at transmit time) --
+type/subtype/extracted_title/url, the item-derived placeholders available
+to both channels' prefix/suffix (and voice's template) beyond {date}."""
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,6 +67,28 @@ def resolve_voice_text(conn: sqlite3.Connection, source: str, item_id: str) -> s
         (source, item_id),
     ).fetchone()
     return row[0] if row is not None else None
+
+
+def resolve_item_fields(conn: sqlite3.Connection, source: str, item_id: str) -> dict[str, str]:
+    """type/subtype/extracted_title/url for BEACON_FRAME_PREFIX/SUFFIX and
+    BEACON_VOICE_PREFIX/SUFFIX/TEMPLATE placeholders -- source/item_id
+    aren't queried here since the caller already has them. Empty strings,
+    never None, so a template referencing e.g. {url} on an item with no
+    url renders "" rather than the literal string "None"; all-empty (not
+    an error) if the item is gone by transmit time -- mirrors
+    resolve_frame_text/resolve_voice_text's "nothing to send, not an
+    error" treatment of a vanished item."""
+    row = conn.execute(
+        "SELECT type, subtype, extracted_title, url FROM items WHERE source = ? AND item_id = ?",
+        (source, item_id),
+    ).fetchone()
+    item_type, subtype, extracted_title, url = row if row is not None else (None, None, None, None)
+    return {
+        "type": item_type or "",
+        "subtype": subtype or "",
+        "extracted_title": extracted_title or "",
+        "url": url or "",
+    }
 
 
 def resolve_source_date_time(conn: sqlite3.Connection, source: str, item_id: str) -> datetime | None:

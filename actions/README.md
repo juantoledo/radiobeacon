@@ -183,11 +183,12 @@ configured; see `data-adapters/src/adapters/ax25.py`).
 AI-specific: `ACTIONS_AI_ENABLED` (default `false`), `ACTIONS_AI_PROVIDER`
 (`openai`/`claude`/`ollama`, required once enabled), `ACTIONS_AI_PROMPT`
 (optional template override), `ACTIONS_AI_MAX_CHARS` (default `200` —
-matches `ACTIONS_CHUNK_MAX_CHARS` exactly, so both channels
-[beacon](../beacon/README.md) reads from share one length budget),
-`ACTIONS_AI_<PROVIDER>_MODEL`, `ACTIONS_AI_OLLAMA_HOST`, plus the
-unprefixed `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` read directly by each
-SDK — see `.env.example`.
+matches `ACTIONS_CHUNK_MAX_CHARS` exactly, so both share one skip/chunk
+length budget; not used for voice length — see `BEACON_VOICE_MAX_CHARS` in
+[beacon](../beacon/README.md)), `ACTIONS_AI_<PROVIDER>_MODEL`,
+`ACTIONS_AI_OLLAMA_HOST`, plus the unprefixed
+`ANTHROPIC_API_KEY`/`OPENAI_API_KEY` read directly by each SDK — see
+`.env.example`.
 
 content_ready-specific: `ACTIONS_CONTENT_READY_POLL_INTERVAL_SECONDS`
 (default `2`), `ACTIONS_CONTENT_READY_OUTPUT_TOPIC` (default

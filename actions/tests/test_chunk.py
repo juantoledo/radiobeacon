@@ -3,11 +3,17 @@ from adapters.storage import get_connection, set_setting
 from actions.chunk import ChunkAction, _effective_max_chars, _wrap_with_part_markers
 
 
-def _insert_item(conn, source, item_id, extracted_contents, *, summary=None):
+def _insert_item(
+    conn, source, item_id, extracted_contents, *,
+    summary=None, extracted_title=None, url=None, item_type=None, subtype=None,
+):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_contents, summary, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (source, item_id, extracted_contents, summary, "2026-08-19T12:00:00", "{}"),
+        "INSERT INTO items (source, item_id, extracted_contents, summary, extracted_title, "
+        "url, type, subtype, fetched_at, rawdata) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            source, item_id, extracted_contents, summary, extracted_title,
+            url, item_type, subtype, "2026-08-19T12:00:00", "{}",
+        ),
     )
     conn.commit()
 
@@ -254,6 +260,79 @@ def test_chunk_uses_dynamically_clamped_max_chars(tmp_path):
 
     for chunk in stored:
         assert len(chunk["text"]) < 200
+
+
+def test_effective_max_chars_clamps_down_using_real_item_field_values(tmp_path):
+    """BEACON_FRAME_PREFIX referencing {extracted_title} must account for
+    THIS item's real (long) title, not treat item_fields as empty -- a
+    long title can vary the byte overhead as much as a long suffix can."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_DESTINATION", "WXALRT")
+    set_setting(conn, "BEACON_FRAME_PREFIX", "[{extracted_title}] ")
+    long_title = "x" * 200
+
+    result = _effective_max_chars(
+        conn, 200, item_fields={
+            "source": "senapred", "item_id": "1", "type": "", "subtype": "",
+            "extracted_title": long_title, "url": "",
+        },
+    )
+
+    assert result < 200
+    assert result == 256 - len("CD3DXZ-1>WXALRT:") - len(f"[{long_title}] ")
+
+
+def test_effective_max_chars_without_item_fields_treats_placeholders_as_empty(tmp_path):
+    """The existing (pre-item-fields) call signature -- item_fields
+    omitted entirely -- must keep behaving exactly as before: an
+    item-field placeholder in the template renders as empty, not a
+    crash."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_DESTINATION", "WXALRT")
+    set_setting(conn, "BEACON_FRAME_PREFIX", "[{type}] " + "x" * 100)
+
+    result = _effective_max_chars(conn, 200)
+
+    # {type} renders as "" (empty item_fields), not a crash -- the clamp
+    # still accounts for the rest of the literal prefix text.
+    assert result == 256 - len("CD3DXZ-1>WXALRT:") - len("[] " + "x" * 100)
+
+
+def test_effective_max_chars_falls_back_to_empty_on_invalid_placeholder(tmp_path, caplog):
+    """A typo'd placeholder in BEACON_FRAME_PREFIX must not crash the
+    clamp calculation (or, transitively, the whole chunk action) -- it
+    logs an error and is treated as if the prefix were empty."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_DESTINATION", "WXALRT")
+    set_setting(conn, "BEACON_FRAME_PREFIX", "[{typeo}] ")
+
+    result = _effective_max_chars(conn, 200)
+
+    assert result == 200  # empty prefix -- no clamping needed
+
+
+def test_chunk_action_renders_item_field_placeholder_in_frame_prefix(tmp_path):
+    """End-to-end: ChunkAction.run() itself passes real item_fields
+    through to _effective_max_chars, so a long extracted_title actually
+    shrinks the stored chunks, not just the isolated clamp function."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "200")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_DESTINATION", "WXALRT")
+    set_setting(conn, "BEACON_FRAME_PREFIX", "[{extracted_title}] ")
+    _insert_item(
+        conn, "senapred", "1", "one two three four five six seven eight nine ten",
+        extracted_title="x" * 200,
+    )
+
+    ChunkAction().run(_dispatched_event("senapred", "1"), conn=conn)
+    stored = _stored_chunks(conn, "senapred", "1")
+
+    for chunk in stored:
+        assert len(chunk["text"]) < 56  # 256 - len("CD3DXZ-1>WXALRT:") - len("[" + "x"*200 + "] ")
 
 
 # --- part markers (1/n, 2/n, ...) on multi-chunk content ---

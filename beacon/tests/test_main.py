@@ -45,11 +45,16 @@ def _insert_chunk(conn, source, item_id, chunk_index=0, text="chunk text", chunk
     conn.commit()
 
 
-def _insert_item(conn, source, item_id, *, extracted_contents="raw", summary=None, source_date_time=None):
+def _insert_item(
+    conn, source, item_id, *,
+    extracted_contents="raw", summary=None, source_date_time=None,
+    extracted_title=None, url=None, item_type=None, subtype=None,
+):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_contents, summary, source_date_time, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, ?, datetime('now'), '{}')",
-        (source, item_id, extracted_contents, summary, source_date_time),
+        "INSERT INTO items (source, item_id, extracted_contents, summary, source_date_time, "
+        "extracted_title, url, type, subtype, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), '{}')",
+        (source, item_id, extracted_contents, summary, source_date_time, extracted_title, url, item_type, subtype),
     )
     conn.commit()
 
@@ -567,13 +572,24 @@ def test_try_transmit_voice_skips_when_no_callsign(tmp_path):
 
 
 def test_try_transmit_voice_uses_resolved_content_and_transmits(tmp_path, monkeypatch):
-    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    # extracted_contents and summary deliberately differ here -- if voice
+    # ever regressed to reading extracted_contents (directly, or via a
+    # reintroduced fallback), this would catch it; a test using the same
+    # string for both couldn't tell the difference.
+    synthesize_calls = []
+
+    def _fake_synthesize(text, **kwargs):
+        synthesize_calls.append(text)
+        return True
+
+    monkeypatch.setattr("beacon.voice.synthesize_speech", _fake_synthesize)
     conn = get_connection(tmp_path / "radiobeacon.db")
-    # actions.ai always populates summary now (an identity copy of
-    # extracted_contents when there's nothing to condense) -- resolve_voice_text
-    # reads summary unconditionally, with no extracted_contents fallback of its own.
     _insert_item(
-        conn, "csn", "1", extracted_contents="Sismo de magnitud 4.2.", summary="Sismo de magnitud 4.2."
+        conn,
+        "csn",
+        "1",
+        extracted_contents="Raw sensor payload -- should never be spoken.",
+        summary="Sismo de magnitud 4.2.",
     )
     voice_queue = BoundedDropOldestQueue(10)
     voice_queue.put(QueuedVoice(source="csn", item_id="1"))
@@ -583,6 +599,8 @@ def test_try_transmit_voice_uses_resolved_content_and_transmits(tmp_path, monkey
         conn, voice_queue, transmitter, "CD3DXZ-1", "{callsign}. {text}", 200, str(tmp_path), "es", "%d-%m-%Y %H:%M",
     )
 
+    # Proves the WAV is synthesized from items.summary, not extracted_contents.
+    assert synthesize_calls == ["CD3DXZ-1. Sismo de magnitud 4.2."]
     assert transmitter.calls == ["CD3DXZ-1. Sismo de magnitud 4.2."]
     row = conn.execute(
         "SELECT 1 FROM audit_log WHERE event_type = 'beacon.voice.transmitted'"
@@ -613,6 +631,42 @@ def test_try_transmit_voice_resolves_and_renders_date_end_to_end(tmp_path, monke
     )
 
     assert transmitter.calls == ["CD3DXZ-1. Sismo de magnitud 4.2.. 22-08-2026 14:30"]
+
+
+def test_try_transmit_voice_applies_prefix_and_suffix(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", extracted_contents="raw", summary="Sismo de magnitud 4.2.")
+    voice_queue = BoundedDropOldestQueue(10)
+    voice_queue.put(QueuedVoice(source="csn", item_id="1"))
+    transmitter = _StubVoiceTransmitter()
+
+    main_module._try_transmit_voice(
+        conn, voice_queue, transmitter, "CD3DXZ-1", "{text}", 200,
+        str(tmp_path), "es", "%d-%m-%Y %H:%M",
+        prefix=">> ", suffix=" <<",
+    )
+
+    assert transmitter.calls == [">> Sismo de magnitud 4.2. <<"]
+
+
+def test_try_transmit_voice_renders_item_field_placeholder_in_template(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(
+        conn, "csn", "1", extracted_contents="raw", summary="Sismo de magnitud 4.2.",
+        item_type="alerta",
+    )
+    voice_queue = BoundedDropOldestQueue(10)
+    voice_queue.put(QueuedVoice(source="csn", item_id="1"))
+    transmitter = _StubVoiceTransmitter()
+
+    main_module._try_transmit_voice(
+        conn, voice_queue, transmitter, "CD3DXZ-1", "[{type}] {text}", 200,
+        str(tmp_path), "es", "%d-%m-%Y %H:%M",
+    )
+
+    assert transmitter.calls == ["[alerta] Sismo de magnitud 4.2."]
 
 
 class _StubKissClient:
@@ -685,6 +739,21 @@ def test_try_transmit_frame_applies_prefix_and_suffix_to_actual_transmitted_byte
         "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.transmitted'"
     ).fetchone()
     assert json.loads(row[0])["tnc2"] == "CD3DXZ-1>WXALRT:>> chunk text [EXPERIMENTAL]"
+
+
+def test_try_transmit_frame_renders_item_field_placeholder_in_prefix(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", item_type="alerta", extracted_title="Alerta importante")
+    _insert_chunk(conn, "csn", "1", 0, "chunk text")
+    frame_queue = BoundedDropOldestQueue(10)
+    frame_queue.put(QueuedFrame(source="csn", item_id="1", chunk_index=0))
+    kiss_client = _StubKissClient()
+
+    main_module._try_transmit_frame(
+        conn, frame_queue, kiss_client, "CD3DXZ-1", "WXALRT", prefix="[{type}] "
+    )
+
+    assert kiss_client.calls == [("CD3DXZ-1", "WXALRT", b"[alerta] chunk text")]
 
 
 def test_try_transmit_frame_resolves_and_renders_date_end_to_end(tmp_path, monkeypatch):

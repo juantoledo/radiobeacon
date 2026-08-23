@@ -358,8 +358,9 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Actions — AI",
         "Max input chars",
         "Skip-summarization threshold on input length — items at or under this "
-        "length aren't summarized. Also reused by beacon as its voice-length "
-        "ceiling — matches ACTIONS_CHUNK_MAX_CHARS's default exactly.",
+        "length aren't summarized (extracted_contents is still copied into "
+        "items.summary verbatim). Matches ACTIONS_CHUNK_MAX_CHARS's default "
+        "exactly. Not used for voice length — see BEACON_VOICE_MAX_CHARS.",
         "int",
         "200",
     ),
@@ -510,13 +511,54 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "BEACON_VOICE_TEMPLATE",
         "Beacon — Templates",
         "Voice template",
-        "str.format-style template wrapping resolved voice content. "
+        "str.format-style template wrapping resolved voice content "
+        "(itself already wrapped by BEACON_VOICE_PREFIX/SUFFIX below). "
         "Placeholders: {callsign}, {text}, {date} (blank if the item has "
-        "no source_date_time). Frame content has no template — its "
-        "ORIGEN>DESTINO: structure is fixed protocol code — but "
-        "BEACON_FRAME_PREFIX/SUFFIX support {date} too.",
+        "no source_date_time), plus item fields {source}, {item_id}, "
+        "{type}, {subtype}, {extracted_title}, {url}. Frame content has "
+        "no template — its ORIGEN>DESTINO: structure is fixed protocol "
+        "code — but BEACON_FRAME_PREFIX/SUFFIX support the same "
+        "placeholders. An invalid placeholder falls back to \"\" rather "
+        "than crashing the TDMA loop.",
         "text",
         "{callsign}. {text}. {date}",
+    ),
+    SettingSpec(
+        "BEACON_VOICE_PREFIX",
+        "Beacon — Templates",
+        "Voice content prefix",
+        "Prepended to the resolved voice text before it's substituted "
+        "into BEACON_VOICE_TEMPLATE's {text} — separate from "
+        "BEACON_FRAME_PREFIX, which wraps frame content instead. A "
+        "str.format template — {date} and the item-field placeholders "
+        "(see BEACON_VOICE_TEMPLATE) are available. Added outside "
+        "BEACON_VOICE_MAX_CHARS's truncation budget, mirroring how frame "
+        "prefix/suffix wrap an already-sized chunk.",
+        "text",
+        "",
+    ),
+    SettingSpec(
+        "BEACON_VOICE_SUFFIX",
+        "Beacon — Templates",
+        "Voice content suffix",
+        "Appended to the resolved voice text before it's substituted "
+        "into BEACON_VOICE_TEMPLATE's {text}. Same placeholders and "
+        "truncation-budget behavior as BEACON_VOICE_PREFIX.",
+        "text",
+        "",
+    ),
+    SettingSpec(
+        "BEACON_VOICE_MAX_CHARS",
+        "Beacon — Templates",
+        "Voice max chars",
+        "Max characters of resolved voice text before word-boundary "
+        "truncation (first piece only, no part markers — unlike frame "
+        "chunking, the rest is silently dropped). A time-budget cap sized "
+        "against BEACON_WINDOW_VOICE_SECONDS, not a protocol limit like "
+        "frame's. Deliberately separate from ACTIONS_AI_MAX_CHARS, whose "
+        "job is gating whether the LLM runs at all.",
+        "int",
+        "500",
     ),
     SettingSpec(
         "BEACON_DATE_FORMAT",
@@ -535,9 +577,9 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Beacon — AX.25",
         "Frame destination (tocall)",
         "The AX.25 destination address — a software/project identifier, not "
-        "a real route. WXALRT marks this as experimental, non-APRS traffic.",
+        "a real route. NFO marks this as experimental, non-APRS traffic.",
         "text",
-        "WXALRT",
+        "NFO",
     ),
     SettingSpec(
         "BEACON_FRAME_PREFIX",
@@ -545,8 +587,11 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Frame content prefix",
         "Prepended to the actual transmitted payload (not the tocall "
         "address above) — applied to every frame, including each chunk of "
-        "a multi-frame item. A str.format template — {date} is available "
-        "(see Beacon — Templates).",
+        "a multi-frame item. A str.format template — {date} plus item "
+        "fields {source}, {item_id}, {type}, {subtype}, {extracted_title}, "
+        "{url} are available (see Beacon — Templates). actions.chunk's "
+        "dynamic max-chars clamp accounts for this item's real rendered "
+        "values, not just the raw template.",
         "text",
         "",
     ),
@@ -559,7 +604,8 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "multi-frame item, so a listener catching only one still sees it. "
         "Counts against the same 256-byte AX.25 hard limit as the rest of "
         "the frame — actions.chunk's dynamic max-chars clamp accounts for "
-        "{date}'s rendered length, not just this template's raw length.",
+        "this item's real rendered values (same placeholders as "
+        "BEACON_FRAME_PREFIX), not just this template's raw length.",
         "text",
         "",
     ),
