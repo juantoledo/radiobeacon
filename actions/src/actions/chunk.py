@@ -4,6 +4,7 @@ import sqlite3
 import textwrap
 from typing import Any
 
+from adapters.ax25 import max_frame_content_bytes
 from adapters.storage import get_setting, store_chunks
 
 from actions.base import Action
@@ -27,15 +28,53 @@ def _normalize_unicode_escapes(text: str) -> str:
     return _UNICODE_ESCAPE_RE.sub(lambda m: chr(int(m.group(1), 16)), text)
 
 
+def _effective_max_chars(conn: sqlite3.Connection, configured_max_chars: int) -> int:
+    """Clamps ACTIONS_CHUNK_MAX_CHARS down to whatever actually fits in
+    one AX.25 frame given the CURRENT BEACON_CALLSIGN/BEACON_FRAME_DESTINATION/
+    BEACON_FRAME_PREFIX/BEACON_FRAME_SUFFIX — those all eat into the same
+    256-byte budget beacon.formatters.format_frame enforces at transmit
+    time, and unlike the static default, they can change (a longer
+    suffix, a longer callsign) without this ceiling following along. The
+    configured value stays a preference/ceiling, never raised — only
+    lowered when it would otherwise risk an assembled frame overflowing
+    and getting silently dropped (beacon.frame.dropped_too_long).
+
+    BEACON_CALLSIGN unset (beacon not configured yet — a real, common
+    early-lifecycle state) means there's nothing to clamp against yet, so
+    this is a no-op in that case, preserving prior behavior exactly."""
+    callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
+    if not callsign:
+        return configured_max_chars
+    destination = get_setting("BEACON_FRAME_DESTINATION", "WXALRT", conn=conn)
+    prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
+    suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
+    available = max(
+        1,
+        max_frame_content_bytes(callsign=callsign, destination=destination, prefix=prefix, suffix=suffix),
+    )
+    if available < configured_max_chars:
+        logger.warning(
+            "chunk: ACTIONS_CHUNK_MAX_CHARS=%d would risk AX.25 frame overflow given current "
+            "beacon callsign/destination/prefix/suffix (%d bytes available) — clamping to %d",
+            configured_max_chars, available, available,
+        )
+    return min(configured_max_chars, available)
+
+
 class ChunkAction(Action):
-    """On an item.dispatched-shaped event, looks up the item's
-    extracted_contents in the items table and splits it into small,
-    word-boundary-safe chunks, durably stored (in order) in the `chunks`
-    table — queryable via `query_history.sh chunks <source> <item_id>`.
-    Only once every chunk is stored does run() return, and __main__.py
-    publishes a single `item.chunked` CloudEvent as a "chunks are ready,
-    go query them" pointer — not a payload carrier — for a future
-    downstream action (e.g. an AX.25 formatter) to consume."""
+    """Subscribes to actions.ai's output (item.ai_settled by default), not
+    item.dispatched directly — so this always runs AFTER ai has settled
+    for the same dispatch, whether or not it actually produced a summary
+    (ai always publishes — see ai.py's own docstring for why). Looks up
+    the item's summary (preferred) or extracted_contents (fallback,
+    mirroring beacon.content.resolve_voice_text's exact pattern) and
+    splits it into small, word-boundary-safe chunks, durably stored (in
+    order) in the `chunks` table — queryable via
+    `query_history.sh chunks <source> <item_id>`. Only once every chunk
+    is stored does run() return, and __main__.py publishes a single
+    `item.chunked` CloudEvent as a "chunks are ready, go query them"
+    pointer — not a payload carrier — for actions.content_ready and,
+    downstream of that, beacon to consume."""
 
     def run(self, event: dict[str, Any], *, conn: sqlite3.Connection) -> list[dict[str, Any]]:
         data = event.get("data") or {}
@@ -45,13 +84,14 @@ class ChunkAction(Action):
             return []
 
         row = conn.execute(
-            "SELECT extracted_contents FROM items WHERE source = ? AND item_id = ?",
+            "SELECT summary, extracted_contents FROM items WHERE source = ? AND item_id = ?",
             (source, item_id),
         ).fetchone()
-        contents = row[0] if row else None
+        summary, extracted_contents = row if row else (None, None)
+        contents = summary if summary else extracted_contents
         if not contents:
             logger.info(
-                "chunk: source=%s item_id=%s has no extracted_contents, skipping",
+                "chunk: source=%s item_id=%s has no summary or extracted_contents, skipping",
                 source,
                 item_id,
             )
@@ -59,7 +99,8 @@ class ChunkAction(Action):
 
         contents = _normalize_unicode_escapes(contents)
 
-        max_chars = int(get_setting("ACTIONS_CHUNK_MAX_CHARS", "200", conn=conn))
+        configured_max_chars = int(get_setting("ACTIONS_CHUNK_MAX_CHARS", "200", conn=conn))
+        max_chars = _effective_max_chars(conn, configured_max_chars)
         pieces = textwrap.wrap(
             contents, width=max_chars, break_long_words=False, break_on_hyphens=False
         )

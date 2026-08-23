@@ -20,11 +20,14 @@ acceptable, much less destructive tradeoff there."""
 import textwrap
 from dataclasses import dataclass
 
+from adapters.ax25 import AX25_HARD_LIMIT_BYTES as _AX25_HARD_LIMIT_BYTES
+
 # AX.25 UI frame payload limit is ~256 bytes (some implementations tolerate
 # up to ~300-330, per CONTEXT.md) — this is a protocol-safety net, not a
 # user-facing setting, checked against the FULL assembled line (including
-# the CALLSIGN>DEST: prefix), not just the chunk text alone.
-_AX25_HARD_LIMIT_BYTES = 256
+# the CALLSIGN>DEST: prefix), not just the chunk text alone. Shared with
+# actions.chunk (adapters.ax25.max_frame_content_bytes) so both sides of
+# the frame-sizing story agree on one number.
 
 
 class FrameTooLongError(ValueError):

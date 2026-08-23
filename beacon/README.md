@@ -15,47 +15,45 @@ Python import connects the two; they only share the DB.
 ## Content flow
 
 ```
-dispatcher --item.dispatched--> actions.chunk -\
-                             \-> actions.ai    --\-- actions.content_ready --item.content_ready--> beacon (frame + voice queues)
+dispatcher --item.dispatched--> actions.ai --item.ai_settled--> actions.chunk --item.chunked--\
+                                                                                                 \-- actions.content_ready --item.content_ready--> beacon (frame + voice queues)
 ```
 
-Both queues are fed by a single trigger: `item.content_ready`, published
-by `actions.content_ready` once — and only once — both `actions.chunk`
-and `actions.ai` have finished reacting to the same dispatch (see
-[actions/README.md](../actions/README.md)). This replaced an earlier
-design where frame subscribed to `item.chunked` and voice subscribed to
-`item.dispatched` independently: those two actions race with no ordering
-guarantee, so AX.25 frames could (and routinely did) go out carrying raw
-chunked text even when an AI summary already existed for the same item.
-`item.content_ready`'s `has_summary` flag is beacon's frame-routing
-signal — it decides *how many* `QueuedFrame` references to enqueue and
-whether they point at `chunks` rows or straight at `items.summary` — but
-the actual text is still resolved lazily, at transmit time, exactly as
-before:
+A linear pipeline, not a race: `actions.ai` always runs first (and
+always publishes, whether or not it actually produces a summary — see
+[actions/README.md](../actions/README.md)); `actions.chunk` subscribes to
+`ai`'s output rather than `item.dispatched` directly, so it always runs
+*after* `ai` has settled, chunking `items.summary` when one exists and
+falling back to `extracted_contents` otherwise. By the time
+`actions.content_ready` fires `item.content_ready` (published once —
+and only once — both `chunk` and `ai` have finished, mostly
+defense-in-depth at this point given the ordering above), the `chunks`
+table already holds the best available content, correctly sized. Beacon's
+job on that event is therefore simple:
 
-- **`has_summary=True`**: one `QueuedFrame(chunk_index=None)` — resolved
-  to `items.summary` at transmit time. One frame instead of N raw chunks.
-- **`has_summary=False`**: one `QueuedFrame` per existing `chunks` row
-  (unchanged fallback — keeps CSN, which structurally never gets
-  summarized, working exactly as before).
-- **Voice**, regardless of `has_summary`: always one `QueuedVoice`,
-  resolved via `items.summary` if present else `items.extracted_contents`
-  at transmit time — `actions.ai` structurally skips summarization for
-  content already at or under `ACTIONS_AI_MAX_CHARS` (CSN's own short
-  templated contents almost always are), so this fallback is what keeps
-  CSN voice-able regardless of whether AI is enabled.
+- **Frame**: one `QueuedFrame` per row in `chunks`, always — no
+  special-casing for whether a summary existed, since `chunks` already
+  reflects it.
+- **Voice**: always one `QueuedVoice`, resolved via `items.summary` if
+  present else `items.extracted_contents` at transmit time — the same
+  summary-else-raw fallback `chunk` itself now uses, kept independently
+  in `content.py` so CSN (whose short templated contents structurally
+  never get summarized) stays voice-able regardless of whether AI is
+  enabled.
 
-Deferring text resolution to transmit time (not baked in at enqueue
-time) still matters even with a settled `item.content_ready` signal: a
+Text resolution stays lazy (not baked in at enqueue time) for both: a
 later rearm, or a summary changing between enqueue and transmit, is
 naturally reflected — whatever's true right now is what gets sent.
 
 Length limits are **not** new beacon-specific settings — they reuse
 `ACTIONS_CHUNK_MAX_CHARS` (frame) and `ACTIONS_AI_MAX_CHARS` (voice, a
-defensive ceiling only), both already sized with this exact downstream
-use in mind (`ACTIONS_CHUNK_MAX_CHARS`'s own default was chosen "to leave
-headroom under AX.25's ~256-byte UI frame payload limit... for whatever a
-future AX.25-formatter action adds" — that's this package).
+defensive ceiling only). `ACTIONS_CHUNK_MAX_CHARS` is itself a *ceiling*,
+not a fixed size — `actions.chunk` dynamically clamps it down further at
+runtime (`data-adapters/src/adapters/ax25.py`) against the current
+`BEACON_CALLSIGN`/`BEACON_FRAME_DESTINATION`/`BEACON_FRAME_PREFIX`/
+`BEACON_FRAME_SUFFIX`, so an assembled frame can't silently exceed
+AX.25's ~256-byte limit and get dropped
+(`beacon.frame.dropped_too_long`) regardless of how those change later.
 
 ## TDMA schedule
 

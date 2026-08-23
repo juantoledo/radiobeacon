@@ -55,10 +55,25 @@ class AiAction(Action):
     """On an item.dispatched-shaped event, looks up the item and asks a
     configured LLM provider (OpenAI, Claude, or a self-hosted Ollama) to
     summarize it, storing the result in items.summary (adapters.storage.
-    store_summary) and publishing a single item.summarized CloudEvent
-    carrying the summary text — unlike chunk's pointer-only completion
-    event, this is one bounded value, so there's no reason to force a
-    follow-up DB query on every downstream consumer.
+    store_summary) and publishing a single CloudEvent to its output topic
+    (item.ai_settled by default) carrying a `summarized` flag plus, when
+    true, the summary text itself.
+
+    Unlike most actions, this one ALWAYS publishes once it has a valid
+    (source, item_id) — even when it decided there's nothing to
+    summarize (disabled, item not found, no content, content already
+    short, bad provider config): `summarized: False` in all of those
+    cases. This is deliberate, not an accident: actions.chunk subscribes
+    to this action's output topic (not item.dispatched directly) so it
+    only ever chunks AFTER ai has settled — preferring the summary when
+    one exists (see chunk.py). If ai stayed silent on every skip path
+    (as it used to, returning [] to mean "nothing happened"), chunk would
+    never fire at all whenever ACTIONS_AI_ENABLED=false — the *default*
+    out-of-the-box state — breaking frame content on a fresh clone. Only
+    a genuinely malformed event (missing source/item_id entirely) still
+    returns [] — there's no (source, item_id) to publish about, and
+    chunk's own independent item lookup would find nothing useful either
+    way.
 
     Disabled by default (ACTIONS_AI_ENABLED=false) since, unlike chunk,
     this action has a real per-call cost (a paid API, or a hard
@@ -80,23 +95,21 @@ class AiAction(Action):
     A provider call failure (network error, bad API key, ...) is
     deliberately NOT caught here and propagates out of run(). __main__.py
     already logs+swallows any exception from run(), but critically does
-    NOT record an action.ai.executed audit event when run() raises —
-    which is the correct signal for a real failure: "nothing happened,
-    see the error log," not a misleadingly successful audit entry with
-    no output. Every other skip below (disabled, missing source/item_id,
-    item not found, no extracted_contents, contents already short enough,
-    bad provider config) is a legitimate no-op, not a failure, so those
-    return [] instead."""
+    NOT record an action.ai.executed audit event (nor publish anything)
+    when run() raises — which is the correct signal for a real failure:
+    "nothing happened, see the error log," not a misleadingly successful
+    audit entry. Every skip below is a legitimate no-op, not a failure,
+    so those still publish (with summarized: False) rather than raising."""
 
     def run(self, event: dict[str, Any], *, conn: sqlite3.Connection) -> list[dict[str, Any]]:
-        if get_setting("ACTIONS_AI_ENABLED", "false", conn=conn).lower() != "true":
-            return []
-
         data = event.get("data") or {}
         source, item_id = data.get("source"), data.get("item_id")
         if not source or not item_id:
             logger.warning("ai: event missing source/item_id, skipping: %r", data)
             return []
+
+        if get_setting("ACTIONS_AI_ENABLED", "false", conn=conn).lower() != "true":
+            return [{"source": source, "item_id": item_id, "summarized": False}]
 
         row = conn.execute(
             "SELECT extracted_title, extracted_contents, url, type, subtype "
@@ -105,14 +118,14 @@ class AiAction(Action):
         ).fetchone()
         if row is None:
             logger.info("ai: source=%s item_id=%s not found, skipping", source, item_id)
-            return []
+            return [{"source": source, "item_id": item_id, "summarized": False}]
 
         extracted_title, extracted_contents, url, item_type, subtype = row
         if not extracted_contents:
             logger.info(
                 "ai: source=%s item_id=%s has no extracted_contents, skipping", source, item_id
             )
-            return []
+            return [{"source": source, "item_id": item_id, "summarized": False}]
 
         max_chars = int(get_setting("ACTIONS_AI_MAX_CHARS", "200", conn=conn))
         if len(extracted_contents) <= max_chars:
@@ -123,7 +136,7 @@ class AiAction(Action):
                 item_id,
                 max_chars,
             )
-            return []
+            return [{"source": source, "item_id": item_id, "summarized": False}]
 
         provider = get_setting("ACTIONS_AI_PROVIDER", conn=conn)
         if provider not in ("openai", "claude", "ollama"):
@@ -132,7 +145,7 @@ class AiAction(Action):
                 "skipping",
                 provider,
             )
-            return []
+            return [{"source": source, "item_id": item_id, "summarized": False}]
 
         prompt_template = get_setting("ACTIONS_AI_PROMPT", _DEFAULT_PROMPT, conn=conn)
         prompt = prompt_template.format(
@@ -163,4 +176,4 @@ class AiAction(Action):
             "ai: source=%s item_id=%s summarized via %s: %r", source, item_id, provider, summary
         )
 
-        return [{"source": source, "item_id": item_id, "summary": summary}]
+        return [{"source": source, "item_id": item_id, "summarized": True, "summary": summary}]

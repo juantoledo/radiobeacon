@@ -7,17 +7,20 @@ actions.ai have finished reacting to the same dispatch — a race-free
 signal, replacing what used to be two independent subscriptions
 (item.chunked for frame, item.dispatched for voice) that raced against
 each other and left AX.25 frames carrying raw chunked text even when an
-AI summary existed. The event's has_summary flag decides what to enqueue
-for frame: one QueuedFrame(chunk_index=None) — resolved to items.summary
-at transmit time — if a summary existed at publish time, else one
-QueuedFrame per existing chunks row (the CSN/AI-disabled fallback, since
-actions.ai structurally skips summarization for content already at or
-under ACTIONS_AI_MAX_CHARS). Voice always gets one QueuedVoice regardless
-of has_summary — its own resolve_voice_text always prefers items.summary,
-falling back to extracted_contents. See content.py for how the actual
-text gets resolved (lazily, at transmit time, not baked in at enqueue
-time) and formatters.py for why length limits reuse ACTIONS_CHUNK_MAX_CHARS/
-ACTIONS_AI_MAX_CHARS instead of new beacon-specific settings.
+AI summary existed. Since then, actions.chunk was changed to subscribe to
+actions.ai's own output rather than item.dispatched directly — so chunk
+now always runs AFTER ai has settled, chunking the AI summary when one
+exists and falling back to extracted_contents otherwise (see chunk.py) —
+meaning the `chunks` table already reflects the best available content
+by the time content_ready fires. Frame enqueue is therefore simple: one
+QueuedFrame per existing chunks row, always — no special-casing needed
+here for whether a summary existed. Voice always gets one QueuedVoice —
+its own resolve_voice_text independently prefers items.summary, falling
+back to extracted_contents, at transmit time. See content.py for how the
+actual text gets resolved (lazily, at transmit time, not baked in at
+enqueue time) and formatters.py for why length limits reuse
+ACTIONS_CHUNK_MAX_CHARS/ACTIONS_AI_MAX_CHARS instead of new
+beacon-specific settings.
 
 BEACON_ENABLED (decision: soft enable/disable, not real process control —
 see beacon/README.md) is re-read every tick; enqueueing from MQTT happens
@@ -83,36 +86,26 @@ def _already_enqueued(conn, event_id: str | None) -> bool:
 
 def _handle_content_ready_event(
     conn, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
-    source: str, item_id: str, has_summary: bool, event_id: str | None,
+    source: str, item_id: str, event_id: str | None,
 ) -> None:
     if _already_enqueued(conn, event_id):
         logger.info("beacon: content_ready event_id=%s already enqueued, skipping", event_id)
         return
 
     frame_count = 0
-    if has_summary:
-        ok = frame_queue.put(content.QueuedFrame(source=source, item_id=item_id, chunk_index=None))
+    rows = conn.execute(
+        "SELECT chunk_index FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
+        (source, item_id),
+    ).fetchall()
+    for (chunk_index,) in rows:
+        ok = frame_queue.put(content.QueuedFrame(source=source, item_id=item_id, chunk_index=chunk_index))
         if ok:
-            frame_count = 1
+            frame_count += 1
         else:
             record_audit_event(
                 conn, event_type="beacon.queue.dropped", actor="beacon",
                 source=source, item_id=item_id, details={"queue": "frame"},
             )
-    else:
-        rows = conn.execute(
-            "SELECT chunk_index FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
-            (source, item_id),
-        ).fetchall()
-        for (chunk_index,) in rows:
-            ok = frame_queue.put(content.QueuedFrame(source=source, item_id=item_id, chunk_index=chunk_index))
-            if ok:
-                frame_count += 1
-            else:
-                record_audit_event(
-                    conn, event_type="beacon.queue.dropped", actor="beacon",
-                    source=source, item_id=item_id, details={"queue": "frame"},
-                )
 
     voice_ok = voice_queue.put(content.QueuedVoice(source=source, item_id=item_id))
     if not voice_ok:
@@ -123,10 +116,7 @@ def _handle_content_ready_event(
 
     record_audit_event(
         conn, event_type="beacon.content_ready.enqueued", actor="beacon", source=source, item_id=item_id,
-        details={
-            "event_id": event_id, "has_summary": has_summary,
-            "frame_count": frame_count, "voice_enqueued": voice_ok,
-        },
+        details={"event_id": event_id, "frame_count": frame_count, "voice_enqueued": voice_ok},
     )
 
 
@@ -142,7 +132,6 @@ def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQue
             event_id = event.get("id")
             data = event.get("data") or {}
             source, item_id = data.get("source"), data.get("item_id")
-            has_summary = bool(data.get("has_summary"))
             if not source or not item_id:
                 logger.warning(
                     "beacon: event missing source/item_id on %s, skipping: %r", message.topic, data
@@ -152,7 +141,7 @@ def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQue
             conn = get_connection(DEFAULT_DB_PATH)
             try:
                 if message.topic == content_ready_topic:
-                    _handle_content_ready_event(conn, frame_queue, voice_queue, source, item_id, has_summary, event_id)
+                    _handle_content_ready_event(conn, frame_queue, voice_queue, source, item_id, event_id)
                 else:
                     logger.warning("beacon: message on unexpected topic %s", message.topic)
             finally:

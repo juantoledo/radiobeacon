@@ -1,13 +1,13 @@
 from adapters.storage import get_connection, set_setting
 
-from actions.chunk import ChunkAction
+from actions.chunk import ChunkAction, _effective_max_chars
 
 
-def _insert_item(conn, source, item_id, extracted_contents):
+def _insert_item(conn, source, item_id, extracted_contents, *, summary=None):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_contents, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, ?)",
-        (source, item_id, extracted_contents, "2026-08-19T12:00:00", "{}"),
+        "INSERT INTO items (source, item_id, extracted_contents, summary, fetched_at, rawdata) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (source, item_id, extracted_contents, summary, "2026-08-19T12:00:00", "{}"),
     )
     conn.commit()
 
@@ -163,3 +163,70 @@ def test_chunk_leaves_real_backslashes_untouched(tmp_path, monkeypatch):
     stored = _stored_chunks(conn, "senapred", "1")
 
     assert stored[0]["text"] == "ruta C:\\datos\\alerta"
+
+
+# --- summary-preferred content (actions.chunk now runs after actions.ai) ---
+
+
+def test_chunk_prefers_summary_over_extracted_contents_when_both_present(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "1000")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "senapred", "1", "raw extracted contents", summary="a short AI summary")
+
+    ChunkAction().run(_dispatched_event("senapred", "1"), conn=conn)
+    stored = _stored_chunks(conn, "senapred", "1")
+
+    assert len(stored) == 1
+    assert stored[0]["text"] == "a short AI summary"
+
+
+def test_chunk_falls_back_to_extracted_contents_when_no_summary(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACTIONS_CHUNK_MAX_CHARS", "1000")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", "raw extracted contents", summary=None)
+
+    ChunkAction().run(_dispatched_event("csn", "1"), conn=conn)
+    stored = _stored_chunks(conn, "csn", "1")
+
+    assert stored[0]["text"] == "raw extracted contents"
+
+
+# --- dynamic AX.25-aware max_chars clamp ---
+
+
+def test_effective_max_chars_unclamped_when_callsign_not_configured(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    assert _effective_max_chars(conn, 200) == 200
+
+
+def test_effective_max_chars_unclamped_when_budget_is_larger_than_configured(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+
+    assert _effective_max_chars(conn, 50) == 50  # 50 chars fits comfortably under 256 bytes
+
+
+def test_effective_max_chars_clamps_down_when_suffix_would_overflow(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_SUFFIX", "x" * 200)  # eats most of the 256-byte budget
+
+    result = _effective_max_chars(conn, 200)
+
+    assert result < 200
+    assert result >= 1
+
+
+def test_chunk_uses_dynamically_clamped_max_chars(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_setting(conn, "ACTIONS_CHUNK_MAX_CHARS", "200")
+    set_setting(conn, "BEACON_CALLSIGN", "CD3DXZ-1")
+    set_setting(conn, "BEACON_FRAME_SUFFIX", "x" * 200)
+    _insert_item(conn, "senapred", "1", "one two three four five six seven eight nine ten")
+
+    ChunkAction().run(_dispatched_event("senapred", "1"), conn=conn)
+    stored = _stored_chunks(conn, "senapred", "1")
+
+    for chunk in stored:
+        assert len(chunk["text"]) < 200

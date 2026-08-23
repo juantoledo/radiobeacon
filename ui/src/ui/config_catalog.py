@@ -236,9 +236,11 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ACTIONS_CHUNK_SUBSCRIBE_TOPIC",
         "Actions — Chunk",
         "Subscribe topic",
-        "MQTT topic ChunkAction subscribes to. Required — action is skipped if unset.",
+        "MQTT topic ChunkAction subscribes to — actions.ai's own output, "
+        "not item.dispatched directly, so chunk always runs after ai has "
+        "settled. Required — action is skipped if unset.",
         "text",
-        "radiobeacon/events/item.dispatched",
+        "radiobeacon/events/item.ai_settled",
         advanced=True,
     ),
     SettingSpec(
@@ -263,7 +265,11 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ACTIONS_CHUNK_MAX_CHARS",
         "Actions — Chunk",
         "Max chars per chunk",
-        "Max characters per chunk (word-boundary-safe). Applies live — no restart needed.",
+        "Max characters per chunk (word-boundary-safe) — a ceiling, not a "
+        "fixed size: dynamically clamped down further at runtime if the "
+        "current beacon callsign/destination/prefix/suffix would "
+        "otherwise risk an assembled AX.25 frame exceeding its ~256-byte "
+        "limit. Applies live — no restart needed.",
         "int",
         "200",
     ),
@@ -289,9 +295,12 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ACTIONS_AI_OUTPUT_TOPIC",
         "Actions — AI",
         "Output topic",
-        "MQTT topic AiAction publishes item.summarized events to.",
+        "MQTT topic AiAction publishes to — ALWAYS, once it has a valid "
+        "source/item_id, even when it decided there's nothing to "
+        "summarize (a summarized:false marker) — actions.chunk "
+        "subscribes here so it always runs after ai has settled.",
         "text",
-        "radiobeacon/events/item.summarized",
+        "radiobeacon/events/item.ai_settled",
         advanced=True,
     ),
     SettingSpec(
@@ -300,7 +309,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Output event type",
         "CloudEvent `type` string for AiAction's output.",
         "text",
-        "item.summarized",
+        "item.ai_settled",
         advanced=True,
     ),
     SettingSpec(

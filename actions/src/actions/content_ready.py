@@ -27,7 +27,14 @@ Rearm doesn't delete prior audit_log rows, it produces new ones, so
 "already published" is a timestamp comparison (item_readiness.published_at
 vs. the latest of the two actions' recorded_at), not existence alone — a
 rearm's fresh completions naturally produce settled_at > published_at,
-triggering a fresh publish."""
+triggering a fresh publish.
+
+Now that actions.chunk subscribes to actions.ai's own output (see
+chunk.py), chunk is structurally guaranteed to complete after ai for the
+same round — so "both rows exist" is no longer the primary race-closer
+it was designed as, but it's cheap and still correct (and stays correct
+even if some future change reintroduces parallelism), so it stays as
+defense-in-depth rather than being removed."""
 import logging
 import sqlite3
 from typing import Any
@@ -69,13 +76,6 @@ def _find_settled_items(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
     ).fetchall()
 
 
-def _has_summary(conn: sqlite3.Connection, source: str, item_id: str) -> bool:
-    row = conn.execute(
-        "SELECT summary FROM items WHERE source = ? AND item_id = ?", (source, item_id)
-    ).fetchone()
-    return bool(row and row[0])
-
-
 def check_and_publish(
     conn: sqlite3.Connection,
     client: Any,
@@ -94,11 +94,10 @@ def check_and_publish(
         if published_at is not None and settled_at <= published_at:
             continue
 
-        has_summary = _has_summary(conn, source, item_id)
         payload = mq.build_cloud_event_payload(
             event_type=OUTPUT_EVENT_TYPE,
             actor=actor,
-            data={"source": source, "item_id": item_id, "has_summary": has_summary},
+            data={"source": source, "item_id": item_id},
         )
         client.publish(output_topic, payload=payload, qos=qos)
         mark_item_ready_published(conn, source, item_id)
@@ -108,11 +107,7 @@ def check_and_publish(
             actor=actor,
             source=source,
             item_id=item_id,
-            details={"has_summary": has_summary},
         )
-        logger.info(
-            "content_ready: source=%s item_id=%s published (has_summary=%s)",
-            source, item_id, has_summary,
-        )
+        logger.info("content_ready: source=%s item_id=%s published", source, item_id)
         published += 1
     return published

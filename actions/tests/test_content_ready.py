@@ -58,7 +58,7 @@ def test_check_and_publish_publishes_when_both_actions_done(tmp_path):
     topic, payload, qos = client.published[0]
     assert topic == "radiobeacon/events/item.content_ready"
     assert qos == 1
-    assert '"has_summary": true' in payload
+    assert '"item_id": "1"' in payload
 
     row = conn.execute(
         "SELECT event_type, source, item_id FROM audit_log WHERE event_type = 'item.content_ready.published'"
@@ -79,22 +79,6 @@ def test_check_and_publish_skips_when_only_one_action_done(tmp_path):
 
     assert published == 0
     assert client.published == []
-
-
-def test_check_and_publish_has_summary_false_when_no_summary(tmp_path):
-    conn = _make_conn(tmp_path)
-    _store_item(conn, source="csn", summary=None)  # CSN: ai skipped, no summary
-    _record_executed(conn, "chunk", "csn", "1")
-    _record_executed(conn, "ai", "csn", "1")
-
-    client = FakeClient()
-    content_ready.check_and_publish(
-        conn, client, output_topic="radiobeacon/events/item.content_ready",
-        actor="actions.content_ready", qos=1,
-    )
-
-    topic, payload, qos = client.published[0]
-    assert '"has_summary": false' in payload
 
 
 def test_check_and_publish_does_not_republish_same_settlement(tmp_path):

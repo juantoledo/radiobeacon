@@ -61,11 +61,17 @@ def test_ai_stores_summary_and_returns_single_output_item(tmp_path, monkeypatch)
 
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
-    assert outputs == [{"source": "senapred", "item_id": "1", "summary": "A summary."}]
+    assert outputs == [
+        {"source": "senapred", "item_id": "1", "summarized": True, "summary": "A summary."}
+    ]
     assert _stored_summary(conn, "senapred", "1") == "A summary."
 
 
-def test_ai_is_a_noop_when_disabled(tmp_path, monkeypatch):
+def test_ai_still_publishes_summarized_false_when_disabled(tmp_path, monkeypatch):
+    """Disabled is the DEFAULT out-of-the-box state -- ai must still
+    publish (with summarized=False) so actions.chunk, which now
+    subscribes to ai's output rather than item.dispatched directly,
+    fires even when AI is off."""
     monkeypatch.delenv("ACTIONS_AI_ENABLED", raising=False)
     monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
     called = []
@@ -77,13 +83,13 @@ def test_ai_is_a_noop_when_disabled(tmp_path, monkeypatch):
 
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
-    assert outputs == []
+    assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
     assert called == []
     assert _stored_summary(conn, "senapred", "1") is None
 
     monkeypatch.setenv("ACTIONS_AI_ENABLED", "false")
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
-    assert outputs == []
+    assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
     assert called == []
 
 
@@ -100,6 +106,7 @@ def test_ai_stores_provider_output_verbatim_without_truncation(tmp_path, monkeyp
 
     # No length-based truncation — the model controls length via the
     # prompt itself, not a hard cut that could chop a sentence in half.
+    assert outputs[0]["summarized"] is True
     assert outputs[0]["summary"] == long_summary.strip()
     assert _stored_summary(conn, "senapred", "1") == long_summary.strip()
 
@@ -131,7 +138,7 @@ def test_ai_skips_when_extracted_contents_is_null(tmp_path, monkeypatch):
 
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
-    assert outputs == []
+    assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
     assert called == []
     assert _stored_summary(conn, "senapred", "1") is None
 
@@ -149,7 +156,7 @@ def test_ai_skips_when_extracted_contents_already_within_max_chars(tmp_path, mon
 
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
-    assert outputs == []
+    assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
     assert called == []
     assert _stored_summary(conn, "senapred", "1") is None
 
@@ -165,7 +172,7 @@ def test_ai_skips_when_item_not_found(tmp_path, monkeypatch):
 
     outputs = AiAction().run(_dispatched_event("senapred", "does-not-exist"), conn=conn)
 
-    assert outputs == []
+    assert outputs == [{"source": "senapred", "item_id": "does-not-exist", "summarized": False}]
     assert called == []
 
 
@@ -192,7 +199,7 @@ def test_ai_skips_when_provider_env_var_unset_or_invalid(tmp_path, monkeypatch, 
 
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
-    assert outputs == []
+    assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
     assert _stored_summary(conn, "senapred", "1") is None
 
 
@@ -229,7 +236,9 @@ def test_ai_picks_up_settings_row_without_restart(tmp_path, monkeypatch):
 
     outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
 
-    assert outputs == [{"source": "senapred", "item_id": "1", "summary": "A summary."}]
+    assert outputs == [
+        {"source": "senapred", "item_id": "1", "summarized": True, "summary": "A summary."}
+    ]
 
 
 def test_ai_passes_db_stored_openai_api_key_to_provider_call(tmp_path, monkeypatch):

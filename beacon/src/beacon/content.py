@@ -27,7 +27,7 @@ from dataclasses import dataclass
 class QueuedFrame:
     source: str
     item_id: str
-    chunk_index: int | None  # None: use items.summary directly (see resolve_frame_text)
+    chunk_index: int
 
 
 @dataclass(frozen=True)
@@ -36,21 +36,14 @@ class QueuedVoice:
     item_id: str
 
 
-def resolve_frame_text(conn: sqlite3.Connection, source: str, item_id: str, chunk_index: int | None) -> str | None:
-    """chunk_index=None: re-reads items.summary directly — the item.content_ready
-    watcher (actions.content_ready) only enqueues a QueuedFrame this way
-    when it observed a summary at publish time, so this path is expected
-    to find one; None here just means the item/summary has since changed,
-    treated as "nothing to send" like the chunk_index case below, not an
-    error. chunk_index=int: re-reads one specific chunks row fresh — the
-    raw-chunk fallback for items with no summary (e.g. CSN). None if
-    that row's since been deleted (e.g. by a /dev item delete)."""
-    if chunk_index is None:
-        row = conn.execute(
-            "SELECT summary FROM items WHERE source = ? AND item_id = ?",
-            (source, item_id),
-        ).fetchone()
-        return row[0] if row is not None else None
+def resolve_frame_text(conn: sqlite3.Connection, source: str, item_id: str, chunk_index: int) -> str | None:
+    """Re-reads one specific chunks row fresh. None if it's since been
+    deleted (e.g. by a /dev item delete) — the caller treats that as
+    "nothing to send", not an error. actions.chunk now runs after
+    actions.ai and chunks the summary when one exists (falling back to
+    extracted_contents otherwise — see chunk.py), so this row already
+    reflects the best available content; no separate summary-vs-chunk
+    branch is needed here."""
     row = conn.execute(
         "SELECT text FROM chunks WHERE source = ? AND item_id = ? AND chunk_index = ?",
         (source, item_id, chunk_index),

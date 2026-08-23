@@ -13,40 +13,49 @@ else that wants to listen).
 (Not called "orchestrator": that name belongs to
 [beacon](../beacon/README.md) — the TDMA radio transmit-slot timing
 scheduler, a completely different responsibility from this event-driven
-action-chaining layer. `beacon` subscribes to this package's own output
-topics — `item.chunked` for frame content, `item.dispatched` directly for
-voice — as one of its consumers, same as anything else on the broker.)
+action-chaining layer. `beacon` subscribes to `item.content_ready` — this
+package's `content_ready` correlator's own output, below — as one of its
+consumers, same as anything else on the broker.)
 
 ## Actions
-
-- **chunk** (`src/actions/chunk.py`) — on an `item.dispatched`-shaped
-  event, looks up the item's `extracted_contents` in `items` and splits
-  it into small, word-boundary-safe chunks (`ACTIONS_CHUNK_MAX_CHARS`,
-  default 200 — headroom under AX.25's ~256-byte UI frame payload limit,
-  see CONTEXT.md), durably storing every chunk, in order, in the `chunks`
-  table (queryable via `./query_history.sh chunks <source> <item_id>`
-  from the repo root) before publishing a single completion CloudEvent —
-  not one per chunk — to its configured output topic, for a future
-  downstream action (e.g. an AX.25 formatter) to go query the stored
-  chunks and consume.
 
 - **ai** (`src/actions/ai.py`) — on an `item.dispatched`-shaped event,
   looks up the item and asks a configured LLM provider (OpenAI, Claude,
   or a self-hosted Ollama — `ACTIONS_AI_PROVIDER`) to summarize it,
-  storing the result in `items.summary` and publishing a single
-  `item.summarized` CloudEvent carrying the summary text directly (one
-  bounded value, unlike `chunk`'s N rows, so no need for a pointer-only
-  event). `ACTIONS_AI_MAX_CHARS` is a skip threshold on the *input* —
-  content already at or under that length isn't sent to the provider at
-  all — not a cap on the output: whatever the provider returns is
-  stored/published verbatim, never truncated (the prompt itself asks for
-  a short, complete summary instead). **Disabled by default**
-  (`ACTIONS_AI_ENABLED=false`) — unlike `chunk`, this has a real per-call
-  cost (a paid API, or a hard dependency on a local Ollama install), so
-  it's opt-in. Once enabled, `ACTIONS_AI_PROVIDER` is required with no
-  default. A provider call failure is not swallowed — it propagates so no
-  misleading `action.ai.executed` audit event is recorded for a message
-  that actually failed.
+  storing the result in `items.summary`. **Always** publishes a single
+  CloudEvent to its output topic (`item.ai_settled` by default) once it
+  has a valid `(source, item_id)` — even on every skip path (disabled,
+  item not found, no content, content already short, bad provider
+  config), with a `summarized: false` marker; only `summarized: true`
+  carries the actual `summary` text. This is what lets `chunk` (below)
+  subscribe to `ai`'s output and always run *after* it, without going
+  silent whenever AI has nothing to add — including the default
+  `ACTIONS_AI_ENABLED=false` state. `ACTIONS_AI_MAX_CHARS` is a skip
+  threshold on the *input* — content already at or under that length
+  isn't sent to the provider at all — not a cap on the output: whatever
+  the provider returns is stored/published verbatim, never truncated
+  (the prompt itself asks for a short, complete summary instead). A
+  provider call failure is the one case that's still NOT swallowed and
+  doesn't publish — it propagates so no misleading `action.ai.executed`
+  audit event (or downstream `chunk` run) happens for a message that
+  actually failed.
+
+- **chunk** (`src/actions/chunk.py`) — subscribes to `ai`'s own output
+  (`item.ai_settled` by default), not `item.dispatched` directly, so it
+  always runs *after* `ai` has settled for the same dispatch. Chunks
+  `items.summary` when `ai` produced one, falling back to
+  `extracted_contents` otherwise (the same summary-else-raw pattern
+  `beacon`'s own voice resolution uses) into small, word-boundary-safe
+  chunks — `ACTIONS_CHUNK_MAX_CHARS` (default 200) is a *ceiling*, not a
+  fixed size: dynamically clamped down further at runtime
+  (`adapters.ax25.max_frame_content_bytes`) if the current beacon
+  callsign/destination/prefix/suffix would otherwise risk an assembled
+  AX.25 frame exceeding its ~256-byte limit (see CONTEXT.md). Every
+  chunk is durably stored, in order, in the `chunks` table (queryable via
+  `./query_history.sh chunks <source> <item_id>` from the repo root)
+  before a single completion CloudEvent — not one per chunk — is
+  published to its configured output topic, for `content_ready` (below)
+  to pick up.
 
 New actions are picked up automatically: `discover_actions()`
 (`src/actions/__main__.py`) scans this package's submodules for concrete
@@ -80,10 +89,11 @@ the latest `action.*.executed` `recorded_at` — see
 `data-adapters/src/adapters/storage.py`), not row existence — a rearm's
 fresh completions naturally produce a fresh publish.
 
-The published event's `data` includes `has_summary: bool` (whether
-`items.summary` was set at publish time) — beacon's routing signal for
-whether to send one AI-summary frame or one frame per raw chunk; actual
-transmitted text is still resolved fresh from the DB at transmit time.
+Now that `chunk` subscribes to `ai`'s own output (above), `chunk` is
+structurally guaranteed to complete after `ai` for the same round — so
+`content_ready`'s "wait for both" is no longer the primary race-closer
+it was designed as, but stays as cheap defense-in-depth (still correct
+even if a future change reintroduces parallelism).
 
 ## Action contract
 
@@ -161,7 +171,9 @@ uppercased, e.g. `CHUNK` for `src/actions/chunk.py`):
 | `ACTIONS_<NAME>_OUTPUT_TOPIC` | no | omit for a terminal action |
 | `ACTIONS_<NAME>_OUTPUT_EVENT_TYPE` | no | defaults to the action's own module name (e.g. `chunk`); set explicitly (e.g. `item.chunked`) for readability — the MQTT topic and the CloudEvents `type` are separate concerns |
 
-Chunk-specific: `ACTIONS_CHUNK_MAX_CHARS` (default `200`).
+Chunk-specific: `ACTIONS_CHUNK_MAX_CHARS` (default `200` — a ceiling,
+dynamically clamped down at runtime once `BEACON_CALLSIGN` is
+configured; see `data-adapters/src/adapters/ax25.py`).
 
 AI-specific: `ACTIONS_AI_ENABLED` (default `false`), `ACTIONS_AI_PROVIDER`
 (`openai`/`claude`/`ollama`, required once enabled), `ACTIONS_AI_PROMPT`
