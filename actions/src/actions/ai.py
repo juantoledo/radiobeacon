@@ -62,8 +62,10 @@ class AiAction(Action):
     Unlike most actions, this one ALWAYS publishes once it has a valid
     (source, item_id) — even when it decided there's nothing to
     summarize (disabled, item not found, no content, content already
-    short, bad provider config): `summarized: False` in all of those
-    cases. This is deliberate, not an accident: actions.chunk subscribes
+    short, bad provider config, or a successful provider call whose
+    store_summary write turned out to be a no-op — see run()): `summarized:
+    False` in all of those cases. This is deliberate, not an accident:
+    actions.chunk subscribes
     to this action's output topic (not item.dispatched directly) so it
     only ever chunks AFTER ai has settled — preferring the summary when
     one exists (see chunk.py). If ai stayed silent on every skip path
@@ -171,7 +173,25 @@ class AiAction(Action):
 
         summary = summary.strip()
 
-        store_summary(conn, source, item_id, summary)
+        if not store_summary(conn, source, item_id, summary):
+            # store_summary's UPDATE matched no row -- the item vanished
+            # (or its (source, item_id) key changed) between the SELECT
+            # above and here, e.g. raced by a concurrent adapter re-poll
+            # upserting the same item. Publishing summarized: True here
+            # regardless (as this used to) would tell chunk a summary
+            # exists when items.summary is actually still whatever it was
+            # before (often NULL) -- chunk would then silently fall back
+            # to extracted_contents while ai's own log/audit trail claims
+            # success. Treating it as an ordinary skip (summarized: False)
+            # keeps that contract honest and matches every other skip path
+            # above, which already publish rather than raise.
+            logger.error(
+                "ai: source=%s item_id=%s store_summary found no matching row -- "
+                "summary NOT persisted, skipping",
+                source, item_id,
+            )
+            return [{"source": source, "item_id": item_id, "summarized": False}]
+
         logger.info(
             "ai: source=%s item_id=%s summarized via %s: %r", source, item_id, provider, summary
         )

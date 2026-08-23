@@ -221,6 +221,30 @@ def test_ai_propagates_provider_call_errors(tmp_path, monkeypatch):
     assert _stored_summary(conn, "senapred", "1") is None
 
 
+def test_ai_publishes_summarized_false_when_store_summary_finds_no_matching_row(
+    tmp_path, monkeypatch
+):
+    """store_summary returns False when its UPDATE matches no row (e.g. the
+    item was deleted/re-keyed between ai's SELECT and this call — a real
+    race with a concurrent adapter re-poll). ai must not publish
+    summarized=True with a summary that was never actually persisted, or
+    chunk (which trusts ai's output and re-reads items.summary itself)
+    would silently fall back to extracted_contents while ai's own log
+    claims success."""
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
+    monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "0")
+    monkeypatch.setattr(actions.ai, "_call_ollama", lambda prompt, model, host: "A summary.")
+    monkeypatch.setattr(actions.ai, "store_summary", lambda conn, source, item_id, summary: False)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "senapred", "1", "Some contents.")
+
+    outputs = AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
+
+    assert outputs == [{"source": "senapred", "item_id": "1", "summarized": False}]
+    assert _stored_summary(conn, "senapred", "1") is None
+
+
 def test_ai_picks_up_settings_row_without_restart(tmp_path, monkeypatch):
     """AiAction re-resolves ACTIONS_AI_ENABLED (and every other setting it
     reads) via get_setting(conn=conn) on every run() call — a DB-stored
