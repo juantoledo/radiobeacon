@@ -1,4 +1,5 @@
 import json
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -152,6 +153,43 @@ def test_handle_content_ready_event_records_audit_event_with_event_id(tmp_path):
     assert details["frame_count"] == 1
 
 
+def test_handle_content_ready_event_sets_wake_event_on_successful_enqueue(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+    wake_event = threading.Event()
+
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", "event-1", wake_event)
+
+    assert wake_event.is_set()
+
+
+def test_handle_content_ready_event_wake_event_optional(tmp_path):
+    """The default (no wake_event passed) must keep working -- this is
+    the call shape _reconcile_missed_content_ready uses, already running
+    on the TDMA thread itself with no need to wake it."""
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", "event-1")
+
+    assert voice_queue.stats().size == 1
+
+
+def test_handle_content_ready_event_does_not_set_wake_event_when_already_enqueued(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    frame_queue = BoundedDropOldestQueue(10)
+    voice_queue = BoundedDropOldestQueue(10)
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", "event-1")
+
+    wake_event = threading.Event()
+    main_module._handle_content_ready_event(conn, frame_queue, voice_queue, "csn", "1", "event-1", wake_event)
+
+    assert not wake_event.is_set()
+
+
 # --- _reconcile_missed_content_ready ---
 
 
@@ -237,7 +275,7 @@ def test_on_message_routes_content_ready_to_both_queues(tmp_path, monkeypatch):
 
     frame_queue = BoundedDropOldestQueue(10)
     voice_queue = BoundedDropOldestQueue(10)
-    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue)
+    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue, threading.Event())
 
     handler(FakeClient(), None, FakeMessage(CONTENT_READY_TOPIC, _content_ready_payload()))
 
@@ -249,7 +287,7 @@ def test_on_message_swallows_malformed_payload(tmp_path, monkeypatch):
     monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
     frame_queue = BoundedDropOldestQueue(10)
     voice_queue = BoundedDropOldestQueue(10)
-    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue)
+    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue, threading.Event())
 
     handler(FakeClient(), None, FakeMessage(CONTENT_READY_TOPIC, b"not json"))  # must not raise
 
@@ -258,7 +296,7 @@ def test_on_message_skips_event_missing_source_or_item_id(tmp_path, monkeypatch)
     monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
     frame_queue = BoundedDropOldestQueue(10)
     voice_queue = BoundedDropOldestQueue(10)
-    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue)
+    handler = main_module._make_on_message(CONTENT_READY_TOPIC, frame_queue, voice_queue, threading.Event())
 
     payload = json.dumps(
         {"specversion": "1.0", "type": "x", "source": "s", "id": "1", "data": {}}
@@ -822,8 +860,6 @@ def test_run_mqtt_client_uses_stable_client_id_and_clean_session_true(monkeypatc
     actions/tests/test_main.py's equivalent test for the incident this
     guards against (MQTT SUBSCRIBE is additive, so a persistent session
     across a topic rename kept a stale subscription alive forever)."""
-    import threading
-
     import paho.mqtt.client
 
     captured = {}
@@ -839,7 +875,8 @@ def test_run_mqtt_client_uses_stable_client_id_and_clean_session_true(monkeypatc
     stop_event.set()
 
     main_module._run_mqtt_client(
-        "radiobeacon/events/item.content_ready", BoundedDropOldestQueue(10), BoundedDropOldestQueue(10), stop_event
+        "radiobeacon/events/item.content_ready", BoundedDropOldestQueue(10), BoundedDropOldestQueue(10),
+        stop_event, threading.Event(),
     )
 
     assert captured["client_id"] == "radiobeacon-beacon"

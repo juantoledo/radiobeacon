@@ -466,8 +466,10 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "BEACON_TICK_SECONDS",
         "Beacon — Schedule",
         "Tick interval (s)",
-        "How often the TDMA loop re-evaluates the schedule. Small relative to "
-        "the slot lengths so short slots aren't missed.",
+        "Upper bound on how long the TDMA loop waits before re-evaluating "
+        "the schedule — newly queued content wakes it immediately, this is "
+        "just the fallback poll interval. Small relative to the slot "
+        "lengths so short slots aren't missed.",
         "int",
         "1",
         advanced=True,

@@ -40,6 +40,23 @@ dequeue+transmit step checks it. This is also what "restart from the UI"
 means in practice: the next tick just re-reads settings, no process
 kill/respawn involved.
 
+The TDMA loop's wait between ticks is a wake_event.wait(timeout=
+tick_seconds), not a plain sleep -- _handle_content_ready_event sets
+wake_event right after a successful queue.put() (both the live MQTT path
+and _reconcile_missed_content_ready's catch-up path), so a newly-queued
+item is picked up on the very next loop iteration rather than waiting out
+the rest of BEACON_TICK_SECONDS. Draining is no longer gated to "once per
+slot occurrence" either -- _drain_and_transmit is attempted every
+iteration the current slot matches (a cheap no-op when its queue is
+empty), so an item queued midway through an already-active slot is
+transmitted within that same occurrence, not deferred to the slot's next
+cycle. Once a transmission has started it always runs to completion even
+past the slot's nominal end (see _drain_and_transmit's own docstring) --
+this wake-on-enqueue change doesn't alter that, since draining is still
+one synchronous, blocking call on this same thread; it only removes the
+before-hand delay in noticing new content, not the "floor, not a hard
+ceiling" guarantee once it starts.
+
 Audio-device contention between SvxLink and Direwolf is handled by
 actively stopping/starting each service around its slot (see
 service_control.py) — CONTEXT.md's strategy #1. Deploying Direwolf/SvxLink
@@ -98,7 +115,13 @@ def _already_enqueued(conn, event_id: str | None) -> bool:
 def _handle_content_ready_event(
     conn, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
     source: str, item_id: str, event_id: str | None,
+    wake_event: threading.Event | None = None,
 ) -> None:
+    """wake_event (optional -- None from _reconcile_missed_content_ready,
+    which already runs on the TDMA thread itself and has no need to wake
+    it) is set after enqueueing so the TDMA loop's tick-wait returns
+    immediately instead of sleeping up to BEACON_TICK_SECONDS -- see
+    _run_tdma_loop."""
     if _already_enqueued(conn, event_id):
         logger.info("beacon: content_ready event_id=%s already enqueued, skipping", event_id)
         return
@@ -124,6 +147,9 @@ def _handle_content_ready_event(
             conn, event_type="beacon.queue.dropped", actor="beacon",
             source=source, item_id=item_id, details={"queue": "voice"},
         )
+
+    if wake_event is not None:
+        wake_event.set()
 
     record_audit_event(
         conn, event_type="beacon.content_ready.enqueued", actor="beacon", source=source, item_id=item_id,
@@ -176,7 +202,10 @@ def _reconcile_missed_content_ready(conn, frame_queue: BoundedDropOldestQueue, v
     return len(rows)
 
 
-def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue):
+def _make_on_message(
+    content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
+    wake_event: threading.Event,
+):
     """paho-mqtt re-raises any exception an on_message callback doesn't
     catch, silently killing loop_start()'s background thread — everything
     here is wrapped in one unconditional try/except, same as
@@ -197,7 +226,9 @@ def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQue
             conn = get_connection(DEFAULT_DB_PATH)
             try:
                 if message.topic == content_ready_topic:
-                    _handle_content_ready_event(conn, frame_queue, voice_queue, source, item_id, event_id)
+                    _handle_content_ready_event(
+                        conn, frame_queue, voice_queue, source, item_id, event_id, wake_event
+                    )
                 else:
                     logger.warning("beacon: message on unexpected topic %s", message.topic)
             finally:
@@ -208,7 +239,10 @@ def _make_on_message(content_ready_topic: str, frame_queue: BoundedDropOldestQue
     return _handler
 
 
-def _run_mqtt_client(content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue, stop_event: threading.Event) -> None:
+def _run_mqtt_client(
+    content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
+    stop_event: threading.Event, wake_event: threading.Event,
+) -> None:
     """Mirrors actions/__main__.py's _run_action_loop: loop_start() +
     stop_event.wait() (not loop_forever(), which can't be signaled from a
     threading.Event), stable client_id + clean_session=True, resubscribe
@@ -241,7 +275,7 @@ def _run_mqtt_client(content_ready_topic: str, frame_queue: BoundedDropOldestQue
         client_id="radiobeacon-beacon",
         clean_session=True,
     )
-    client.on_message = _make_on_message(content_ready_topic, frame_queue, voice_queue)
+    client.on_message = _make_on_message(content_ready_topic, frame_queue, voice_queue, wake_event)
 
     def _on_connect(client, userdata, connect_flags, reason_code, properties) -> None:
         logger.debug("beacon: mqtt connected (reason_code=%s), subscribing", reason_code)
@@ -565,7 +599,10 @@ def _drain_and_transmit(
     return attempted
 
 
-def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQueue, frame_queue: BoundedDropOldestQueue) -> None:
+def _run_tdma_loop(
+    stop_event: threading.Event, wake_event: threading.Event,
+    voice_queue: BoundedDropOldestQueue, frame_queue: BoundedDropOldestQueue,
+) -> None:
     conn = get_connection(DEFAULT_DB_PATH)
     kiss_client: kiss.KissTcpClient | None = None
     try:
@@ -586,8 +623,6 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
         tts_piper_model = get_setting("BEACON_TTS_PIPER_MODEL", "", conn=conn)
         tts_piper_binary = get_setting("BEACON_TTS_PIPER_BINARY", "piper", conn=conn)
 
-        last_voice_cycle: int | None = None
-        last_frame_cycle: int | None = None
         prepped_voice = False
         prepped_frame = False
         last_ntp_check_at = 0.0
@@ -657,7 +692,7 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
                 svxlink_name, direwolf_name, lead_time, prepped_voice, prepped_frame,
             )
 
-            if enabled and state.slot is schedule.Slot.VOICE and state.cycle_index != last_voice_cycle:
+            if enabled and state.slot is schedule.Slot.VOICE:
                 _drain_and_transmit(
                     stop_event, voice_queue, voice_inter_tx_delay,
                     lambda: _try_transmit_voice(
@@ -667,8 +702,7 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
                         voice_prefix, voice_suffix,
                     ),
                 )
-                last_voice_cycle = state.cycle_index
-            elif enabled and state.slot is schedule.Slot.FRAME and state.cycle_index != last_frame_cycle:
+            elif enabled and state.slot is schedule.Slot.FRAME:
                 _drain_and_transmit(
                     stop_event, frame_queue, frame_inter_tx_delay,
                     lambda: _try_transmit_frame(
@@ -676,9 +710,18 @@ def _run_tdma_loop(stop_event: threading.Event, voice_queue: BoundedDropOldestQu
                         frame_prefix, frame_suffix, date_format,
                     ),
                 )
-                last_frame_cycle = state.cycle_index
 
-            stop_event.wait(tick_seconds)
+            # Woken immediately by wake_event.set() (queue.put() in
+            # _handle_content_ready_event) rather than sleeping the full
+            # tick_seconds -- an item queued mid-slot is picked up on the
+            # very next iteration, not held until the next tick or (with
+            # the removed cycle_index gate above) the next cycle. Cleared
+            # right after waking so the next wait() blocks again instead
+            # of spinning. Shutdown also sets wake_event (see
+            # _handle_shutdown_signal), so this wakes just as fast as the
+            # stop_event.wait() it replaces did.
+            wake_event.wait(timeout=tick_seconds)
+            wake_event.clear()
     finally:
         if kiss_client is not None:
             kiss_client.close()
@@ -698,23 +741,28 @@ def main() -> None:
     frame_queue = BoundedDropOldestQueue(queue_max_size)
 
     stop_event = threading.Event()
+    # Set alongside stop_event on shutdown, and by _handle_content_ready_event
+    # after every successful enqueue -- lets _run_tdma_loop's tick-wait
+    # return immediately instead of sleeping up to BEACON_TICK_SECONDS.
+    wake_event = threading.Event()
 
     def _handle_shutdown_signal(signum, frame) -> None:
         logger.info("received signal %d, shutting down", signum)
         stop_event.set()
+        wake_event.set()
 
     signal.signal(signal.SIGINT, _handle_shutdown_signal)
     signal.signal(signal.SIGTERM, _handle_shutdown_signal)
 
     mqtt_thread = threading.Thread(
         target=_run_mqtt_client,
-        args=(content_ready_topic, frame_queue, voice_queue, stop_event),
+        args=(content_ready_topic, frame_queue, voice_queue, stop_event, wake_event),
         name="beacon-mqtt",
         daemon=True,
     )
     tdma_thread = threading.Thread(
         target=_run_tdma_loop,
-        args=(stop_event, voice_queue, frame_queue),
+        args=(stop_event, wake_event, voice_queue, frame_queue),
         name="beacon-tdma",
         daemon=True,
     )

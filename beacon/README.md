@@ -103,7 +103,17 @@ computed by `schedule.py`, nothing new derived) to `beacon_status`:
 `ui/`'s `/beacon` page reads these to render a live cycle timeline and
 slot countdown — see [ui/README.md](../ui/README.md#live-dashboard).
 
-**A slot's length is a floor, not a hard ceiling.** When a slot opens,
+**Content is acted on as soon as it's queued, not just at a slot's start.**
+`_handle_content_ready_event` sets a `wake_event` right after `queue.put()`
+succeeds, so `_run_tdma_loop`'s tick-wait (normally
+`BEACON_TICK_SECONDS`) returns almost immediately instead of waiting out
+the rest of that tick. Draining itself is no longer gated to "once per
+slot occurrence" either — `_drain_and_transmit` is attempted on every
+iteration the current slot matches, a cheap no-op when its queue is
+already empty. An item queued 5 seconds before a voice slot ends is still
+transmitted within that same occurrence, not deferred to the next cycle.
+
+**A slot's length is a floor, not a hard ceiling.** Whenever it runs,
 `_run_tdma_loop` drains its *entire* queue — not one item — pausing
 `BEACON_VOICE_INTER_TX_DELAY_SECONDS`/`BEACON_FRAME_INTER_TX_DELAY_SECONDS`
 (default 2s each, a placeholder pending real-hardware measurement, same
@@ -111,7 +121,9 @@ caveat as `BEACON_SLOT_LEAD_TIME_SECONDS`) between consecutive
 transmissions so PTT can release/re-key and the TNC/listener can clear
 the previous one. If draining runs past the slot's nominal end, it
 finishes the backlog before handing control back — nothing gets cut off
-mid-queue. This blocks `_maybe_control_services`, the NTP check, and the
+mid-queue, and this now applies just as much to an item that arrives with
+only seconds left in the slot as to a full backlog at the slot's start.
+This blocks `_maybe_control_services`, the NTP check, and the
 status heartbeat for the drain's duration; `BEACON_QUEUE_MAX_SIZE`
 (default 200 — sized for frame content, where one queue slot is one
 *chunk*, not one item; a real SENAPRED report has been observed
@@ -123,6 +135,14 @@ immediately, same as every other beacon setting; shrinking it live drops
 the oldest excess items right away rather than waiting for the next
 `put()`. A deliberate tradeoff —
 full-drain priority over strict timing — not an oversight.
+
+One known edge case this doesn't address: if a transmission overruns far
+enough to blow through `BEACON_SLOT_LEAD_TIME_SECONDS` before the *next*
+slot's own start, `_maybe_control_services` can miss that occurrence's
+service switch entirely — its lead-time trigger only fires on a small
+*positive* ETA, not on "we're already past due." Pre-existing (a large
+backlog at slot start could already overrun this way); now reachable from
+any point in a slot, not just its start.
 
 ## Enable / disable ("start/stop/restart")
 
