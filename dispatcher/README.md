@@ -189,7 +189,7 @@ about new or re-armed items: it subscribes to the same
 `radiobeacon/events/item.dispatched` topic published here, so disabling
 this leaves `actions` permanently idle even if it and the broker are
 both running. See [mq/README.md](../mq/README.md) for the local
-Mosquitto broker this points at by default (`bootstrap.sh` starts it
+Mosquitto broker this points at by default (`start.sh` starts it
 automatically).
 
 Each event is published to the topic `radiobeacon/events/<event_type>`

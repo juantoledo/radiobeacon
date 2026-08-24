@@ -10,4 +10,5 @@ setup_venv
 # it as a child) so SIGINT/SIGTERM sent to this script reach the
 # long-running actions loop directly — see src/actions/__main__.py.
 export PYTHONPATH=src
+guard_single_instance actions actions
 exec .venv/bin/python3 -m actions

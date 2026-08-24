@@ -1,6 +1,6 @@
-# Shared setup helpers, sourced by every package's start.sh and by
-# ./bootstrap.sh — kept in one place instead of copy-pasted per package,
-# where the copies could drift out of sync with each other.
+# Shared setup helpers, sourced by every package's start.sh and by the
+# repo root's own ./start.sh — kept in one place instead of copy-pasted
+# per package, where the copies could drift out of sync with each other.
 #
 # Not executable / no shebang: this file is only ever `source`d, never
 # run directly.
@@ -99,6 +99,82 @@ setup_venv() {
     fi
   fi
   .venv/bin/pip install -q -r requirements.txt
+}
+
+# Downloads the default Piper neural-TTS voice model (BEACON_TTS_ENGINE=
+# piper's default engine) into $1 if it isn't already there. Keeps a
+# ~60MB binary out of git (see beacon/storage/piper_voices/ in
+# .gitignore) while still giving a fresh clone working, natural-sounding
+# TTS with zero manual setup -- only this one bundled default voice is
+# auto-fetched; a custom BEACON_TTS_PIPER_MODEL pointing elsewhere is the
+# caller's own responsibility to provide. Never fails the caller: a
+# missing/failed download just leaves piper erroring at runtime (already
+# handled there -- beacon/src/beacon/voice.py logs and returns False),
+# same as before this existed.
+ensure_default_piper_voice() {
+  local voice_dir="$1"
+  local voice_name="es_MX-claude-high"
+  local model_file="$voice_dir/$voice_name.onnx"
+  local config_file="$voice_dir/$voice_name.onnx.json"
+  [ -f "$model_file" ] && [ -f "$config_file" ] && return 0
+
+  local base_url="https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/claude/high"
+  echo "beacon: downloading default piper voice model ($voice_name, ~60MB, one-time)..." >&2
+  mkdir -p "$voice_dir"
+  if ! curl -fsSL -o "$model_file.tmp" "$base_url/$voice_name.onnx?download=true" \
+      || ! curl -fsSL -o "$config_file.tmp" "$base_url/$voice_name.onnx.json?download=true"; then
+    echo "warning: could not download the default piper voice model -- BEACON_TTS_ENGINE=piper will fail to synthesize speech until $model_file is provided manually. Set BEACON_TTS_ENGINE=espeak instead if offline." >&2
+    rm -f "$model_file.tmp" "$config_file.tmp"
+    return 0
+  fi
+  mv "$model_file.tmp" "$model_file"
+  mv "$config_file.tmp" "$config_file"
+}
+
+# Shared PID-file directory for guard_single_instance/service_is_running
+# below, resolved from lib.sh's own location (not the caller's cwd) so it
+# resolves to the same repo-root run/ dir whether sourced as ../lib.sh
+# (each package's start.sh, cwd = package dir) or ./lib.sh (the repo
+# root's own start.sh / stop.sh, cwd = repo root).
+RUN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/run"
+
+# True (0) if $1's PID file names a live process that still looks like our
+# `-m $2` invocation. Always checked live (kill -0, plus a /proc/$pid/cmdline
+# match where /proc exists) rather than trusted from the file's mere
+# presence -- makes the mechanism self-healing against a stale PID file left
+# behind by a crash, kill -9, or a failure before exec was ever reached (none
+# of which get a chance to clean up after themselves; exec also discards any
+# trap the launching shell had set). The cmdline check is skipped, not
+# failed, where /proc doesn't exist (e.g. macOS) -- kill -0 alone is still a
+# real check, just weaker against the rare case of the pid being reused by
+# an unrelated process.
+service_is_running() {
+  local pid_file="$RUN_DIR/$1.pid" pid
+  [ -f "$pid_file" ] || return 1
+  pid="$(cat "$pid_file" 2>/dev/null)"
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  if [ -r "/proc/$pid/cmdline" ]; then
+    tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q -- "-m $2" || return 1
+  fi
+  return 0
+}
+
+# Refuses to continue if $1 (module $2) is already running -- called by
+# each start.sh right before exec. Prevents the exact bug class this
+# existed to fix: a second instance launched into a stack that already has
+# one running, silently fighting the first over shared state (MQTT client
+# id, in-memory queues, ...) with no record anywhere of the duplicate ever
+# existing. Otherwise records this process's pid (== the pid the following
+# exec keeps, since exec replaces the image in place rather than forking)
+# so ./stop.sh can find and stop it later, from any shell.
+guard_single_instance() {
+  if service_is_running "$1" "$2"; then
+    echo "error: $1 is already running (pid $(cat "$RUN_DIR/$1.pid")) -- stop it with ./stop.sh $1 (or ./stop.sh for the whole stack) before starting another." >&2
+    exit 1
+  fi
+  mkdir -p "$RUN_DIR"
+  echo "$$" > "$RUN_DIR/$1.pid"
 }
 
 # Runs "$@" with a wall-clock time limit, killing it if it overruns.

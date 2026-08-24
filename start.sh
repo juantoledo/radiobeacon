@@ -37,31 +37,26 @@ fi
 # data-adapters/dispatcher/actions/ui/beacon each exec into a long-running
 # foreground process (see their own start.sh) — run them in the
 # background here and wait, so Ctrl+C to this script (not each of theirs)
-# tears down all five together instead of leaving orphans behind.
-pids=()
+# tears down all five together instead of leaving orphans behind. Each of
+# them writes its own PID file via guard_single_instance (lib.sh) on the
+# way in, so cleanup below just delegates to ./stop.sh — the same stop
+# path ./stop.sh gives you manually from any other shell, rather than
+# duplicating kill logic here too.
 cleanup_done=0
 cleanup() {
   [ "$cleanup_done" -eq 1 ] && return
   cleanup_done=1
   echo
   echo "shutting down..."
-  for pid in "${pids[@]}"; do
-    kill "$pid" 2>/dev/null || true
-  done
-  wait 2>/dev/null || true
+  ./stop.sh
 }
 trap cleanup EXIT INT TERM
 
 echo "== starting data-adapters, dispatcher, actions, ui, beacon (Ctrl+C to stop all) =="
 ./data-adapters/start.sh &
-pids+=("$!")
 ./dispatcher/start.sh &
-pids+=("$!")
 ./actions/start.sh &
-pids+=("$!")
 ./ui/start.sh &
-pids+=("$!")
 ./beacon/start.sh &
-pids+=("$!")
 
 wait

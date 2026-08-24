@@ -10,4 +10,5 @@ setup_venv
 # sent to this script reach uvicorn directly — see data-adapters/start.sh
 # for the same pattern.
 export PYTHONPATH=src
+guard_single_instance ui ui
 exec .venv/bin/python3 -m ui

@@ -24,8 +24,9 @@ beacon/         TDMA transmission orchestrator — queues content, delivers it t
                 (SvxLink) or AX.25 frame (Direwolf) channels; disabled by default
 storage/        the shared SQLite database (radiobeacon.db) all packages read/write
 query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
-bootstrap.sh    one-command fresh-clone setup — see Quick start below
-lib.sh          shared .env/.venv helpers sourced by bootstrap.sh and every package's start.sh
+start.sh        one-command fresh-clone setup — see Quick start below
+stop.sh         stops running services (all, one, or --status) — see Quick start below
+lib.sh          shared .env/.venv helpers sourced by this start.sh and every package's own start.sh
 ```
 
 Each package folder has its own README with setup and usage details:
@@ -63,11 +64,11 @@ data-adapters (fetch)  →  storage/radiobeacon.db  ←  ui/ (browse + override,
 ## Quick start
 
 ```bash
-./bootstrap.sh   # fresh clone: creates .env, sets up every .venv, starts
-                 # mq + data-adapters + dispatcher + actions + ui + beacon
-                 # together (Ctrl+C stops all of them). No secrets required
-                 # — every .env.example default is safe to run as-is, and
-                 # beacon starts disabled (BEACON_ENABLED=false).
+./start.sh   # fresh clone: creates .env, sets up every .venv, starts
+             # mq + data-adapters + dispatcher + actions + ui + beacon
+             # together (Ctrl+C stops all of them). No secrets required
+             # — every .env.example default is safe to run as-is, and
+             # beacon starts disabled (BEACON_ENABLED=false).
 ./query_history.sh --help   # explore what's in radiobeacon.db
 ```
 
@@ -78,7 +79,19 @@ To run just one piece instead of everything, use that package's own
 `start.sh` directly (`./data-adapters/start.sh`, `./dispatcher/start.sh`,
 `./mq/start.sh`, `./actions/start.sh`, `./ui/start.sh`, `./beacon/start.sh`)
 — each is self-contained (creates its own `.venv` on first run) and
-independent of the others.
+independent of the others. Each also refuses to start if it's already
+running (tracked via a PID file under `run/`), so re-running one by
+mistake errors instead of silently launching an untracked duplicate.
+
+To stop things, use `./stop.sh` — it finds services by PID file, so it
+works regardless of how they were started (`./start.sh`, an
+individual `start.sh`, or a shell that's since closed):
+
+```bash
+./stop.sh                  # stop every service + mq
+./stop.sh beacon actions   # stop only the named service(s)
+./stop.sh --status         # show what's currently running, and its pid
+```
 
 ## Configuration
 

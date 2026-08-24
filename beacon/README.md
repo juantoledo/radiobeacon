@@ -147,7 +147,7 @@ any point in a slot, not just its start.
 ## Enable / disable ("start/stop/restart")
 
 Not real OS process control. `beacon` runs as a fifth long-lived process
-(started by `bootstrap.sh`, alongside `data-adapters`/`dispatcher`/
+(started by the repo root's `start.sh`, alongside `data-adapters`/`dispatcher`/
 `actions`/`ui`). The `/beacon` page's Enable/Disable button just flips the
 `BEACON_ENABLED` settings flag, which the running process re-reads every
 tick — same pattern `ACTIONS_AI_ENABLED` already uses elsewhere in this
@@ -189,16 +189,25 @@ independently start/stoppable services on the host.
 a WAV file — real and testable, via either of two selectable engines
 (`BEACON_TTS_ENGINE`):
 
-- **`espeak`** (default) — shells out to `espeak-ng` (offline, no API key,
-  standard on Debian/Ubuntu — `apt install espeak-ng`). Zero setup, but
-  sounds noticeably robotic (formant synthesis, not neural).
-- **`piper`** — shells out to `piper` (offline neural TTS, still no API
-  key). Sounds much more natural, but needs a voice model downloaded
-  separately (`BEACON_TTS_PIPER_MODEL`, a `.onnx` file with its
-  `.onnx.json` sidecar alongside it — see
-  [piper's releases](https://github.com/rhasspy/piper/releases/tag/v0.0.2)
-  for voices). Text is piped over stdin, matching piper's own CLI
-  contract.
+- **`piper`** (default) — shells out to `piper` (`piper-tts`, already in
+  `requirements.txt`; offline neural TTS, no API key). Sounds much more
+  natural than `espeak`. Needs a voice model (`BEACON_TTS_PIPER_MODEL`, a
+  `.onnx` file with its `.onnx.json` sidecar alongside it — see
+  [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices) for
+  others). Text is piped over stdin, matching piper's own CLI contract.
+  The default model (`es_MX-claude-high`, Latin American/Mexican Spanish,
+  ~60MB) isn't
+  committed to git (`beacon/storage/piper_voices/` is gitignored, same
+  treatment as `.venv/`) — `start.sh` downloads it automatically on first
+  run via `ensure_default_piper_voice` in `../lib.sh` whenever
+  `BEACON_TTS_ENGINE=piper` and `BEACON_TTS_PIPER_MODEL` is left at its
+  default path; a failed/offline download just logs a warning and leaves
+  piper erroring at synthesis time (non-fatal — same as any other
+  misconfigured `BEACON_TTS_PIPER_MODEL`) rather than blocking startup.
+- **`espeak`** — shells out to `espeak-ng` (offline, no API key, standard
+  on Debian/Ubuntu — `apt install espeak-ng`). Zero setup, offline-safe
+  fallback, but sounds noticeably robotic (formant synthesis, not
+  neural).
 
 `BEACON_VOICE_TRANSMITTER=logging` (default) just logs what it would
 play. `=svxlink` is an **unverified stub** — `SvxlinkControlTransmitter`
@@ -308,9 +317,9 @@ regulatory requirement).
 | `BEACON_AX25_KISS_HOST` / `_PORT` | `localhost` / `8001` |
 | `BEACON_AX25_CONNECT_TIMEOUT_SECONDS` | `5` |
 | `BEACON_VOICE_TRANSMITTER` | `logging` |
-| `BEACON_TTS_ENGINE` | `espeak` |
+| `BEACON_TTS_ENGINE` | `piper` |
 | `BEACON_TTS_VOICE` | `es` |
-| `BEACON_TTS_PIPER_MODEL` | `""` |
+| `BEACON_TTS_PIPER_MODEL` | `storage/piper_voices/es_MX-claude-high.onnx` |
 | `BEACON_TTS_PIPER_BINARY` | `piper` |
 | `BEACON_TTS_WAV_DIR` | `storage/beacon_tts` |
 | `BEACON_QUEUE_MAX_SIZE` | `200` |

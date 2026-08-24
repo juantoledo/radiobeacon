@@ -10,4 +10,5 @@ setup_venv
 # sent to this script reach the long-running poll loop directly — see
 # data-adapters/start.sh for the same pattern.
 export PYTHONPATH=src
+guard_single_instance dispatcher dispatcher
 exec .venv/bin/python3 -m dispatcher

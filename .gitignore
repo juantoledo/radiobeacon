@@ -1,9 +1,10 @@
 .venv/
+run/
 storage/*.db
 storage/*.db-wal
 storage/*.db-shm
-beacon/storage/piper_voices/
 beacon/storage/beacon_tts/*.wav
+beacon/storage/piper_voices/
 __pycache__/
 *.pyc
 .pytest_cache/
