@@ -6,11 +6,11 @@ this dev environment to validate against. LoggingVoiceTransmitter (the
 default) is the only voice path this repo can verify end-to-end right
 now.
 
-Two TTS engines are selectable (BEACON_TTS_ENGINE): "espeak" (default —
-robotic but zero-setup, apt install espeak-ng) and "piper" (neural,
-noticeably more natural, but requires a separately downloaded .onnx voice
-model — see https://github.com/rhasspy/piper/releases/tag/v0.0.2 for
-voices, e.g. es_ES-*.onnx + its .onnx.json sidecar in the same directory)."""
+Two TTS engines are selectable (BEACON_TTS_ENGINE): "piper" (default —
+neural, noticeably more natural; ships with a default es_MX (Latin
+American Spanish) voice model auto-downloaded by start.sh into
+beacon/storage/piper_voices/, see BEACON_TTS_PIPER_MODEL) and "espeak"
+(robotic but zero-setup, offline fallback — apt install espeak-ng)."""
 import logging
 import subprocess
 from pathlib import Path

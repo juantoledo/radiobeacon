@@ -624,8 +624,10 @@ def _run_tdma_loop(
         direwolf_name = get_setting("BEACON_DIREWOLF_SERVICE_NAME", "direwolf", conn=conn)
         wav_dir = get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
         tts_voice = get_setting("BEACON_TTS_VOICE", "es", conn=conn)
-        tts_engine = get_setting("BEACON_TTS_ENGINE", "espeak", conn=conn)
-        tts_piper_model = get_setting("BEACON_TTS_PIPER_MODEL", "", conn=conn)
+        tts_engine = get_setting("BEACON_TTS_ENGINE", "piper", conn=conn)
+        tts_piper_model = get_setting(
+            "BEACON_TTS_PIPER_MODEL", "storage/piper_voices/es_MX-claude-high.onnx", conn=conn
+        )
         tts_piper_binary = get_setting("BEACON_TTS_PIPER_BINARY", "piper", conn=conn)
 
         prepped_voice = False

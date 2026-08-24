@@ -651,12 +651,12 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "BEACON_TTS_ENGINE",
         "Beacon — Voice",
         "TTS engine",
-        "\"espeak\" (default) is offline/zero-setup but sounds robotic. "
-        "\"piper\" is offline neural TTS — much more natural, but needs a "
-        "downloaded voice model (BEACON_TTS_PIPER_MODEL).",
+        "\"piper\" (default) is offline neural TTS — much more natural, "
+        "using the voice model shipped at BEACON_TTS_PIPER_MODEL. "
+        "\"espeak\" is an offline/zero-setup fallback but sounds robotic.",
         "select",
-        "espeak",
-        choices=("espeak", "piper"),
+        "piper",
+        choices=("piper", "espeak"),
     ),
     SettingSpec(
         "BEACON_TTS_VOICE",
@@ -673,9 +673,10 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Piper voice model path",
         "Path to a downloaded piper .onnx voice model (its .onnx.json "
         "sidecar must sit alongside it). Required when "
-        "BEACON_TTS_ENGINE=piper.",
+        "BEACON_TTS_ENGINE=piper. Defaults to the es_MX (Latin American "
+        "Spanish) voice model shipped at beacon/storage/piper_voices/.",
         "text",
-        "",
+        "storage/piper_voices/es_MX-claude-high.onnx",
     ),
     SettingSpec(
         "BEACON_TTS_PIPER_BINARY",
