@@ -7,9 +7,9 @@ services:
     restart: unless-stopped
     ports:
       # Published on all host interfaces so it's reachable from the LAN
-      # (e.g. 192.168.200.145:8000). This module still has no auth of its
+      # (e.g. 192.168.200.145:8080). This module still has no auth of its
       # own (see ui/README.md) — only do this on a trusted network.
-      - "8000:8000"
+      - "8080:8080"
     environment:
       # Bind all interfaces inside the container; the ports: mapping
       # above is what actually controls host-side access — same split

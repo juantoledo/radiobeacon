@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir -r /app/ui/requirements.txt
 
 ENV PYTHONPATH=/app/ui/src
 WORKDIR /app/ui
-EXPOSE 8000
+EXPOSE 8080
 
 # storage/radiobeacon.db is not baked into the image — bind-mount it at
 # runtime (see ui/docker-compose.yml or the README's `docker run` form).
