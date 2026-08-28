@@ -91,11 +91,10 @@ framework, no build step). Paused while the tab is backgrounded, resumed
 immediately on refocus. Set `UI_DASHBOARD_REFRESH_SECONDS=0` to disable
 entirely.
 
-`/beacon`'s status section (cycle timeline, slot countdown, queue cards)
-reuses the exact same `dashboard-refresh.js` mechanism, on its own
-`UI_BEACON_REFRESH_SECONDS` (default 2 — tighter than the main
-dashboard's, since a slot countdown only reads as "live" with frequent
-updates). The timeline's segment widths come from the `/config` →
+The dashboard's own "Beacon" section (enable/disable, cycle timeline,
+slot countdown, queue cards) refreshes on that same interval — it's part
+of the same `#dashboard-content` block, not a separate page. The
+timeline's segment widths come from the `/config` →
 "Beacon — Schedule" window settings; the "now" marker and time-left
 countdown come from `beacon_status.current_cycle_elapsed_seconds`/
 `current_slot_remaining_seconds`, written every TDMA tick by
@@ -110,7 +109,7 @@ mislead in a way a stale-but-static slot name doesn't.
 This first version has no login system — it's meant to be reached only
 from `localhost` or a trusted network. `ui/start.sh` binds `0.0.0.0` by
 default (all interfaces, reachable from the LAN, e.g.
-`192.168.200.145:8000`); set `UI_HOST=127.0.0.1` to keep it loopback-only
+`192.168.200.145:8080`); set `UI_HOST=127.0.0.1` to keep it loopback-only
 instead. Since it can trigger write actions against
 `storage/radiobeacon.db`, don't expose this beyond a trusted network
 without adding auth first — this goes double for `/dev` (raw item add/
@@ -125,7 +124,7 @@ edit/delete), which you may also want to disable outright via
 
 Same pattern as every other package's `start.sh`: creates a `.venv`,
 installs `requirements.txt`, loads `../.env`, then `exec`s into Uvicorn
-(`PYTHONPATH=src python3 -m ui`). Visit `http://127.0.0.1:8000` (or
+(`PYTHONPATH=src python3 -m ui`). Visit `http://127.0.0.1:8080` (or
 whatever LAN address it's reachable at — see "No authentication" above).
 `Ctrl+C`/`SIGTERM` stops it cleanly.
 
@@ -136,12 +135,11 @@ Env vars, in `.env` at the repo root (see `.env.example`).
 | var | default |
 |---|---|
 | `UI_HOST` | `0.0.0.0` |
-| `UI_PORT` | `8000` |
+| `UI_PORT` | `8080` |
 | `UI_DB_PATH` | *(unset — uses `adapters.storage.DEFAULT_DB_PATH`, `storage/radiobeacon.db`)* |
 | `UI_PAGE_SIZE` | `50` |
 | `UI_DEFAULT_CONSUMER_NAME` | *(unset — falls back to `DISPATCHER_CONSUMER_NAME`, then `"log"`)* |
 | `UI_DASHBOARD_REFRESH_SECONDS` | `5` |
-| `UI_BEACON_REFRESH_SECONDS` | `2` |
 | `UI_DEV_TOOLS_ENABLED` | `true` |
 
 Optional MQTT publishing of override/rearm/policy-set/policy-deleted audit
@@ -163,13 +161,13 @@ or, without Compose:
 
 ```bash
 docker build -f ui/Dockerfile -t radiobeacon-ui .
-docker run --rm -p 8000:8000 \
+docker run --rm -p 8080:8080 \
   -v "$(pwd)/storage:/app/storage" \
   -e UI_HOST=0.0.0.0 -e UI_DB_PATH=/app/storage/radiobeacon.db \
   radiobeacon-ui
 ```
 
-Use `-p 127.0.0.1:8000:8000` instead if you want it reachable only from
+Use `-p 127.0.0.1:8080:8080` instead if you want it reachable only from
 `localhost`, not the LAN.
 
 The `storage/` directory is bind-mounted read-write (not a named volume,

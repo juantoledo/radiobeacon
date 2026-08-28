@@ -1,7 +1,7 @@
 import sqlite3
 
 import pytest
-from adapters.storage import get_connection
+from adapters.storage import get_connection, set_setting
 
 from ui import config
 
@@ -21,24 +21,24 @@ def test_dev_hub_returns_200(client):
     assert "Developers" in response.text
 
 
-def test_nav_shows_developers_link_when_enabled(client, monkeypatch):
-    monkeypatch.setattr(config, "UI_DEV_TOOLS_ENABLED", True)
+def test_nav_shows_developers_link_when_enabled(client, conn):
+    set_setting(conn, "UI_DEV_TOOLS_ENABLED", "true")
 
     response = client.get("/")
 
     assert 'href="/dev"' in response.text
 
 
-def test_dev_routes_404_when_disabled(client, monkeypatch):
-    monkeypatch.setattr(config, "UI_DEV_TOOLS_ENABLED", False)
+def test_dev_routes_404_when_disabled(client, conn):
+    set_setting(conn, "UI_DEV_TOOLS_ENABLED", "false")
 
     assert client.get("/dev").status_code == 404
     assert client.get("/dev/items/new").status_code == 404
     assert client.get("/dev/sql").status_code == 404
 
 
-def test_nav_hides_developers_link_when_disabled(client, monkeypatch):
-    monkeypatch.setattr(config, "UI_DEV_TOOLS_ENABLED", False)
+def test_nav_hides_developers_link_when_disabled(client, conn):
+    set_setting(conn, "UI_DEV_TOOLS_ENABLED", "false")
 
     response = client.get("/")
 

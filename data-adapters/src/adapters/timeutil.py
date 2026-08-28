@@ -4,15 +4,18 @@ README's "Dates and times: always UTC" rule. Any package needing the
 current instant, or needing to normalize a naive/local datetime received
 from an external source, should go through this module rather than
 calling datetime.now() or datetime.utcnow() directly."""
-import os
+import sqlite3
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from .storage import get_setting
+
 # For presentation only (a future UI, a human-readable log line, etc.) —
 # never for anything stored or compared internally, which stays UTC
-# unconditionally per the "always UTC" rule. Read at call time, not
-# import time, so it's overridable per-test/per-process without a
-# reimport.
+# unconditionally per the "always UTC" rule. Resolved via get_setting
+# (DB row -> env var -> default) at call time, not import time, so it's
+# editable live via /config's "Display" group with no restart needed
+# anywhere it's read.
 DISPLAY_TIMEZONE_ENV_VAR = "DISPLAY_TIMEZONE"
 DEFAULT_DISPLAY_TIMEZONE = "America/Santiago"
 
@@ -50,14 +53,20 @@ def to_utc(dt: datetime, *, assume_tz: str | None = None) -> datetime:
     return dt.replace(tzinfo=ZoneInfo(assume_tz)).astimezone(timezone.utc)
 
 
-def to_display_tz(dt: datetime) -> datetime:
+def to_display_tz(dt: datetime, *, conn: sqlite3.Connection | None = None) -> datetime:
     """Converts a UTC (or any tz-aware) datetime to this repo's
-    configured DISPLAY_TIMEZONE (env var, default "America/Santiago") —
-    for presentation only: a future UI, a human-readable log/notification
-    line, anything shown to a person. Internal storage/processing must
-    stay on utc_now()/to_utc() — never pass this function's result back
-    into anything persisted or compared against other stored datetimes;
-    see "Dates and times: always UTC" in README.md.
+    configured DISPLAY_TIMEZONE (DB row -> env var -> "America/Santiago",
+    see adapters.storage.get_setting) — for presentation only: the UI, a
+    human-readable log/notification line, anything shown to a person.
+    Internal storage/processing must stay on utc_now()/to_utc() — never
+    pass this function's result back into anything persisted or compared
+    against other stored datetimes; see "Dates and times: always UTC" in
+    README.md.
+
+    Pass conn to reuse an already-open connection instead of opening a
+    new short-lived one via get_setting's own owns_conn fallback (which
+    targets adapters.storage.DEFAULT_DB_PATH — wrong for a caller whose
+    DB path is overridden, e.g. ui's UI_DB_PATH).
 
     Requires `dt` to already be tz-aware (raises ValueError otherwise —
     an unlabeled naive datetime has no defined instant to convert; call
@@ -68,5 +77,5 @@ def to_display_tz(dt: datetime) -> datetime:
             "with to_utc() first, there's no defined instant to display "
             "otherwise"
         )
-    tz_name = os.environ.get(DISPLAY_TIMEZONE_ENV_VAR, DEFAULT_DISPLAY_TIMEZONE)
+    tz_name = get_setting(DISPLAY_TIMEZONE_ENV_VAR, DEFAULT_DISPLAY_TIMEZONE, conn=conn)
     return dt.astimezone(ZoneInfo(tz_name))

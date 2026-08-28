@@ -4,12 +4,24 @@ grouping), never imported outside this package. The actual read/write
 happens through adapters.storage.get_setting/set_setting/list_settings,
 keyed by the exact env var name each SettingSpec.key names.
 
-Scope is deliberately v1-limited: adapters (senapred, csn), actions (chunk,
-ai), dispatcher, MQ infra, and the two provider secrets. UI_* settings and
-DISPLAY_TIMEZONE are out of scope for now — ui.config stays env-only, and
-DISPLAY_TIMEZONE would naturally join a future "Display"/"General" group
-alongside UI_* if that scope is ever added."""
+Covers adapters (senapred, csn), actions (chunk, ai), dispatcher, MQ infra,
+the two provider secrets, beacon (including "Beacon — Identity", the
+operator profile — required, DB-only, see SettingSpec.env_fallback/
+required below), and the "Display"/"UI" groups (display timezone, page
+size, dev tools, refresh intervals, default consumer name).
+UI_HOST/UI_PORT/UI_DB_PATH are the only settings that stay env-only — they're
+needed before the app can even reach its own database, so they can never be
+DB-backed like everything else here (see ui.config)."""
 from dataclasses import dataclass, field
+
+from adapters.beacon_defaults import (
+    BEACON_ENABLED_DEFAULT,
+    BEACON_QUEUE_MAX_SIZE_DEFAULT,
+    BEACON_WINDOW_FRAME_SECONDS_DEFAULT,
+    BEACON_WINDOW_GUARD_SECONDS_DEFAULT,
+    BEACON_WINDOW_TOTAL_SECONDS_DEFAULT,
+    BEACON_WINDOW_VOICE_SECONDS_DEFAULT,
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +39,16 @@ class SettingSpec:
     # a numeric threshold. Rendered with extra warning styling and a
     # confirm-before-save prompt in config_group_form.html.
     advanced: bool = False
+    # env_fallback=False: DB-only, never reads an identically-named env
+    # var — used by beacon identity so a stray BEACON_CALLSIGN in the
+    # process environment can never silently take effect (see
+    # adapters.storage.get_setting's env_fallback parameter).
+    env_fallback: bool = True
+    # required=True: blank on submit rejects the WHOLE group save with a
+    # 400 and an inline error, instead of the default "blank means no
+    # change" (Reset is what clears an existing override). Used by
+    # beacon identity, whose fields aren't meaningfully optional.
+    required: bool = False
 
 
 SETTINGS_CATALOG: list[SettingSpec] = [
@@ -415,10 +437,125 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         None,
         is_secret=True,
     ),
+    # --- Display ---
+    SettingSpec(
+        "DISPLAY_TIMEZONE",
+        "Display",
+        "Display timezone",
+        "IANA timezone used to convert stored UTC datetimes for presentation "
+        "only (UI pages, beacon's transmitted {date} placeholder) — never "
+        "affects storage, which stays UTC. Applies live — no restart needed.",
+        "text",
+        "America/Santiago",
+    ),
+    # --- UI ---
+    SettingSpec(
+        "UI_PAGE_SIZE",
+        "UI",
+        "Page size",
+        "Rows per page on the items list, audit log, and Developers item browser.",
+        "int",
+        "50",
+    ),
+    SettingSpec(
+        "UI_DEV_TOOLS_ENABLED",
+        "UI",
+        "Developer tools enabled",
+        "Enables the /dev section (raw item add/edit/delete, dispatch-state "
+        "reset, a read-only SQL runner) — a larger attack surface than the "
+        "rest of this auth-less app. False 404s every /dev/* route and hides "
+        "its nav link. Applies live — no restart needed.",
+        "bool",
+        "true",
+    ),
+    SettingSpec(
+        "UI_DASHBOARD_REFRESH_SECONDS",
+        "UI",
+        "Dashboard auto-refresh interval (s)",
+        "How often the dashboard's browser-side auto-refresh re-polls. 0 disables it.",
+        "int",
+        "5",
+    ),
+    SettingSpec(
+        "UI_DEFAULT_CONSUMER_NAME",
+        "UI",
+        "Default consumer name",
+        "Consumer name prefilled on the item detail/edit rearm form. When "
+        "unset, falls back to the current effective DISPATCHER_CONSUMER_NAME.",
+        "text",
+        "log",
+    ),
+    # --- Beacon — Identity ---
+    # The operator profile a listener actually hears/reads — required,
+    # DB-only (env_fallback=False: a stray BEACON_CALLSIGN env var must
+    # never silently take effect), never falls back to a default since
+    # there isn't a sensible one. is_beacon_configured() (ui/beacon.py)
+    # sources its required-key list from this group.
+    SettingSpec(
+        "BEACON_CALLSIGN",
+        "Beacon — Identity",
+        "Callsign",
+        "The beacon's amateur radio callsign, e.g. CD3DXZ-1.",
+        "text",
+        None,
+        env_fallback=False,
+        required=True,
+    ),
+    SettingSpec(
+        "BEACON_DESCRIPTION",
+        "Beacon — Identity",
+        "Description",
+        "Longer description of the beacon/project.",
+        "text",
+        None,
+        env_fallback=False,
+        required=True,
+    ),
+    SettingSpec(
+        "BEACON_SHORT_DESCRIPTION",
+        "Beacon — Identity",
+        "Short description",
+        "One-line summary, e.g. for compact displays.",
+        "text",
+        None,
+        env_fallback=False,
+        required=True,
+    ),
+    SettingSpec(
+        "BEACON_OPERATOR_CONTACT",
+        "Beacon — Identity",
+        "Operator contact",
+        "How to reach the operator (email, etc.).",
+        "text",
+        None,
+        env_fallback=False,
+        required=True,
+    ),
+    SettingSpec(
+        "BEACON_GRID_LOCATOR",
+        "Beacon — Identity",
+        "Grid locator (QTH)",
+        "Maidenhead grid square, e.g. FF46vb.",
+        "text",
+        None,
+        env_fallback=False,
+        required=True,
+    ),
+    SettingSpec(
+        "BEACON_FREQUENCY",
+        "Beacon — Identity",
+        "Frequency",
+        "VHF transmit frequency, e.g. 144.390 MHz.",
+        "text",
+        None,
+        env_fallback=False,
+        required=True,
+    ),
     # --- Beacon — Schedule ---
     # BEACON_ENABLED also gets a first-class Enable/Disable control on
-    # /beacon itself (see ui/src/ui/routers/beacon.py) — it stays listed
-    # here too for discoverability/consistency with every other setting.
+    # the dashboard (see ui/src/ui/routers/dashboard.py) — it stays
+    # listed here too for discoverability/consistency with every other
+    # setting.
     SettingSpec(
         "BEACON_ENABLED",
         "Beacon — Schedule",
@@ -426,7 +563,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Whether the beacon TDMA loop actually transmits queued voice/frame "
         "content. Re-read every tick — no restart needed to flip it.",
         "bool",
-        "false",
+        BEACON_ENABLED_DEFAULT,
     ),
     SettingSpec(
         "BEACON_WINDOW_TOTAL_SECONDS",
@@ -434,7 +571,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Window total (s)",
         "Length of one full TDMA cycle: voice + guard + frame + idle.",
         "int",
-        "90",
+        BEACON_WINDOW_TOTAL_SECONDS_DEFAULT,
     ),
     SettingSpec(
         "BEACON_WINDOW_VOICE_SECONDS",
@@ -442,7 +579,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Voice slot (s)",
         "Seconds of the cycle reserved for voice transmission.",
         "int",
-        "60",
+        BEACON_WINDOW_VOICE_SECONDS_DEFAULT,
     ),
     SettingSpec(
         "BEACON_WINDOW_FRAME_SECONDS",
@@ -450,7 +587,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Frame slot (s)",
         "Seconds of the cycle reserved for AX.25 frame transmission.",
         "int",
-        "30",
+        BEACON_WINDOW_FRAME_SECONDS_DEFAULT,
     ),
     SettingSpec(
         "BEACON_WINDOW_GUARD_SECONDS",
@@ -460,7 +597,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "transmitter release the shared audio device before the next one "
         "opens it. 0 collapses voice straight into frame.",
         "int",
-        "0",
+        BEACON_WINDOW_GUARD_SECONDS_DEFAULT,
     ),
     SettingSpec(
         "BEACON_TICK_SECONDS",
@@ -706,7 +843,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "chunks on its own, so keep this comfortably above the largest "
         "item you expect. Applies live — no restart needed.",
         "int",
-        "200",
+        BEACON_QUEUE_MAX_SIZE_DEFAULT,
     ),
     SettingSpec(
         "BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS",
@@ -829,12 +966,37 @@ SETTINGS_CATALOG: list[SettingSpec] = [
 GROUPS: list[str] = list(dict.fromkeys(spec.group for spec in SETTINGS_CATALOG))
 
 
+def _slugify(text: str) -> str:
+    return text.lower().replace(" — ", "-").replace(" ", "-")
+
+
 def group_slug(group: str) -> str:
     """e.g. "Actions — AI" -> "actions-ai" — used in /config/{group} URLs."""
-    return group.lower().replace(" — ", "-").replace(" ", "-")
+    return _slugify(group)
 
 
 _SLUG_TO_GROUP: dict[str, str] = {group_slug(g): g for g in GROUPS}
+
+
+def category_for_group(group: str) -> str:
+    """"Beacon — Schedule" -> "Beacon", "Dispatcher" -> "Dispatcher" — the
+    " — " convention already used throughout GROUPS doubles as a
+    category/subcategory split, so /config's category layer needs no new
+    metadata on SettingSpec."""
+    return group.split(" — ")[0]
+
+
+CATEGORIES: list[str] = list(dict.fromkeys(category_for_group(g) for g in GROUPS))
+
+
+def category_slug(category: str) -> str:
+    """e.g. "Beacon" -> "beacon" — used as the /config page's jump-nav/
+    <details> section anchor id."""
+    return _slugify(category)
+
+
+def groups_for_category(category: str) -> list[str]:
+    return [g for g in GROUPS if category_for_group(g) == category]
 
 
 def specs_for_group(slug: str) -> list[SettingSpec]:

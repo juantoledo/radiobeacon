@@ -72,7 +72,7 @@ data-adapters (fetch)  →  storage/radiobeacon.db  ←  ui/ (browse + override,
 ./query_history.sh --help   # explore what's in radiobeacon.db
 ```
 
-Once running, visit `http://127.0.0.1:8000` for the [ui/](ui/README.md)
+Once running, visit `http://127.0.0.1:8080` for the [ui/](ui/README.md)
 dashboard.
 
 To run just one piece instead of everything, use that package's own

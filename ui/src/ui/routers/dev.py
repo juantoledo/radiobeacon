@@ -3,14 +3,14 @@ import sqlite3
 import uuid
 from urllib.parse import urlencode
 
+from adapters.storage import get_setting
 from adapters.timeutil import utc_now
 from dispatcher.override import reset_dispatch_state
 from dispatcher.policy import DEFAULT_POLICY_NAME, list_policies
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import RedirectResponse
 
-from .. import config, queries
-from ..config import UI_DEFAULT_CONSUMER_NAME, UI_PAGE_SIZE
+from .. import queries
 from ..db import get_db, open_readonly_connection
 from ..dev_ops import create_item, delete_item, update_item
 from ..sql_guard import InvalidQuery, ensure_select_only
@@ -19,8 +19,13 @@ from ..templating import templates
 ROW_LIMIT = 500
 
 
-def _require_dev_tools_enabled() -> None:
-    if not config.UI_DEV_TOOLS_ENABLED:
+def _require_dev_tools_enabled(conn: sqlite3.Connection = Depends(get_db)) -> None:
+    enabled = get_setting("UI_DEV_TOOLS_ENABLED", "true", conn=conn).lower() not in (
+        "false",
+        "0",
+        "",
+    )
+    if not enabled:
         raise HTTPException(status_code=404, detail="not found")
 
 
@@ -43,8 +48,9 @@ def dev_hub_page(
     page: int = 1,
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    page_size = int(get_setting("UI_PAGE_SIZE", "50", conn=conn))
     page = max(page, 1)
-    offset = (page - 1) * UI_PAGE_SIZE
+    offset = (page - 1) * page_size
     rows, total = queries.list_items(
         conn,
         source=source or None,
@@ -52,10 +58,10 @@ def dev_hub_page(
         dispatch_policy=dispatch_policy or None,
         event_key=event_key or None,
         q=q or None,
-        limit=UI_PAGE_SIZE,
+        limit=page_size,
         offset=offset,
     )
-    total_pages = max(math.ceil(total / UI_PAGE_SIZE), 1)
+    total_pages = max(math.ceil(total / page_size), 1)
 
     return templates.TemplateResponse(
         request,
@@ -155,6 +161,11 @@ def edit_item_page(
     if item is None:
         raise HTTPException(status_code=404, detail="item not found")
 
+    default_consumer = get_setting(
+        "UI_DEFAULT_CONSUMER_NAME",
+        get_setting("DISPATCHER_CONSUMER_NAME", "log", conn=conn),
+        conn=conn,
+    )
     return templates.TemplateResponse(
         request,
         "dev_item_form.html",
@@ -162,7 +173,7 @@ def edit_item_page(
             "item": item,
             "mode": "edit",
             "policies": list_policies(conn),
-            "default_consumer": UI_DEFAULT_CONSUMER_NAME,
+            "default_consumer": default_consumer,
         },
     )
 

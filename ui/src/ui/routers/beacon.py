@@ -1,36 +1,27 @@
 import sqlite3
 from datetime import datetime, timezone
 
-from adapters.storage import delete_setting, get_setting, list_beacon_status, set_setting
-from fastapi import APIRouter, Depends, Request
+from adapters.beacon_defaults import (
+    BEACON_QUEUE_MAX_SIZE_DEFAULT,
+    BEACON_WINDOW_FRAME_SECONDS_DEFAULT,
+    BEACON_WINDOW_GUARD_SECONDS_DEFAULT,
+    BEACON_WINDOW_TOTAL_SECONDS_DEFAULT,
+    BEACON_WINDOW_VOICE_SECONDS_DEFAULT,
+)
+from adapters.storage import get_setting, list_beacon_status, set_setting
+from fastapi import APIRouter, Depends
 from starlette.responses import RedirectResponse
 
-from .. import config
-from ..beacon import BEACON_FIELDS, is_beacon_configured
 from ..db import get_db
-from ..templating import templates
 
 router = APIRouter()
 
 # How stale process_heartbeat_at (written every TDMA-loop tick, default
-# BEACON_TICK_SECONDS=1) can be before the status page shows "not running"
-# — beacon/ and ui/ are separate OS processes, so this is the only signal
-# the UI has that the process isn't just idle but has actually stalled or
-# isn't running at all.
+# BEACON_TICK_SECONDS=1) can be before the dashboard's beacon section
+# shows "not running" — beacon/ and ui/ are separate OS processes, so
+# this is the only signal the UI has that the process isn't just idle
+# but has actually stalled or isn't running at all.
 _HEARTBEAT_STALE_AFTER_SECONDS = 10.0
-
-# Same literal defaults as beacon/src/beacon/__main__.py's own
-# get_setting(...) calls for these keys — duplicated here (not imported;
-# no direct import exists between ui/ and beacon/, only via
-# data-adapters, same as every other cross-package setting default
-# already duplicated in config_catalog.py) purely for presentation math
-# (the timeline's segment widths). beacon/schedule.py stays the single
-# owner of the actual scheduling logic.
-_DEFAULT_WINDOW_TOTAL_SECONDS = 90
-_DEFAULT_WINDOW_VOICE_SECONDS = 60
-_DEFAULT_WINDOW_GUARD_SECONDS = 0
-_DEFAULT_WINDOW_FRAME_SECONDS = 30
-_DEFAULT_QUEUE_MAX_SIZE = 200
 
 _SLOT_ORDER = ("voice", "guard", "frame", "idle")
 
@@ -52,17 +43,18 @@ def _queue_bar(depth: int, max_size: int) -> dict:
 
 
 def _timeline_context(conn: sqlite3.Connection, status: dict) -> dict:
-    """Presentation-only math for the /beacon cycle timeline: segment
-    widths from the configured window, plus a "now" marker position from
-    beacon's own already-computed SlotState (persisted to beacon_status
-    by _write_heartbeat). Degrades gracefully — never raises — on a
-    fresh install (no beacon_status yet) or a misconfigured window
-    (total_seconds<=0, e.g. mid-edit in /config)."""
+    """Presentation-only math for the dashboard's beacon TDMA cycle
+    timeline: segment widths from the configured window, plus a "now"
+    marker position from beacon's own already-computed SlotState
+    (persisted to beacon_status by _write_heartbeat). Degrades
+    gracefully — never raises — on a fresh install (no beacon_status
+    yet) or a misconfigured window (total_seconds<=0, e.g. mid-edit in
+    /config)."""
     try:
-        total = int(get_setting("BEACON_WINDOW_TOTAL_SECONDS", str(_DEFAULT_WINDOW_TOTAL_SECONDS), conn=conn))
-        voice = int(get_setting("BEACON_WINDOW_VOICE_SECONDS", str(_DEFAULT_WINDOW_VOICE_SECONDS), conn=conn))
-        guard = int(get_setting("BEACON_WINDOW_GUARD_SECONDS", str(_DEFAULT_WINDOW_GUARD_SECONDS), conn=conn))
-        frame = int(get_setting("BEACON_WINDOW_FRAME_SECONDS", str(_DEFAULT_WINDOW_FRAME_SECONDS), conn=conn))
+        total = int(get_setting("BEACON_WINDOW_TOTAL_SECONDS", BEACON_WINDOW_TOTAL_SECONDS_DEFAULT, conn=conn))
+        voice = int(get_setting("BEACON_WINDOW_VOICE_SECONDS", BEACON_WINDOW_VOICE_SECONDS_DEFAULT, conn=conn))
+        guard = int(get_setting("BEACON_WINDOW_GUARD_SECONDS", BEACON_WINDOW_GUARD_SECONDS_DEFAULT, conn=conn))
+        frame = int(get_setting("BEACON_WINDOW_FRAME_SECONDS", BEACON_WINDOW_FRAME_SECONDS_DEFAULT, conn=conn))
     except ValueError:
         total = 0
 
@@ -90,6 +82,10 @@ def _timeline_context(conn: sqlite3.Connection, status: dict) -> dict:
 
 
 def _status_context(conn: sqlite3.Connection) -> dict:
+    """Beacon transmission status — merged into the dashboard's own
+    template context (see routers/dashboard.py); no refresh_seconds key
+    here, the dashboard drives its own single refresh interval for the
+    whole page."""
     status = list_beacon_status(conn)
     heartbeat_at = status.get("process_heartbeat_at")
     running = False
@@ -111,9 +107,9 @@ def _status_context(conn: sqlite3.Connection) -> dict:
             remaining_display = None
 
     try:
-        queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", str(_DEFAULT_QUEUE_MAX_SIZE), conn=conn))
+        queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
     except ValueError:
-        queue_max_size = _DEFAULT_QUEUE_MAX_SIZE
+        queue_max_size = int(BEACON_QUEUE_MAX_SIZE_DEFAULT)
 
     return {
         "status": status,
@@ -124,62 +120,17 @@ def _status_context(conn: sqlite3.Connection) -> dict:
         "voice_queue": _queue_bar(int(status.get("voice_queue_depth", "0")), queue_max_size),
         "frame_queue": _queue_bar(int(status.get("frame_queue_depth", "0")), queue_max_size),
         "queue_max_size": queue_max_size,
-        "refresh_seconds": config.UI_BEACON_REFRESH_SECONDS,
         **_timeline_context(conn, status),
     }
-
-
-@router.get("/beacon")
-def beacon_setup_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
-    values = {
-        f.key: get_setting(f.key, "", conn=conn, env_fallback=False) or "" for f in BEACON_FIELDS
-    }
-    return templates.TemplateResponse(
-        request,
-        "beacon_form.html",
-        {
-            "fields": BEACON_FIELDS,
-            "values": values,
-            "configured": is_beacon_configured(conn),
-            "error": None,
-            **_status_context(conn),
-        },
-    )
 
 
 @router.post("/beacon/enable")
 def beacon_enable_action(conn: sqlite3.Connection = Depends(get_db)):
     set_setting(conn, "BEACON_ENABLED", "true", actor="ui.beacon")
-    return RedirectResponse(url="/beacon?msg=beacon+enabled", status_code=303)
+    return RedirectResponse(url="/?msg=beacon+enabled", status_code=303)
 
 
 @router.post("/beacon/disable")
 def beacon_disable_action(conn: sqlite3.Connection = Depends(get_db)):
     set_setting(conn, "BEACON_ENABLED", "false", actor="ui.beacon")
-    return RedirectResponse(url="/beacon?msg=beacon+disabled", status_code=303)
-
-
-@router.post("/beacon")
-async def beacon_setup_save_action(request: Request, conn: sqlite3.Connection = Depends(get_db)):
-    form = await request.form()
-    values = {f.key: (form.get(f.key) or "").strip() for f in BEACON_FIELDS}
-
-    missing = [f.label for f in BEACON_FIELDS if not values[f.key]]
-    if missing:
-        return templates.TemplateResponse(
-            request,
-            "beacon_form.html",
-            {
-                "fields": BEACON_FIELDS,
-                "values": values,
-                "configured": is_beacon_configured(conn),
-                "error": f"Required: {', '.join(missing)}",
-                **_status_context(conn),
-            },
-            status_code=400,
-        )
-
-    for f in BEACON_FIELDS:
-        set_setting(conn, f.key, values[f.key], actor="ui.beacon")
-
-    return RedirectResponse(url="/beacon?msg=beacon+identity+saved", status_code=303)
+    return RedirectResponse(url="/?msg=beacon+disabled", status_code=303)

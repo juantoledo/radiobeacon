@@ -10,39 +10,50 @@
   access to it can change live pipeline behavior and provider credentials.
 </p>
 
-{% for group in groups %}
-<div class="page-header">
-  <h2>{{ group.name }}</h2>
-  <a class="btn secondary" href="/config/{{ group.slug }}">Edit</a>
-</div>
-<div class="table-wrap">
-<table>
-  <thead><tr><th>Key</th><th>Value</th><th>Source</th></tr></thead>
-  <tbody>
-    {% for entry in group.rows %}
-    <tr>
-      <td class="mono">{{ entry.spec.key }}</td>
-      <td class="wrap">
-        {% if entry.spec.is_secret %}
-          {% if entry.row %}<span class="mono">{{ sentinel }}</span>{% else %}<span class="muted">(not set)</span>{% endif %}
-        {% elif entry.effective %}
-          {% if entry.row %}{{ entry.effective }}{% else %}<span class="muted">{{ entry.effective }}</span>{% endif %}
-        {% else %}
-          <span class="muted">(not set)</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if entry.row %}
-          <span class="badge badge-success">overridden in DB</span>
-        {% else %}
-          <span class="badge badge-neutral">env / default</span>
-        {% endif %}
-        {% if entry.spec.advanced %}<span class="badge badge-warn">wiring</span>{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
+<nav class="config-toc">
+  {% for category in categories %}
+  <a href="#{{ category.slug }}">{{ category.name }}</a>
+  {% endfor %}
+</nav>
+
+{% for category in categories %}
+<details id="{{ category.slug }}" class="config-category" open>
+  <summary><h2>{{ category.name }} <span class="muted">({{ category.groups|length }} group{{ 's' if category.groups|length != 1 else '' }})</span></h2></summary>
+  {% for group in category.groups %}
+  <div class="page-header">
+    <h3>{{ group.name }}</h3>
+    <a class="btn secondary" href="/config/{{ group.slug }}">Edit</a>
+  </div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Key</th><th>Value</th><th>Source</th></tr></thead>
+    <tbody>
+      {% for entry in group.rows %}
+      <tr>
+        <td class="mono">{{ entry.spec.key }}</td>
+        <td class="wrap">
+          {% if entry.spec.is_secret %}
+            {% if entry.row %}<span class="mono">{{ sentinel }}</span>{% else %}<span class="muted">(not set)</span>{% endif %}
+          {% elif entry.effective %}
+            {% if entry.row %}{{ entry.effective }}{% else %}<span class="muted">{{ entry.effective }}</span>{% endif %}
+          {% else %}
+            <span class="muted">(not set)</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if entry.row %}
+            <span class="badge badge-success">overridden in DB</span>
+          {% else %}
+            <span class="badge badge-neutral">env / default</span>
+          {% endif %}
+          {% if entry.spec.advanced %}<span class="badge badge-warn">wiring</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endfor %}
+</details>
 {% endfor %}
 {% endblock %}

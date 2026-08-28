@@ -1,6 +1,5 @@
 import argparse
 import logging
-import os
 import sys
 from pathlib import Path
 
@@ -8,7 +7,12 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "dispatcher" / "src"))
 
-from adapters.storage import DEFAULT_DB_PATH, get_connection, register_audit_event_hook  # noqa: E402
+from adapters.storage import (  # noqa: E402
+    DEFAULT_DB_PATH,
+    get_connection,
+    get_setting,
+    register_audit_event_hook,
+)
 from dispatcher.mq_publisher import publish_cloud_event  # noqa: E402
 from dispatcher.override import override_item, rearm_item  # noqa: E402
 
@@ -41,7 +45,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--consumer",
-        default=os.environ.get("DISPATCHER_CONSUMER_NAME", "log"),
+        default=get_setting("DISPATCHER_CONSUMER_NAME", "log"),
         help="Consumer to re-arm for (only relevant with --rearm)",
     )
     args = parser.parse_args()

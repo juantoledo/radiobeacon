@@ -5,26 +5,54 @@ routers)."""
 from datetime import datetime
 from pathlib import Path
 
-from adapters.storage import DEFAULT_DB_PATH, get_connection
+from adapters.storage import DEFAULT_DB_PATH, get_connection, get_setting
 from adapters.timeutil import to_display_tz, to_utc
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
+from markupsafe import Markup
 
 from . import config
 from .beacon import is_beacon_configured
+from .icons import render_icon
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-# The module itself, not its current UI_DEV_TOOLS_ENABLED value — Jinja
-# reads config.UI_DEV_TOOLS_ENABLED fresh on every render (module
-# attribute access, not a value snapshotted at import time), matching
-# dev.router's own per-request check in _require_dev_tools_enabled. Lets
-# base.html hide the Developers nav link entirely when the section is
-# disabled, rather than showing a link that 404s — and lets a test flip
-# the flag with monkeypatch and see both the router and the nav react.
-templates.env.globals["config"] = config
+
+def _icon_global(name: str, size: int = 16) -> Markup:
+    return Markup(render_icon(name, size))
+
+
+templates.env.globals["icon"] = _icon_global
+
+
+@pass_context
+def _dev_tools_enabled_global(context) -> bool:
+    """Jinja global so base.html/item_detail.html can hide dev-only UI
+    without every router passing this into its own template context.
+    Same per-request db_conn-reuse idiom as _beacon_configured_global
+    below — reads UI_DEV_TOOLS_ENABLED fresh on every render (DB row ->
+    env var -> default), matching dev.router's own per-request check in
+    _require_dev_tools_enabled, so a /config edit is reflected with no
+    restart."""
+    request = context["request"]
+    conn = getattr(request.state, "db_conn", None)
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        return get_setting("UI_DEV_TOOLS_ENABLED", "true", conn=conn).lower() not in (
+            "false",
+            "0",
+            "",
+        )
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+templates.env.globals["dev_tools_enabled"] = _dev_tools_enabled_global
 
 
 @pass_context
@@ -58,13 +86,20 @@ def _beacon_configured_global(context) -> bool:
 templates.env.globals["is_beacon_configured"] = _beacon_configured_global
 
 
-def _display_dt(value: str | None) -> str:
+@pass_context
+def _display_dt(context, value: str | None) -> str:
     """Converts a stored timestamp to DISPLAY_TIMEZONE for display only —
     never fed back into a query. Handles both Python's offset-suffixed
     ISO 8601 (fetched_at, source_date_time, audit_log-hook-written values)
     and SQLite's own datetime('now') format with no offset marker
     (items.captured_at, audit_log.recorded_at) — see root README's "Dates
-    and times: always UTC" note on that documented format difference."""
+    and times: always UTC" note on that documented format difference.
+
+    @pass_context so DISPLAY_TIMEZONE resolves live (DB row -> env var ->
+    default) via the same per-request db_conn-reuse idiom as
+    _dev_tools_enabled_global/_beacon_configured_global, honoring a
+    UI_DB_PATH override rather than get_setting's own fallback (which
+    always targets adapters.storage.DEFAULT_DB_PATH)."""
     if not value:
         return ""
     try:
@@ -73,7 +108,16 @@ def _display_dt(value: str | None) -> str:
         return value
     if dt.tzinfo is None:
         dt = to_utc(dt, assume_tz="UTC")
-    return to_display_tz(dt).strftime("%Y-%m-%d %H:%M:%S %Z")
+    request = context["request"]
+    conn = getattr(request.state, "db_conn", None)
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        return to_display_tz(dt, conn=conn).strftime("%Y-%m-%d %H:%M:%S %Z")
+    finally:
+        if owns_conn:
+            conn.close()
 
 
 templates.env.filters["display_dt"] = _display_dt

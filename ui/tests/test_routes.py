@@ -1,8 +1,6 @@
 from adapters.storage import set_setting
 from dispatcher.policy import set_policy
 
-from ui import config
-
 
 def _insert_item(conn, source, item_id, *, dispatch_policy="informational"):
     conn.execute(
@@ -15,7 +13,8 @@ def _insert_item(conn, source, item_id, *, dispatch_policy="informational"):
 
 def _configure_beacon(conn):
     """Satisfies is_beacon_configured() so override/rearm actions aren't
-    blocked — see ui.beacon.BEACON_FIELDS for the full required set."""
+    blocked — see config_catalog.py's "Beacon — Identity" group for the
+    full required set."""
     for key in (
         "BEACON_CALLSIGN",
         "BEACON_DESCRIPTION",
@@ -33,8 +32,8 @@ def test_dashboard_returns_200(client):
     assert "Dashboard" in response.text
 
 
-def test_dashboard_includes_auto_refresh_script_when_enabled(client, monkeypatch):
-    monkeypatch.setattr(config, "UI_DASHBOARD_REFRESH_SECONDS", 5)
+def test_dashboard_includes_auto_refresh_script_when_enabled(client, conn):
+    set_setting(conn, "UI_DASHBOARD_REFRESH_SECONDS", "5")
 
     response = client.get("/")
 
@@ -43,8 +42,8 @@ def test_dashboard_includes_auto_refresh_script_when_enabled(client, monkeypatch
     assert 'data-interval-ms="5000"' in response.text
 
 
-def test_dashboard_omits_auto_refresh_script_when_disabled(client, monkeypatch):
-    monkeypatch.setattr(config, "UI_DASHBOARD_REFRESH_SECONDS", 0)
+def test_dashboard_omits_auto_refresh_script_when_disabled(client, conn):
+    set_setting(conn, "UI_DASHBOARD_REFRESH_SECONDS", "0")
 
     response = client.get("/")
 

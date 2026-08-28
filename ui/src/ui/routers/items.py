@@ -2,6 +2,7 @@ import math
 import sqlite3
 from urllib.parse import urlencode
 
+from adapters.storage import get_setting
 from dispatcher.override import override_item, rearm_item
 from dispatcher.policy import list_policies
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -9,7 +10,6 @@ from starlette.responses import RedirectResponse
 
 from .. import queries
 from ..beacon import is_beacon_configured
-from ..config import UI_DEFAULT_CONSUMER_NAME, UI_PAGE_SIZE
 from ..db import get_db
 from ..templating import templates
 
@@ -32,8 +32,9 @@ def list_items_page(
     page: int = 1,
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    page_size = int(get_setting("UI_PAGE_SIZE", "50", conn=conn))
     page = max(page, 1)
-    offset = (page - 1) * UI_PAGE_SIZE
+    offset = (page - 1) * page_size
     rows, total = queries.list_items(
         conn,
         source=source or None,
@@ -41,10 +42,10 @@ def list_items_page(
         dispatch_policy=dispatch_policy or None,
         event_key=event_key or None,
         q=q or None,
-        limit=UI_PAGE_SIZE,
+        limit=page_size,
         offset=offset,
     )
-    total_pages = max(math.ceil(total / UI_PAGE_SIZE), 1)
+    total_pages = max(math.ceil(total / page_size), 1)
 
     return templates.TemplateResponse(
         request,
@@ -81,6 +82,11 @@ def item_detail_page(
     if item is None:
         raise HTTPException(status_code=404, detail="item not found")
 
+    default_consumer = get_setting(
+        "UI_DEFAULT_CONSUMER_NAME",
+        get_setting("DISPATCHER_CONSUMER_NAME", "log", conn=conn),
+        conn=conn,
+    )
     return templates.TemplateResponse(
         request,
         "item_detail.html",
@@ -89,7 +95,7 @@ def item_detail_page(
             "chunks": queries.list_item_chunks(conn, source, item_id),
             "audit_events": queries.list_audit_log_for_item(conn, source, item_id),
             "policies": list_policies(conn),
-            "default_consumer": UI_DEFAULT_CONSUMER_NAME,
+            "default_consumer": default_consumer,
         },
     )
 

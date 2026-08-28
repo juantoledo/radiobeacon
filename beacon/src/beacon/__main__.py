@@ -79,6 +79,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 
+from adapters.beacon_defaults import (  # noqa: E402
+    BEACON_ENABLED_DEFAULT,
+    BEACON_QUEUE_MAX_SIZE_DEFAULT,
+    BEACON_WINDOW_FRAME_SECONDS_DEFAULT,
+    BEACON_WINDOW_GUARD_SECONDS_DEFAULT,
+    BEACON_WINDOW_TOTAL_SECONDS_DEFAULT,
+    BEACON_WINDOW_VOICE_SECONDS_DEFAULT,
+)
 from adapters.storage import (  # noqa: E402
     DEFAULT_DB_PATH,
     get_connection,
@@ -320,10 +328,10 @@ def _load_window_config(conn) -> schedule.WindowConfig | None:
     crashing the whole process over one bad edit."""
     try:
         return schedule.WindowConfig(
-            total_seconds=int(get_setting("BEACON_WINDOW_TOTAL_SECONDS", "90", conn=conn)),
-            voice_seconds=int(get_setting("BEACON_WINDOW_VOICE_SECONDS", "60", conn=conn)),
-            frame_seconds=int(get_setting("BEACON_WINDOW_FRAME_SECONDS", "30", conn=conn)),
-            guard_seconds=int(get_setting("BEACON_WINDOW_GUARD_SECONDS", "0", conn=conn)),
+            total_seconds=int(get_setting("BEACON_WINDOW_TOTAL_SECONDS", BEACON_WINDOW_TOTAL_SECONDS_DEFAULT, conn=conn)),
+            voice_seconds=int(get_setting("BEACON_WINDOW_VOICE_SECONDS", BEACON_WINDOW_VOICE_SECONDS_DEFAULT, conn=conn)),
+            frame_seconds=int(get_setting("BEACON_WINDOW_FRAME_SECONDS", BEACON_WINDOW_FRAME_SECONDS_DEFAULT, conn=conn)),
+            guard_seconds=int(get_setting("BEACON_WINDOW_GUARD_SECONDS", BEACON_WINDOW_GUARD_SECONDS_DEFAULT, conn=conn)),
         )
     except ValueError as exc:
         logger.error("beacon: invalid window config, skipping this tick: %s", exc)
@@ -458,7 +466,7 @@ def _format_source_date_time(conn, source: str, item_id: str, date_format: str) 
     dt = content.resolve_source_date_time(conn, source, item_id)
     if dt is None:
         return ""
-    return to_display_tz(dt).strftime(date_format)
+    return to_display_tz(dt, conn=conn).strftime(date_format)
 
 
 def _try_transmit_voice(
@@ -652,7 +660,7 @@ def _run_tdma_loop(
                 stop_event.wait(tick_seconds)
                 continue
 
-            enabled = get_setting("BEACON_ENABLED", "false", conn=conn).lower() == "true"
+            enabled = get_setting("BEACON_ENABLED", BEACON_ENABLED_DEFAULT, conn=conn).lower() == "true"
             ntp_interval = int(get_setting("BEACON_NTP_CHECK_INTERVAL_SECONDS", "3600", conn=conn))
             reconcile_interval = int(
                 get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
@@ -677,7 +685,7 @@ def _run_tdma_loop(
             # in main()) so a /config edit takes effect immediately,
             # matching every other beacon setting -- see queues.py's
             # set_maxsize docstring for why this one previously didn't.
-            queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", "200", conn=conn))
+            queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
             voice_queue.set_maxsize(queue_max_size)
             frame_queue.set_maxsize(queue_max_size)
 
@@ -741,7 +749,7 @@ def main() -> None:
     content_ready_topic = get_setting(
         "BEACON_CONTENT_READY_SUBSCRIBE_TOPIC", "radiobeacon/events/item.content_ready", conn=conn
     )
-    queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", "200", conn=conn))
+    queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
     conn.close()
 
     voice_queue = BoundedDropOldestQueue(queue_max_size)

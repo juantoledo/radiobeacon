@@ -1,6 +1,7 @@
 from adapters.storage import get_setting, set_beacon_status, set_setting
 
-from ui.beacon import BEACON_FIELDS, is_beacon_configured
+from ui.beacon import is_beacon_configured
+from ui.config_catalog import specs_for_group
 from ui.routers.beacon import _format_duration, _queue_bar, _timeline_context
 
 ALL_VALUES = {
@@ -51,62 +52,48 @@ def test_is_beacon_configured_ignores_whitespace_only_value(conn):
     assert is_beacon_configured(conn) is False
 
 
-# --- GET /beacon ---
+# --- GET /config/beacon-identity ---
 
 
-def test_beacon_setup_page_returns_200(client):
-    response = client.get("/beacon")
+def test_beacon_identity_page_returns_200(client):
+    response = client.get("/config/beacon-identity")
 
     assert response.status_code == 200
-    assert "Beacon identity" in response.text
+    assert "Beacon — Identity" in response.text
 
 
-def test_beacon_setup_page_prefills_known_values(client, conn):
+def test_beacon_identity_page_prefills_known_values(client, conn):
     _configure_beacon(conn)
 
-    response = client.get("/beacon")
+    response = client.get("/config/beacon-identity")
 
     assert "CD3DXZ-1" in response.text
     assert "FF46vb" in response.text
 
 
-def test_beacon_setup_page_never_falls_back_to_env(client, conn, monkeypatch):
+def test_beacon_identity_page_never_falls_back_to_env(client, conn, monkeypatch):
     monkeypatch.setenv("BEACON_CALLSIGN", "SHOULD-NOT-APPEAR")
 
-    response = client.get("/beacon")
+    response = client.get("/config/beacon-identity")
 
     assert "SHOULD-NOT-APPEAR" not in response.text
 
 
-def test_beacon_setup_page_shows_not_configured_badge(client):
-    response = client.get("/beacon")
-
-    assert "not configured" in response.text
+# --- POST /config/beacon-identity ---
 
 
-def test_beacon_setup_page_shows_configured_badge(client, conn):
-    _configure_beacon(conn)
-
-    response = client.get("/beacon")
-
-    assert "not configured" not in response.text
-
-
-# --- POST /beacon ---
-
-
-def test_beacon_setup_save_persists_and_redirects(client, conn):
-    response = client.post("/beacon", data=ALL_VALUES, follow_redirects=False)
+def test_beacon_identity_save_persists_and_redirects(client, conn):
+    response = client.post("/config/beacon-identity", data=ALL_VALUES, follow_redirects=False)
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/beacon")
+    assert response.headers["location"].startswith("/config/beacon-identity")
     assert get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False) == "CD3DXZ-1"
 
 
-def test_beacon_setup_save_rejects_blank_required_field(client):
+def test_beacon_identity_save_rejects_blank_required_field(client):
     incomplete = dict(ALL_VALUES, BEACON_CALLSIGN="")
 
-    response = client.post("/beacon", data=incomplete, follow_redirects=False)
+    response = client.post("/config/beacon-identity", data=incomplete, follow_redirects=False)
 
     assert response.status_code == 400
     assert "Required" in response.text
@@ -115,18 +102,18 @@ def test_beacon_setup_save_rejects_blank_required_field(client):
     assert "operator@example.com" in response.text
 
 
-def test_beacon_setup_save_rejects_whitespace_only_field(client):
+def test_beacon_identity_save_rejects_whitespace_only_field(client):
     incomplete = dict(ALL_VALUES, BEACON_CALLSIGN="   ")
 
-    response = client.post("/beacon", data=incomplete, follow_redirects=False)
+    response = client.post("/config/beacon-identity", data=incomplete, follow_redirects=False)
 
     assert response.status_code == 400
 
 
-def test_beacon_setup_save_does_not_persist_on_validation_failure(client, conn):
+def test_beacon_identity_save_does_not_persist_on_validation_failure(client, conn):
     incomplete = dict(ALL_VALUES, BEACON_CALLSIGN="")
 
-    client.post("/beacon", data=incomplete, follow_redirects=False)
+    client.post("/config/beacon-identity", data=incomplete, follow_redirects=False)
 
     assert is_beacon_configured(conn) is False
 
@@ -148,19 +135,22 @@ def test_sitewide_banner_hidden_once_configured(client, conn):
     assert "Beacon identity not configured" not in response.text
 
 
-def test_sitewide_banner_hidden_on_beacon_page_itself(client):
-    """The setup page already shows its own "not configured" badge in the
-    page header — repeating the sitewide banner there would be redundant."""
-    response = client.get("/beacon")
+def test_sitewide_banner_hidden_on_beacon_identity_page_itself(client):
+    """The generic config form already asterisks/marks required fields —
+    repeating the sitewide banner there would be redundant."""
+    response = client.get("/config/beacon-identity")
 
     assert "Beacon identity not configured" not in response.text
+
+
+_NAV_BADGE = 'Config <span class="badge badge-warn">!</span>'
 
 
 def test_nav_badge_shown_when_not_configured(client):
     response = client.get("/")
 
-    assert 'href="/beacon"' in response.text
-    assert "badge-warn" in response.text
+    assert 'href="/config"' in response.text
+    assert _NAV_BADGE in response.text
 
 
 def test_nav_badge_hidden_once_configured(client, conn):
@@ -169,94 +159,94 @@ def test_nav_badge_hidden_once_configured(client, conn):
     response = client.get("/")
 
     # The nav link itself is always present; only its "!" badge goes away.
-    assert 'href="/beacon"' in response.text
-    assert "badge-warn" not in response.text
+    assert 'href="/config"' in response.text
+    assert _NAV_BADGE not in response.text
 
 
 def test_all_catalog_fields_covered_by_test_values():
-    """Guards against BEACON_FIELDS drifting out of sync with this test
-    file's ALL_VALUES fixture."""
-    assert {f.key for f in BEACON_FIELDS} == set(ALL_VALUES)
+    """Guards against the "Beacon — Identity" catalog group drifting out
+    of sync with this test file's ALL_VALUES fixture."""
+    assert {spec.key for spec in specs_for_group("beacon-identity")} == set(ALL_VALUES)
 
 
-# --- status section / enable / disable ---
+# --- dashboard beacon section / enable / disable ---
 
 
-def test_beacon_page_shows_disabled_by_default(client):
-    response = client.get("/beacon")
+def test_dashboard_shows_disabled_by_default(client):
+    response = client.get("/")
 
     assert "disabled" in response.text
 
 
-def test_beacon_page_shows_not_running_with_no_heartbeat(client):
-    response = client.get("/beacon")
+def test_dashboard_shows_not_running_with_no_heartbeat(client):
+    response = client.get("/")
 
     assert "not running" in response.text
 
 
-def test_beacon_page_shows_running_with_recent_heartbeat(client, conn):
+def test_dashboard_shows_running_with_recent_heartbeat(client, conn):
     from datetime import datetime, timezone
 
     set_beacon_status(conn, "process_heartbeat_at", datetime.now(timezone.utc).isoformat())
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
     assert "not running" not in response.text
 
 
-def test_beacon_page_shows_not_running_with_stale_heartbeat(client, conn):
+def test_dashboard_shows_not_running_with_stale_heartbeat(client, conn):
     from datetime import datetime, timedelta, timezone
 
     stale = datetime.now(timezone.utc) - timedelta(minutes=5)
     set_beacon_status(conn, "process_heartbeat_at", stale.isoformat())
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
     assert "not running" in response.text
 
 
-def test_beacon_page_shows_queue_depths(client, conn):
+def test_dashboard_shows_queue_depths(client, conn):
     set_beacon_status(conn, "voice_queue_depth", "3")
     set_beacon_status(conn, "frame_queue_depth", "1")
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
     # BEACON_QUEUE_MAX_SIZE defaults to 200 when unset.
     assert '3<span class="muted"> / 200</span>' in response.text
     assert '1<span class="muted"> / 200</span>' in response.text
 
 
-def test_beacon_page_shows_current_slot(client, conn):
+def test_dashboard_shows_current_beacon_slot(client, conn):
     set_beacon_status(conn, "current_slot", "voice")
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
     assert "voice" in response.text
 
 
-def test_beacon_page_shows_time_left_when_running(client, conn):
+def test_dashboard_shows_time_left_when_beacon_running(client, conn):
     from datetime import datetime, timezone
 
     set_beacon_status(conn, "process_heartbeat_at", datetime.now(timezone.utc).isoformat())
     set_beacon_status(conn, "current_slot_remaining_seconds", "47.6")
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
     assert "48s" in response.text
 
 
-def test_beacon_page_hides_time_left_when_not_running(client, conn):
+def test_dashboard_hides_time_left_when_beacon_not_running(client, conn):
     """A frozen countdown from a stale heartbeat would actively mislead —
     unlike the last-known slot name, which stays informative even stale."""
     set_beacon_status(conn, "current_slot_remaining_seconds", "47.6")
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
     assert "48s" not in response.text
 
 
-def test_beacon_page_shows_cycle_timeline_segments(client, conn):
-    response = client.get("/beacon")
+def test_dashboard_shows_cycle_timeline_segments(client, conn):
+    response = client.get("/")
 
     # Defaults: total=90, voice=60, guard=0 (omitted since 0s), frame=30.
     assert "voice · 60s" in response.text
@@ -264,20 +254,13 @@ def test_beacon_page_shows_cycle_timeline_segments(client, conn):
     assert "slot-guard" not in response.text
 
 
-def test_beacon_page_timeline_falls_back_when_window_misconfigured(client, conn):
+def test_dashboard_timeline_falls_back_when_window_misconfigured(client, conn):
     set_setting(conn, "BEACON_WINDOW_VOICE_SECONDS", "9999")  # exceeds total
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
     assert response.status_code == 200
     assert "Cycle timeline unavailable" in response.text
-
-
-def test_beacon_page_loads_refresh_script_with_configured_interval(client):
-    response = client.get("/beacon")
-
-    assert 'src="/static/dashboard-refresh.js"' in response.text
-    assert 'data-interval-ms="2000"' in response.text  # UI_BEACON_REFRESH_SECONDS default 2
 
 
 def test_beacon_enable_action_sets_flag_and_redirects(client, conn):
@@ -296,12 +279,12 @@ def test_beacon_disable_action_sets_flag_and_redirects(client, conn):
     assert get_setting("BEACON_ENABLED", conn=conn) == "false"
 
 
-def test_beacon_page_reflects_enabled_state(client, conn):
+def test_dashboard_reflects_beacon_enabled_state(client, conn):
     set_setting(conn, "BEACON_ENABLED", "true")
 
-    response = client.get("/beacon")
+    response = client.get("/")
 
-    assert ">Disable<" in response.text  # button offers the opposite action
+    assert ">Disable beacon<" in response.text  # button offers the opposite action
 
 
 def test_beacon_group_settings_appear_in_config(client):
