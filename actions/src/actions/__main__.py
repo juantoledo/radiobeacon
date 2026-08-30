@@ -38,8 +38,7 @@ ACTIONS_MQ_RECONNECT_BACKOFF_SECONDS = int(
 def discover_actions() -> list[type[Action]]:
     """Finds every concrete Action subclass in this package's submodules,
     so new actions (each implementing the common contract in base.py) are
-    picked up automatically without editing this file — same pattern as
-    adapters.discover_adapters()."""
+    picked up automatically without editing this file."""
     classes: list[type[Action]] = []
     for module_info in pkgutil.iter_modules(actions.__path__, actions.__name__ + "."):
         module = importlib.import_module(module_info.name)

@@ -124,9 +124,9 @@ templates.env.filters["display_dt"] = _display_dt
 
 
 def _policy_badge_class(name: str | None) -> str:
-    """Maps a dispatch_policy name to a badge color — purely presentational,
+    """Maps a transmit_policy name to a badge color — purely presentational,
     not a schema concept: "urgent"/"informational" are just the two names
-    dispatcher.policy seeds by default (see dispatcher/README.md), any
+    adapters.transmit_policy seeds by default (see beacon/README.md), any
     other name (operator-defined via the policy form) falls back to a
     neutral badge rather than guessing at its severity."""
     if not name:

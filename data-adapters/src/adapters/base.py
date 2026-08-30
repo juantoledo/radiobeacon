@@ -19,6 +19,32 @@ class SourceReading:
     error: str | None = None
 
 
+@dataclass
+class AdapterItem:
+    """Formalizes the item-side contract adapters.storage.store_reading has
+    always duck-typed via getattr(item, name, None): every generic adapter
+    (ApiAdapter, CustomAdapter) builds SourceReading.data as a list of these,
+    replacing the old bespoke per-adapter dataclasses (CsnEarthquake,
+    SenapredAlert) whose field-computation logic now lives in config (API
+    type) or the stored snippet (CUSTOM type) instead of Python code."""
+
+    id: str
+    title: str | None = None
+    contents: str | None = None
+    url: str | None = None
+    event_key: str | None = None
+    type: str | None = None
+    subtype: str | None = None
+    transmit_policy: str | None = None
+    source_date_time: datetime | None = None
+    # The original, unmapped item as returned by the source (raw JSON dict
+    # for ApiAdapter, whatever dict the snippet's own source data came from
+    # for CustomAdapter) — preserved here so `rawdata` (store_reading dumps
+    # this whole dataclass via dataclasses.asdict) keeps carrying the true
+    # raw payload alongside the mapped contract fields, not just the latter.
+    raw: dict[str, Any] | None = None
+
+
 class DataSourceAdapter(ABC):
     @abstractmethod
     def fetch(self) -> SourceReading:

@@ -61,10 +61,10 @@
       <td><input id="subtype" name="subtype" type="text" value="{{ (item.subtype if item else '') or '' }}"></td>
     </tr>
     <tr>
-      <th><label for="dispatch_policy">dispatch_policy</label></th>
+      <th><label for="transmit_policy">transmit_policy</label></th>
       <td>
-        <input id="dispatch_policy" name="dispatch_policy" type="text" list="policy-names"
-               value="{{ (item.dispatch_policy if item else suggested_dispatch_policy) or '' }}">
+        <input id="transmit_policy" name="transmit_policy" type="text" list="policy-names"
+               value="{{ (item.transmit_policy if item else suggested_transmit_policy) or '' }}">
         <datalist id="policy-names">
           {% for p in policies %}<option value="{{ p[0] }}">{% endfor %}
         </datalist>

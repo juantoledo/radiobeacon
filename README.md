@@ -19,7 +19,7 @@ dispatcher/     watches for new items and delivers them to handlers, run separat
 mq/             optional local MQTT broker (Docker), dispatcher can publish CloudEvents here
 actions/        optional MQTT-subscribed pipeline of N configurable actions (e.g. chunking)
 ui/             server-rendered ops dashboard (FastAPI) — browse/override items, manage
-                dispatch policies, view the audit log; dockerizable, localhost-only by default
+                transmit policies, view the audit log; dockerizable, localhost-only by default
 beacon/         TDMA transmission orchestrator — queues content, delivers it to voice
                 (SvxLink) or AX.25 frame (Direwolf) channels; disabled by default
 storage/        the shared SQLite database (radiobeacon.db) all packages read/write

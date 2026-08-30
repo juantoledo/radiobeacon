@@ -4,28 +4,31 @@ Content flows in from a single MQTT subscription: item.content_ready
 (actions.content_ready), published only once BOTH actions.chunk and
 actions.ai have finished reacting to the same dispatch — a race-free
 "everything that was going to happen to this item's content has happened"
-signal, replacing what used to be two independent subscriptions
-(item.chunked for frame, item.dispatched for voice) that raced against
-each other and left AX.25 frames carrying raw chunked text even when an
-AI summary existed. Since then, actions.chunk was changed to subscribe to
-actions.ai's own output rather than item.dispatched directly — so chunk
-now always runs AFTER ai has settled, chunking the AI summary when one
-exists and falling back to extracted_contents otherwise (see chunk.py) —
-meaning the `chunks` table already reflects the best available content
-by the time content_ready fires. Frame enqueue is therefore simple: one
-QueuedFrame per existing chunks row, always — no special-casing needed
-here for whether a summary existed. Voice always gets one QueuedVoice —
-its own resolve_voice_text reads items.summary directly at transmit
-time, with no fallback of its own: actions.ai now guarantees summary is
-always populated (a real summary, or extracted_contents copied in
-verbatim) by the time content_ready fires. See content.py for how the
-actual text gets resolved (lazily, at transmit time, not baked in at
-enqueue time) and formatters.py for how each channel's length limit is
-sourced: frame reuses actions.chunk's ACTIONS_CHUNK_MAX_CHARS, while voice
-has its own dedicated BEACON_VOICE_MAX_CHARS — deliberately NOT
-ACTIONS_AI_MAX_CHARS, whose job is gating whether actions.ai's LLM call
-runs at all, not bounding how much of a (now always-populated) summary
-voice actually speaks. Each channel also has its own prefix/suffix
+signal. On each item.content_ready, beacon inserts one row per existing
+`chunks` row (kind="frame") plus one row (kind="voice") into the durable
+`beacon_tx_schedule` table (adapters.storage), snapshotting the item's
+`transmit_policy` NAME. That table — not an in-memory queue — is the
+source of truth for what still has to go on air and how many more times,
+so a beacon restart no longer loses pending transmissions.
+
+How often each row is transmitted, and how far apart, is resolved live
+every cycle from `transmit_policy` via adapters.transmit_policy.policy_for
+(repeat_times / interval_seconds) — so editing a tier in `transmit_policies`
+(dispatcher/policies.sh or the ui's /policies) changes in-flight behavior
+on the next cycle. A row is deleted once sent_count >= repeat_times. Every
+transmission *attempt* counts against the budget (a run of failures still
+retires the row), mirroring the old _try_transmit_* which recorded a
+*_transmit_failed audit row and moved on.
+
+The TDMA loop handles slot kinds generically via SLOT_KINDS /
+KIND_TRANSMITTERS — adding a future repeatable slot type is a Slot value
+plus two registry entries, no loop-body change.
+
+See content.py for how the actual text gets resolved (lazily, at transmit
+time, not baked in at schedule time) and formatters.py for how each
+channel's length limit is sourced: frame reuses actions.chunk's
+ACTIONS_CHUNK_MAX_CHARS, while voice has its own dedicated
+BEACON_VOICE_MAX_CHARS. Each channel also has its own prefix/suffix
 (BEACON_FRAME_PREFIX/SUFFIX, BEACON_VOICE_PREFIX/SUFFIX) wrapping its
 content, plus voice's outer BEACON_VOICE_TEMPLATE — all three str.format
 templates, sharing one placeholder vocabulary beyond {date}: {source},
@@ -39,41 +42,25 @@ internal key) and {url} (this specific item's own link, e.g. a per-alert
 SENAPRED URL).
 
 BEACON_ENABLED (decision: soft enable/disable, not real process control —
-see beacon/README.md) is re-read every tick; enqueueing from MQTT happens
-unconditionally regardless of it (the "strict queue" framing) — only the
-dequeue+transmit step checks it. This is also what "restart from the UI"
-means in practice: the next tick just re-reads settings, no process
-kill/respawn involved.
+see beacon/README.md) is re-read every tick; scheduling rows from MQTT
+happens unconditionally regardless of it — only the transmit step checks
+it.
 
 The TDMA loop's wait between ticks is a wake_event.wait(timeout=
 tick_seconds), not a plain sleep -- _handle_content_ready_event sets
-wake_event right after a successful queue.put() (both the live MQTT path
-and _reconcile_missed_content_ready's catch-up path), so a newly-queued
-item is picked up on the very next loop iteration rather than waiting out
-the rest of BEACON_TICK_SECONDS. Draining is no longer gated to "once per
-slot occurrence" either -- _drain_and_transmit is attempted every
-iteration the current slot matches (a cheap no-op when its queue is
-empty), so an item queued midway through an already-active slot is
-transmitted within that same occurrence, not deferred to the slot's next
-cycle. Once a transmission has started it always runs to completion even
-past the slot's nominal end (see _drain_and_transmit's own docstring) --
-this wake-on-enqueue change doesn't alter that, since draining is still
-one synchronous, blocking call on this same thread; it only removes the
-before-hand delay in noticing new content, not the "floor, not a hard
-ceiling" guarantee once it starts.
+wake_event right after scheduling rows (both the live MQTT path and
+_reconcile_missed_content_ready's catch-up path), so newly-scheduled
+content is picked up on the very next loop iteration.
 
 Audio-device contention between SvxLink and Direwolf is handled by
 actively stopping/starting each service around its slot (see
-service_control.py) — CONTEXT.md's strategy #1. Deploying Direwolf/SvxLink
-themselves is out of scope for this package; both are assumed to already
-run as independently controllable services (systemd units by default) on
-the host."""
+service_control.py) — CONTEXT.md's strategy #1."""
 import logging
 import signal
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -89,15 +76,20 @@ from adapters.beacon_defaults import (  # noqa: E402
 )
 from adapters.storage import (  # noqa: E402
     DEFAULT_DB_PATH,
+    add_tx_schedule_unit,
+    count_tx_schedule_by_kind,
+    due_tx_schedule_rows,
     get_connection,
     get_setting,
+    has_pending_tx_schedule,
     record_audit_event,
+    record_tx_schedule_sent,
     set_beacon_status,
 )
 from adapters.timeutil import to_display_tz, utc_now  # noqa: E402
+from adapters.transmit_policy import policy_for  # noqa: E402
 
 from beacon import content, formatters, kiss, mq, ntp, schedule, service_control, voice  # noqa: E402
-from beacon.queues import BoundedDropOldestQueue  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -107,14 +99,14 @@ BEACON_MQ_QOS = int(get_setting("BEACON_MQ_QOS", "1"))
 BEACON_MQ_RECONNECT_BACKOFF_SECONDS = int(get_setting("BEACON_MQ_RECONNECT_BACKOFF_SECONDS", "5"))
 
 
-# --- MQTT ingest: one subscription feeding both queues ---
+# --- MQTT ingest: one subscription scheduling transmit rows ---
 
 
 def _already_enqueued(conn, event_id: str | None) -> bool:
     """Same event-id-keyed idempotency as actions/__main__.py's
-    _already_processed (and the same fix applied there) — a rearm
-    publishes a genuinely new CloudEvent for the same (source, item_id),
-    which must be enqueued again, not silently skipped."""
+    _already_processed — a rearm publishes a genuinely new CloudEvent for
+    the same (source, item_id), which must be scheduled again, not
+    silently skipped."""
     if not event_id:
         return False
     row = conn.execute(
@@ -126,71 +118,59 @@ def _already_enqueued(conn, event_id: str | None) -> bool:
 
 
 def _handle_content_ready_event(
-    conn, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
-    source: str, item_id: str, event_id: str | None,
+    conn, source: str, item_id: str, event_id: str | None,
     wake_event: threading.Event | None = None,
 ) -> None:
-    """wake_event (optional -- None from _reconcile_missed_content_ready,
-    which already runs on the TDMA thread itself and has no need to wake
-    it) is set after enqueueing so the TDMA loop's tick-wait returns
-    immediately instead of sleeping up to BEACON_TICK_SECONDS -- see
-    _run_tdma_loop."""
+    """Inserts/resets beacon_tx_schedule rows for an item: one kind="frame"
+    row per existing `chunks` row, one kind="voice" row. wake_event
+    (optional -- None from _reconcile_missed_content_ready) is set after
+    scheduling so the TDMA loop's tick-wait returns immediately."""
     if _already_enqueued(conn, event_id):
-        logger.info("beacon: content_ready event_id=%s already enqueued, skipping", event_id)
+        logger.info("beacon: content_ready event_id=%s already scheduled, skipping", event_id)
         return
 
-    frame_count = 0
+    policy_row = conn.execute(
+        "SELECT transmit_policy FROM items WHERE source = ? AND item_id = ?",
+        (source, item_id),
+    ).fetchone()
+    transmit_policy = policy_row[0] if policy_row is not None else None
+
+    max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
+
     rows = conn.execute(
         "SELECT chunk_index FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
         (source, item_id),
     ).fetchall()
     for (chunk_index,) in rows:
-        ok = frame_queue.put(content.QueuedFrame(source=source, item_id=item_id, chunk_index=chunk_index))
-        if ok:
-            frame_count += 1
-        else:
-            record_audit_event(
-                conn, event_type="beacon.queue.dropped", actor="beacon",
-                source=source, item_id=item_id, details={"queue": "frame"},
-            )
-
-    voice_ok = voice_queue.put(content.QueuedVoice(source=source, item_id=item_id))
-    if not voice_ok:
-        record_audit_event(
-            conn, event_type="beacon.queue.dropped", actor="beacon",
-            source=source, item_id=item_id, details={"queue": "voice"},
+        add_tx_schedule_unit(
+            conn, source, item_id, "frame", str(chunk_index),
+            transmit_policy, event_id, max_size=max_size,
         )
+
+    add_tx_schedule_unit(
+        conn, source, item_id, "voice", "", transmit_policy, event_id, max_size=max_size
+    )
 
     if wake_event is not None:
         wake_event.set()
 
     record_audit_event(
         conn, event_type="beacon.content_ready.enqueued", actor="beacon", source=source, item_id=item_id,
-        details={"event_id": event_id, "frame_count": frame_count, "voice_enqueued": voice_ok},
+        details={"event_id": event_id, "frame_count": len(rows), "voice_enqueued": True},
     )
 
 
-def _reconcile_missed_content_ready(conn, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue) -> int:
+def _reconcile_missed_content_ready(conn, wake_event: threading.Event | None = None) -> int:
     """Catches up on any item.content_ready publish beacon's own MQTT
-    subscription genuinely missed — regardless of why: this process
-    starting up after actions.content_ready already published a backlog
-    (confirmed live: 52 publishes in one burst, all lost, because
-    beacon's client hadn't finished connecting/subscribing yet), a broker
-    restart, or any other brief disconnect. clean_session=True (see
-    _run_mqtt_client's docstring for why) trades away broker-side
-    queueing for a disconnected client, so MQTT delivery alone can no
-    longer be trusted as the sole source of truth here.
+    subscription genuinely missed (startup race, broker restart, brief
+    disconnect — clean_session=True trades away broker-side queueing).
 
     Compares item_readiness (actions.content_ready's own durable "I
-    published for this item" record — see data-adapters/src/adapters/
-    storage.py) against beacon's own beacon.content_ready.enqueued audit
-    trail: any item whose latest content-ready publish is newer than (or
-    has no matching) enqueue gets enqueued now, via the exact same
-    _handle_content_ready_event path a live MQTT message would take
-    (event_id=None — _already_enqueued always treats a missing event_id
-    as "not yet seen", and the resulting audit row's own timestamp is
-    what closes the gap for next time, so this is naturally
-    self-correcting, no separate bookkeeping needed). Returns the count
+    published for this item" record) against beacon's own
+    beacon.content_ready.enqueued audit trail: any item whose latest
+    content-ready publish is newer than (or has no matching) enqueue gets
+    scheduled now, via the exact same _handle_content_ready_event path a
+    live MQTT message would take (event_id=None). Returns the count
     reconciled (for logging)."""
     rows = conn.execute(
         """
@@ -208,21 +188,17 @@ def _reconcile_missed_content_ready(conn, frame_queue: BoundedDropOldestQueue, v
     for source, item_id in rows:
         logger.warning(
             "beacon: reconciling missed item.content_ready for source=%s item_id=%s "
-            "(published but never enqueued — MQTT delivery was missed)",
+            "(published but never scheduled — MQTT delivery was missed)",
             source, item_id,
         )
-        _handle_content_ready_event(conn, frame_queue, voice_queue, source, item_id, None)
+        _handle_content_ready_event(conn, source, item_id, None, wake_event)
     return len(rows)
 
 
-def _make_on_message(
-    content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
-    wake_event: threading.Event,
-):
+def _make_on_message(content_ready_topic: str, wake_event: threading.Event):
     """paho-mqtt re-raises any exception an on_message callback doesn't
     catch, silently killing loop_start()'s background thread — everything
-    here is wrapped in one unconditional try/except, same as
-    actions/__main__.py's _make_on_message."""
+    here is wrapped in one unconditional try/except."""
 
     def _handler(client, userdata, message) -> None:
         try:
@@ -239,9 +215,7 @@ def _make_on_message(
             conn = get_connection(DEFAULT_DB_PATH)
             try:
                 if message.topic == content_ready_topic:
-                    _handle_content_ready_event(
-                        conn, frame_queue, voice_queue, source, item_id, event_id, wake_event
-                    )
+                    _handle_content_ready_event(conn, source, item_id, event_id, wake_event)
                 else:
                     logger.warning("beacon: message on unexpected topic %s", message.topic)
             finally:
@@ -253,32 +227,13 @@ def _make_on_message(
 
 
 def _run_mqtt_client(
-    content_ready_topic: str, frame_queue: BoundedDropOldestQueue, voice_queue: BoundedDropOldestQueue,
-    stop_event: threading.Event, wake_event: threading.Event,
+    content_ready_topic: str, stop_event: threading.Event, wake_event: threading.Event,
 ) -> None:
-    """Mirrors actions/__main__.py's _run_action_loop: loop_start() +
-    stop_event.wait() (not loop_forever(), which can't be signaled from a
-    threading.Event), stable client_id + clean_session=True, resubscribe
-    on every (re)connect.
-
-    clean_session=True (flipped from False this session, matching the
-    same fix in actions/__main__.py): MQTT SUBSCRIBE is purely additive,
-    so a persistent session across a topic rename (beacon's own
-    subscription collapsing from item.chunked + item.dispatched to a
-    single item.content_ready earlier this session) kept BOTH old
-    subscriptions alive forever alongside the new one — confirmed
-    directly in the broker's own persistence file. Harmless here only by
-    luck (_make_on_message already ignores an unrecognized topic), but
-    the same bug on actions.chunk's equivalent stale subscription caused
-    real double-transmission — fixed the same way everywhere rather than
-    relying on this one handler's defensive check. A message published
-    while beacon is briefly offline is now lost at the MQTT layer — but
-    unlike actions' own clients, beacon doesn't rely on that alone:
+    """loop_start() + stop_event.wait(), stable client_id +
+    clean_session=True, resubscribe on every (re)connect. A message
+    published while beacon is briefly offline is lost at the MQTT layer —
     _reconcile_missed_content_ready (see _run_tdma_loop) periodically
-    catches up on anything genuinely missed via item_readiness/audit_log,
-    confirmed live to close exactly this gap (52 item.content_ready
-    publishes lost to this startup race in one incident before this
-    existed)."""
+    catches up on anything genuinely missed via item_readiness/audit_log."""
     import paho.mqtt.client as mqtt_client
 
     logger.info("beacon: mqtt starting (content_ready_topic=%s)", content_ready_topic)
@@ -288,7 +243,7 @@ def _run_mqtt_client(
         client_id="radiobeacon-beacon",
         clean_session=True,
     )
-    client.on_message = _make_on_message(content_ready_topic, frame_queue, voice_queue, wake_event)
+    client.on_message = _make_on_message(content_ready_topic, wake_event)
 
     def _on_connect(client, userdata, connect_flags, reason_code, properties) -> None:
         logger.debug("beacon: mqtt connected (reason_code=%s), subscribing", reason_code)
@@ -340,11 +295,7 @@ def _load_window_config(conn) -> schedule.WindowConfig | None:
 
 def _seconds_until_slot_start(config: schedule.WindowConfig, slot: schedule.Slot, now: float) -> float:
     """How many seconds from now until `slot` (VOICE or FRAME) next
-    begins. Measured against the slot's own start boundary, not against
-    whatever slot happens to precede it — guard_seconds=0 (the default)
-    collapses voice straight into frame with no gap slot to catch a
-    transition in, so lead time must anchor to the target slot's start,
-    not to "we just left the previous slot"."""
+    begins."""
     _cycle_index, elapsed = divmod(now, config.total_seconds)
     target_start = 0.0 if slot is schedule.Slot.VOICE else float(config.voice_seconds + config.guard_seconds)
     if elapsed <= target_start:
@@ -371,30 +322,25 @@ def _switch_service(conn, service_controller: service_control.ServiceController,
 
 def _maybe_control_services(
     conn, config: schedule.WindowConfig, now: float,
-    voice_queue: BoundedDropOldestQueue, frame_queue: BoundedDropOldestQueue,
     service_controller: service_control.ServiceController, svxlink_name: str, direwolf_name: str,
     lead_time: float, prepped_voice: bool, prepped_frame: bool,
 ) -> tuple[bool, bool]:
     """Stops/starts services ahead of each content slot's start, but only
-    when there's actually something queued for it (avoids needless
-    service restarts every cycle while idle). prepped_voice/prepped_frame
-    are per-occurrence latches: set once triggered, reset back to False
-    once we're outside the lead-time window again (which happens
-    automatically once the target slot's own eta jumps forward to "next
-    cycle" territory right as we enter it) — so each occurrence triggers
+    when there's actually something scheduled for it. prepped_voice/
+    prepped_frame are per-occurrence latches so each occurrence triggers
     exactly once."""
     voice_eta = _seconds_until_slot_start(config, schedule.Slot.VOICE, now)
     frame_eta = _seconds_until_slot_start(config, schedule.Slot.FRAME, now)
 
     if voice_eta <= lead_time:
-        if not prepped_voice and voice_queue.stats().size > 0:
+        if not prepped_voice and has_pending_tx_schedule(conn, "voice"):
             _switch_service(conn, service_controller, stop_name=direwolf_name, start_name=svxlink_name)
             prepped_voice = True
     else:
         prepped_voice = False
 
     if frame_eta <= lead_time:
-        if not prepped_frame and frame_queue.stats().size > 0:
+        if not prepped_frame and has_pending_tx_schedule(conn, "frame"):
             _switch_service(conn, service_controller, stop_name=svxlink_name, start_name=direwolf_name)
             prepped_frame = True
     else:
@@ -403,19 +349,21 @@ def _maybe_control_services(
     return prepped_voice, prepped_frame
 
 
-def _write_heartbeat(conn, state: schedule.SlotState, voice_stats, frame_stats) -> None:
+def _write_heartbeat(conn, state: schedule.SlotState) -> None:
     set_beacon_status(conn, "process_heartbeat_at", utc_now().isoformat())
     set_beacon_status(conn, "current_slot", state.slot.value)
     set_beacon_status(conn, "current_cycle_index", str(state.cycle_index))
-    # Straight from SlotState, already computed every tick by schedule.py —
-    # the UI (ui/src/ui/routers/beacon.py) uses these for a live cycle
-    # timeline + countdown, rather than re-deriving scheduling logic itself.
     set_beacon_status(conn, "current_cycle_elapsed_seconds", str(round(state.elapsed_in_cycle, 1)))
     set_beacon_status(conn, "current_slot_remaining_seconds", str(round(state.remaining_in_slot, 1)))
-    set_beacon_status(conn, "voice_queue_depth", str(voice_stats.size))
-    set_beacon_status(conn, "voice_queue_dropped_total", str(voice_stats.dropped_total))
-    set_beacon_status(conn, "frame_queue_depth", str(frame_stats.size))
-    set_beacon_status(conn, "frame_queue_dropped_total", str(frame_stats.dropped_total))
+    # Kept under the historical *_queue_depth keys so ui/routers/beacon.py
+    # and its templates need no change — these are now pending
+    # beacon_tx_schedule row counts per kind. *_dropped_total stays for one
+    # release (always 0 now: add_tx_schedule_unit trims silently).
+    counts = count_tx_schedule_by_kind(conn)
+    set_beacon_status(conn, "voice_queue_depth", str(counts.get("voice", 0)))
+    set_beacon_status(conn, "voice_queue_dropped_total", "0")
+    set_beacon_status(conn, "frame_queue_depth", str(counts.get("frame", 0)))
+    set_beacon_status(conn, "frame_queue_dropped_total", "0")
 
 
 def _run_ntp_check(conn) -> None:
@@ -457,63 +405,52 @@ def _build_service_controller(conn) -> service_control.ServiceController:
 
 
 def _format_source_date_time(conn, source: str, item_id: str, date_format: str) -> str:
-    """Resolves items.source_date_time (if any), converts UTC -> the
-    configured DISPLAY_TIMEZONE (this is presentation, exactly the case
-    adapters.timeutil.to_display_tz exists for), and renders it via
-    date_format (BEACON_DATE_FORMAT). "" (not None) when there's no
-    source_date_time -- so a template referencing {date} renders a blank
-    rather than crashing."""
     dt = content.resolve_source_date_time(conn, source, item_id)
     if dt is None:
         return ""
     return to_display_tz(dt, conn=conn).strftime(date_format)
 
 
-def _try_transmit_voice(
-    conn, voice_queue: BoundedDropOldestQueue, voice_transmitter: voice.VoiceTransmitter,
-    callsign: str | None, template: str, max_chars: int, wav_dir: str, tts_voice: str, date_format: str,
-    tts_engine: str = "espeak", tts_piper_model: str = "", tts_piper_binary: str = "piper",
-    prefix: str = "", suffix: str = "",
-) -> None:
-    queued = voice_queue.get_nowait()
-    if queued is None:
-        return
+def _transmit_voice_unit(conn, row: dict, ctx: dict) -> bool:
+    """Transmits one voice unit. Returns whether the transmission was
+    actually sent (a skip — no callsign, no resolvable text — returns
+    False but still counts as an attempt at the caller, same as the old
+    _try_transmit_voice)."""
+    source, item_id = row["source"], row["item_id"]
+    callsign = ctx["callsign"]
     if not callsign:
         logger.warning("beacon: BEACON_CALLSIGN not configured, skipping voice transmission")
         record_audit_event(
             conn, event_type="beacon.voice.skipped_no_callsign", actor="beacon",
-            source=queued.source, item_id=queued.item_id,
+            source=source, item_id=item_id,
         )
-        return
+        return False
 
-    text = content.resolve_voice_text(conn, queued.source, queued.item_id)
+    text = content.resolve_voice_text(conn, source, item_id)
     if not text:
-        logger.info(
-            "beacon: source=%s item_id=%s has no resolvable voice text, skipping",
-            queued.source, queued.item_id,
-        )
-        return
+        logger.info("beacon: source=%s item_id=%s has no resolvable voice text, skipping", source, item_id)
+        return False
 
-    date_str = _format_source_date_time(conn, queued.source, queued.item_id, date_format)
-    item_fields = content.resolve_item_fields(conn, queued.source, queued.item_id)
-    item_fields.update(source=queued.source, item_id=queued.item_id)
+    date_str = _format_source_date_time(conn, source, item_id, ctx["date_format"])
+    item_fields = content.resolve_item_fields(conn, source, item_id)
+    item_fields.update(source=source, item_id=item_id)
     formatted = formatters.format_voice(
-        text, callsign=callsign, template=template, max_chars=max_chars,
-        prefix=prefix, suffix=suffix, date=date_str, **item_fields,
+        text, callsign=callsign, template=ctx["voice_template"], max_chars=ctx["voice_max_chars"],
+        prefix=ctx["voice_prefix"], suffix=ctx["voice_suffix"], date=date_str, **item_fields,
     )
-    wav_path = Path(wav_dir) / f"{queued.source}-{queued.item_id}-{int(time.time())}.wav"
+    wav_path = Path(ctx["wav_dir"]) / f"{source}-{item_id}-{int(time.time())}.wav"
     if not voice.synthesize_speech(
-        formatted.text, out_path=wav_path, voice=tts_voice,
-        engine=tts_engine, piper_model=tts_piper_model, piper_binary=tts_piper_binary,
+        formatted.text, out_path=wav_path, voice=ctx["tts_voice"],
+        engine=ctx["tts_engine"], piper_model=ctx["tts_piper_model"], piper_binary=ctx["tts_piper_binary"],
     ):
         record_audit_event(
             conn, event_type="beacon.voice.transmit_failed", actor="beacon",
-            source=queued.source, item_id=queued.item_id, details={"reason": "tts_failed"},
+            source=source, item_id=item_id, details={"reason": "tts_failed"},
         )
-        return
+        return False
 
     try:
-        sent = voice_transmitter.transmit(text=formatted.text, wav_path=wav_path)
+        sent = ctx["voice_transmitter"].transmit(text=formatted.text, wav_path=wav_path)
     except Exception:
         logger.error("beacon: voice transmitter raised", exc_info=True)
         sent = False
@@ -521,101 +458,138 @@ def _try_transmit_voice(
     if sent:
         record_audit_event(
             conn, event_type="beacon.voice.transmitted", actor="beacon",
-            source=queued.source, item_id=queued.item_id, details={"truncated": formatted.truncated},
+            source=source, item_id=item_id, details={"truncated": formatted.truncated},
         )
         set_beacon_status(conn, "last_voice_transmit_at", utc_now().isoformat())
     else:
         record_audit_event(
             conn, event_type="beacon.voice.transmit_failed", actor="beacon",
-            source=queued.source, item_id=queued.item_id,
+            source=source, item_id=item_id,
         )
+    return sent
 
 
-def _try_transmit_frame(
-    conn, frame_queue: BoundedDropOldestQueue, kiss_client: kiss.KissTcpClient,
-    callsign: str | None, destination: str, prefix: str = "", suffix: str = "", date_format: str = "",
-) -> None:
-    queued = frame_queue.get_nowait()
-    if queued is None:
-        return
+def _transmit_frame_unit(conn, row: dict, ctx: dict) -> bool:
+    source, item_id = row["source"], row["item_id"]
+    chunk_index = int(row["ref"])
+    callsign = ctx["callsign"]
     if not callsign:
         logger.warning("beacon: BEACON_CALLSIGN not configured, skipping frame transmission")
         record_audit_event(
             conn, event_type="beacon.frame.skipped_no_callsign", actor="beacon",
-            source=queued.source, item_id=queued.item_id,
+            source=source, item_id=item_id,
         )
-        return
+        return False
 
-    chunk_text = content.resolve_frame_text(conn, queued.source, queued.item_id, queued.chunk_index)
+    chunk_text = content.resolve_frame_text(conn, source, item_id, chunk_index)
     if chunk_text is None:
         logger.info(
             "beacon: source=%s item_id=%s chunk_index=%s no longer resolvable, skipping",
-            queued.source, queued.item_id, queued.chunk_index,
+            source, item_id, chunk_index,
         )
-        return
+        return False
 
-    date_str = _format_source_date_time(conn, queued.source, queued.item_id, date_format)
-    item_fields = content.resolve_item_fields(conn, queued.source, queued.item_id)
-    item_fields.update(source=queued.source, item_id=queued.item_id)
+    date_str = _format_source_date_time(conn, source, item_id, ctx["date_format"])
+    item_fields = content.resolve_item_fields(conn, source, item_id)
+    item_fields.update(source=source, item_id=item_id)
     try:
         formatted = formatters.format_frame(
-            chunk_text, callsign=callsign, destination=destination,
-            prefix=prefix, suffix=suffix, date=date_str, **item_fields,
+            chunk_text, callsign=callsign, destination=ctx["destination"],
+            prefix=ctx["frame_prefix"], suffix=ctx["frame_suffix"], date=date_str, **item_fields,
         )
     except formatters.FrameTooLongError as exc:
         logger.error("beacon: frame too long, dropping: %s", exc)
         record_audit_event(
             conn, event_type="beacon.frame.dropped_too_long", actor="beacon",
-            source=queued.source, item_id=queued.item_id, details={"error": str(exc)},
+            source=source, item_id=item_id, details={"error": str(exc)},
         )
-        return
+        return False
 
-    sent = kiss_client.send_ui_frame(
-        source_callsign=callsign, dest_callsign=destination, info=formatted.content.encode("utf-8")
+    sent = ctx["kiss_client"].send_ui_frame(
+        source_callsign=callsign, dest_callsign=ctx["destination"], info=formatted.content.encode("utf-8")
     )
     if sent:
         record_audit_event(
             conn, event_type="beacon.frame.transmitted", actor="beacon",
-            source=queued.source, item_id=queued.item_id,
+            source=source, item_id=item_id,
             details={"tnc2": formatted.tnc2, "byte_length": formatted.byte_length},
         )
         set_beacon_status(conn, "last_frame_transmit_at", utc_now().isoformat())
     else:
         record_audit_event(
             conn, event_type="beacon.frame.transmit_failed", actor="beacon",
-            source=queued.source, item_id=queued.item_id,
+            source=source, item_id=item_id,
         )
+    return sent
 
 
-def _drain_and_transmit(
-    stop_event: threading.Event, queue: BoundedDropOldestQueue, inter_tx_delay: float, transmit_once,
+# kind -> (conn, row, ctx) -> bool. Adding a future repeatable TDMA slot
+# type is a new Slot value, a SLOT_KINDS entry, and one entry here.
+KIND_TRANSMITTERS = {
+    "voice": _transmit_voice_unit,
+    "frame": _transmit_frame_unit,
+}
+SLOT_KINDS = {
+    schedule.Slot.VOICE: ("voice",),
+    schedule.Slot.FRAME: ("frame",),
+}
+
+
+def _drain_kind(
+    stop_event: threading.Event, conn, kind: str, now_dt: datetime, ctx: dict, inter_tx_delay: float,
 ) -> int:
-    """Repeatedly calls transmit_once() (each call already does one
-    queue.get_nowait() + transmit + audit-record) while `queue` is
-    non-empty, instead of attempting only once per slot occurrence — the
-    slot's nominal length is a floor, not a hard ceiling: this keeps
-    going even past it until the backlog is empty, pausing
-    inter_tx_delay between transmissions (not before the first, not
-    after the last) so real hardware gets a beat for PTT release/re-key
-    between them. See beacon/README.md's TDMA section for the tradeoff
-    this implies (blocks _maybe_control_services/NTP/heartbeat for the
-    drain's duration — bounded by BEACON_QUEUE_MAX_SIZE).
-    stop_event.is_set() is checked so shutdown stays responsive instead
-    of forcing a full backlog to flush first. Returns the number of
-    items attempted (mainly for tests)."""
+    """Transmits every currently-due beacon_tx_schedule row of `kind`,
+    decrementing the repeat budget and retiring rows at
+    sent_count >= repeat_times. Due-ness and retirement are computed live
+    against each row's current policy (adapters.transmit_policy.policy_for),
+    so editing a tier stays reactive. Every attempt counts. Returns the
+    number of rows transmitted (mainly for tests)."""
+    transmit = KIND_TRANSMITTERS[kind]
     attempted = 0
-    while not stop_event.is_set() and queue.stats().size > 0:
+    for row in due_tx_schedule_rows(conn, kind):
+        if stop_event.is_set():
+            break
+        policy = policy_for(conn, row["transmit_policy"])
+
+        if row["sent_count"] >= policy.repeat_times:
+            record_tx_schedule_sent(
+                conn, row["source"], row["item_id"], kind, row["ref"],
+                now_iso=now_dt.isoformat(), retire=True,
+            )
+            _record_retired(conn, row, kind)
+            continue
+
+        if row["last_transmitted_at"] is not None:
+            due_at = datetime.fromisoformat(row["last_transmitted_at"]) + timedelta(
+                seconds=policy.interval_seconds
+            )
+            if now_dt < due_at:
+                continue  # not due yet under the current policy
+
         if attempted > 0:
             stop_event.wait(inter_tx_delay)
-        transmit_once()
+        transmit(conn, row, ctx)
         attempted += 1
+
+        retire = row["sent_count"] + 1 >= policy.repeat_times
+        record_tx_schedule_sent(
+            conn, row["source"], row["item_id"], kind, row["ref"],
+            now_iso=now_dt.isoformat(), retire=retire,
+        )
+        if retire:
+            _record_retired(conn, row, kind)
     return attempted
 
 
-def _run_tdma_loop(
-    stop_event: threading.Event, wake_event: threading.Event,
-    voice_queue: BoundedDropOldestQueue, frame_queue: BoundedDropOldestQueue,
-) -> None:
+def _record_retired(conn, row: dict, kind: str) -> None:
+    record_audit_event(
+        conn, event_type="beacon.tx.retired", actor="beacon",
+        source=row["source"], item_id=row["item_id"],
+        details={"kind": kind, "ref": row["ref"], "sent_count": row["sent_count"] + 1},
+    )
+
+
+def _run_tdma_loop(stop_event: threading.Event, wake_event: threading.Event) -> None:
     conn = get_connection(DEFAULT_DB_PATH)
     kiss_client: kiss.KissTcpClient | None = None
     try:
@@ -630,21 +604,10 @@ def _run_tdma_loop(
         service_controller = _build_service_controller(conn)
         svxlink_name = get_setting("BEACON_SVXLINK_SERVICE_NAME", "svxlink", conn=conn)
         direwolf_name = get_setting("BEACON_DIREWOLF_SERVICE_NAME", "direwolf", conn=conn)
-        wav_dir = get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
-        tts_voice = get_setting("BEACON_TTS_VOICE", "es", conn=conn)
-        tts_engine = get_setting("BEACON_TTS_ENGINE", "piper", conn=conn)
-        tts_piper_model = get_setting(
-            "BEACON_TTS_PIPER_MODEL", "storage/piper_voices/es_MX-claude-high.onnx", conn=conn
-        )
-        tts_piper_binary = get_setting("BEACON_TTS_PIPER_BINARY", "piper", conn=conn)
 
         prepped_voice = False
         prepped_frame = False
         last_ntp_check_at = 0.0
-        # 0.0 so the very first tick immediately reconciles -- this is
-        # what closes the startup race where actions.content_ready can
-        # publish a backlog before beacon's own MQTT client has finished
-        # connecting/subscribing (see _reconcile_missed_content_ready).
         last_reconcile_at = 0.0
 
         logger.info(
@@ -654,6 +617,7 @@ def _run_tdma_loop(
 
         while not stop_event.is_set():
             now = time.time()
+            now_dt = utc_now()
             tick_seconds = int(get_setting("BEACON_TICK_SECONDS", "1", conn=conn))
             window = _load_window_config(conn)
             if window is None:
@@ -666,75 +630,52 @@ def _run_tdma_loop(
                 get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
             )
             lead_time = float(get_setting("BEACON_SLOT_LEAD_TIME_SECONDS", "2", conn=conn))
-            callsign = get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False)
-            voice_template = get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}. {date}", conn=conn)
-            voice_max_chars = int(get_setting("BEACON_VOICE_MAX_CHARS", "500", conn=conn))
-            date_format = get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn)
+            ctx = {
+                "callsign": get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False),
+                "voice_template": get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}. {date}", conn=conn),
+                "voice_max_chars": int(get_setting("BEACON_VOICE_MAX_CHARS", "500", conn=conn)),
+                "date_format": get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn),
+                "destination": get_setting("BEACON_FRAME_DESTINATION", "NFO", conn=conn),
+                "frame_prefix": get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or "",
+                "frame_suffix": get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or "",
+                "voice_prefix": get_setting("BEACON_VOICE_PREFIX", "", conn=conn) or "",
+                "voice_suffix": get_setting("BEACON_VOICE_SUFFIX", "", conn=conn) or "",
+                "wav_dir": get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn),
+                "tts_voice": get_setting("BEACON_TTS_VOICE", "es", conn=conn),
+                "tts_engine": get_setting("BEACON_TTS_ENGINE", "piper", conn=conn),
+                "tts_piper_model": get_setting(
+                    "BEACON_TTS_PIPER_MODEL", "storage/piper_voices/es_MX-claude-high.onnx", conn=conn
+                ),
+                "tts_piper_binary": get_setting("BEACON_TTS_PIPER_BINARY", "piper", conn=conn),
+                "voice_transmitter": voice_transmitter,
+                "kiss_client": kiss_client,
+            }
             voice_inter_tx_delay = float(get_setting("BEACON_VOICE_INTER_TX_DELAY_SECONDS", "2", conn=conn))
             frame_inter_tx_delay = float(get_setting("BEACON_FRAME_INTER_TX_DELAY_SECONDS", "2", conn=conn))
-            # Moved here from the one-time setup block above (same bug
-            # class as BEACON_QUEUE_MAX_SIZE, see set_maxsize's docstring)
-            # -- a /config edit now takes effect on the very next tick.
-            destination = get_setting("BEACON_FRAME_DESTINATION", "NFO", conn=conn)
-            frame_prefix = get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or ""
-            frame_suffix = get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or ""
-            voice_prefix = get_setting("BEACON_VOICE_PREFIX", "", conn=conn) or ""
-            voice_suffix = get_setting("BEACON_VOICE_SUFFIX", "", conn=conn) or ""
-
-            # Re-applied every tick (not just read once at process start
-            # in main()) so a /config edit takes effect immediately,
-            # matching every other beacon setting -- see queues.py's
-            # set_maxsize docstring for why this one previously didn't.
-            queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
-            voice_queue.set_maxsize(queue_max_size)
-            frame_queue.set_maxsize(queue_max_size)
+            inter_tx_delay = {"voice": voice_inter_tx_delay, "frame": frame_inter_tx_delay}
 
             if now - last_ntp_check_at >= ntp_interval:
                 _run_ntp_check(conn)
                 last_ntp_check_at = now
 
             if now - last_reconcile_at >= reconcile_interval:
-                reconciled = _reconcile_missed_content_ready(conn, frame_queue, voice_queue)
+                reconciled = _reconcile_missed_content_ready(conn)
                 if reconciled:
                     logger.warning("beacon: reconciled %d missed item.content_ready publish(es)", reconciled)
                 last_reconcile_at = now
 
             state = schedule.current_slot(window, now)
-            _write_heartbeat(conn, state, voice_queue.stats(), frame_queue.stats())
+            _write_heartbeat(conn, state)
 
             prepped_voice, prepped_frame = _maybe_control_services(
-                conn, window, now, voice_queue, frame_queue, service_controller,
+                conn, window, now, service_controller,
                 svxlink_name, direwolf_name, lead_time, prepped_voice, prepped_frame,
             )
 
-            if enabled and state.slot is schedule.Slot.VOICE:
-                _drain_and_transmit(
-                    stop_event, voice_queue, voice_inter_tx_delay,
-                    lambda: _try_transmit_voice(
-                        conn, voice_queue, voice_transmitter, callsign, voice_template,
-                        voice_max_chars, wav_dir, tts_voice, date_format,
-                        tts_engine, tts_piper_model, tts_piper_binary,
-                        voice_prefix, voice_suffix,
-                    ),
-                )
-            elif enabled and state.slot is schedule.Slot.FRAME:
-                _drain_and_transmit(
-                    stop_event, frame_queue, frame_inter_tx_delay,
-                    lambda: _try_transmit_frame(
-                        conn, frame_queue, kiss_client, callsign, destination,
-                        frame_prefix, frame_suffix, date_format,
-                    ),
-                )
+            if enabled:
+                for kind in SLOT_KINDS.get(state.slot, ()):
+                    _drain_kind(stop_event, conn, kind, now_dt, ctx, inter_tx_delay[kind])
 
-            # Woken immediately by wake_event.set() (queue.put() in
-            # _handle_content_ready_event) rather than sleeping the full
-            # tick_seconds -- an item queued mid-slot is picked up on the
-            # very next iteration, not held until the next tick or (with
-            # the removed cycle_index gate above) the next cycle. Cleared
-            # right after waking so the next wait() blocks again instead
-            # of spinning. Shutdown also sets wake_event (see
-            # _handle_shutdown_signal), so this wakes just as fast as the
-            # stop_event.wait() it replaces did.
             wake_event.wait(timeout=tick_seconds)
             wake_event.clear()
     finally:
@@ -749,16 +690,9 @@ def main() -> None:
     content_ready_topic = get_setting(
         "BEACON_CONTENT_READY_SUBSCRIBE_TOPIC", "radiobeacon/events/item.content_ready", conn=conn
     )
-    queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
     conn.close()
 
-    voice_queue = BoundedDropOldestQueue(queue_max_size)
-    frame_queue = BoundedDropOldestQueue(queue_max_size)
-
     stop_event = threading.Event()
-    # Set alongside stop_event on shutdown, and by _handle_content_ready_event
-    # after every successful enqueue -- lets _run_tdma_loop's tick-wait
-    # return immediately instead of sleeping up to BEACON_TICK_SECONDS.
     wake_event = threading.Event()
 
     def _handle_shutdown_signal(signum, frame) -> None:
@@ -771,13 +705,13 @@ def main() -> None:
 
     mqtt_thread = threading.Thread(
         target=_run_mqtt_client,
-        args=(content_ready_topic, frame_queue, voice_queue, stop_event, wake_event),
+        args=(content_ready_topic, stop_event, wake_event),
         name="beacon-mqtt",
         daemon=True,
     )
     tdma_thread = threading.Thread(
         target=_run_tdma_loop,
-        args=(stop_event, wake_event, voice_queue, frame_queue),
+        args=(stop_event, wake_event),
         name="beacon-tdma",
         daemon=True,
     )

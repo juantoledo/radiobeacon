@@ -8,9 +8,8 @@ sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 sys.path.insert(0, str(REPO_ROOT / "dispatcher" / "src"))
 
 from adapters.storage import DEFAULT_DB_PATH, get_connection, register_audit_event_hook  # noqa: E402
+from adapters.transmit_policy import delete_policy, list_policies, set_policy  # noqa: E402
 from dispatcher.mq_publisher import publish_cloud_event  # noqa: E402
-from dispatcher.policy import delete_policy, list_policies, set_policy  # noqa: E402
-from dispatcher.watcher import _ensure_tables  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +20,9 @@ register_audit_event_hook(publish_cloud_event)
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Manage dispatcher's dispatch_policies table — the centralized "
-        "repeat_times/interval_seconds config that items' dispatch_policy column "
-        "references by name."
+        description="Manage the transmit_policies table — the centralized "
+        "repeat_times/interval_seconds config that items' transmit_policy column "
+        "references by name (applied by beacon/ when putting an item on air)."
     )
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to radiobeacon.db")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -41,8 +40,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    conn = get_connection(args.db)
-    _ensure_tables(conn)  # creates + seeds dispatch_policies if this is the first run
+    conn = get_connection(args.db)  # creates + seeds transmit_policies on first run
 
     if args.command == "list":
         rows = list_policies(conn)

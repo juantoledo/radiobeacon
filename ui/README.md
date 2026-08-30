@@ -1,8 +1,8 @@
 # ui
 
 A server-rendered ops dashboard for `storage/radiobeacon.db` — browse and
-search items, override an item's `dispatch_policy`, re-arm a retired item
-for redelivery, manage `dispatch_policies`, and view the `audit_log`.
+search items, override an item's `transmit_policy`, re-arm a retired item
+for redelivery, manage `transmit_policies`, and view the `audit_log`.
 FastAPI + Jinja2 (plain server-rendered HTML, no JS framework) + Uvicorn.
 The first HTTP-serving code in this repo.
 
@@ -13,7 +13,7 @@ that shared file. Item overrides and rearms go through the exact same
 functions `dispatcher/override_item.py` uses
 (`dispatcher.override.override_item`/`rearm_item`), and policy management
 goes through the same functions `dispatcher/policies.py` uses
-(`dispatcher.policy.set_policy`/`delete_policy`) — so an action taken here
+(`adapters.transmit_policy.set_policy`/`delete_policy`) — so an action taken here
 is indistinguishable, from the rest of the system's point of view, from
 one taken via those CLIs (same `audit_log` events, same optional MQTT
 publish).
@@ -23,9 +23,9 @@ publish).
 | Page | Purpose |
 |---|---|
 | `/` | Dashboard: item/audit/policy counts, recent items, recent audit events |
-| `/items` | Browse/search items — filter by source, type, dispatch_policy, event_key, or free-text search |
+| `/items` | Browse/search items — filter by source, type, transmit_policy, event_key, or free-text search |
 | `/items/{source}/{item_id}` | Item detail: full contents, chunks, per-item audit trail, override + rearm forms |
-| `/policies` | List/create/edit/delete named `dispatch_policies` |
+| `/policies` | List/create/edit/delete named `transmit_policies` |
 | `/audit` | Global audit log, filterable by event_type/source/item_id |
 | `/dev` | Developers: raw item add/edit/delete, dispatcher-state reset, read-only SQL runner — see below |
 
@@ -39,7 +39,7 @@ is plain server-rendered HTML with zero JS.
 
 A deliberately separate, more dangerous surface than the rest of the app
 — everywhere else, `items` is treated as immutable after insert except
-`summary`/`dispatch_policy` (see
+`summary`/`transmit_policy` (see
 `adapters.storage.store_reading`'s docstring); `/dev` is an explicit,
 clearly-labeled escape hatch around that for debugging/backfilling, not a
 replacement for the normal adapter → dispatcher pipeline.

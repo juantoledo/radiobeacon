@@ -65,8 +65,10 @@ consumers, same as anything else on the broker.)
 New actions are picked up automatically: `discover_actions()`
 (`src/actions/__main__.py`) scans this package's submodules for concrete
 `Action` subclasses, so adding one just means adding a new submodule — no
-registration step (same pattern as
-[data-adapters](../data-adapters/README.md#adapters)' `discover_adapters()`).
+registration step. (data-adapters used the same filesystem-scan pattern
+once, but has since moved to config-driven adapter instances — see
+[data-adapters/README.md](../data-adapters/README.md#adapter-plugin-types) —
+so the two packages' discovery mechanisms have diverged.)
 
 ## content_ready — not an action, a correlator
 

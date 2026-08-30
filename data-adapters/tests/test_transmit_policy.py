@@ -2,10 +2,10 @@ import sqlite3
 
 import pytest
 
-from dispatcher.policy import (
+from adapters.storage import _ensure_transmit_policies_seeded
+from adapters.transmit_policy import (
     RepeatPolicy,
     delete_policy,
-    ensure_seeded,
     get_policy,
     list_policies,
     policy_for,
@@ -16,7 +16,7 @@ from dispatcher.policy import (
 def _make_conn():
     conn = sqlite3.connect(":memory:")
     conn.execute(
-        "CREATE TABLE dispatch_policies ("
+        "CREATE TABLE transmit_policies ("
         "name TEXT PRIMARY KEY, repeat_times INTEGER NOT NULL, "
         "interval_seconds INTEGER NOT NULL, description TEXT)"
     )
@@ -29,47 +29,47 @@ def conn():
 
 
 def test_ensure_seeded_inserts_defaults_into_empty_table(conn):
-    ensure_seeded(conn)
+    _ensure_transmit_policies_seeded(conn)
 
     assert get_policy(conn, "urgent") == RepeatPolicy(repeat_times=5, interval_seconds=60)
     assert get_policy(conn, "informational") == RepeatPolicy(repeat_times=1, interval_seconds=0)
 
 
 def test_ensure_seeded_is_idempotent_and_does_not_clobber_edits(conn):
-    ensure_seeded(conn)
+    _ensure_transmit_policies_seeded(conn)
     set_policy(conn, "urgent", repeat_times=9, interval_seconds=15)
 
-    ensure_seeded(conn)  # table is non-empty now — must not re-seed over the edit
+    _ensure_transmit_policies_seeded(conn)  # table non-empty now — must not re-seed
 
     assert get_policy(conn, "urgent") == RepeatPolicy(repeat_times=9, interval_seconds=15)
 
 
 def test_get_policy_returns_none_for_unknown_name(conn):
-    ensure_seeded(conn)
+    _ensure_transmit_policies_seeded(conn)
 
     assert get_policy(conn, "does-not-exist") is None
 
 
 def test_policy_for_resolves_known_name(conn):
-    ensure_seeded(conn)
+    _ensure_transmit_policies_seeded(conn)
 
     assert policy_for(conn, "urgent") == RepeatPolicy(repeat_times=5, interval_seconds=60)
 
 
 def test_policy_for_falls_back_to_informational_for_none(conn):
-    ensure_seeded(conn)
+    _ensure_transmit_policies_seeded(conn)
 
     assert policy_for(conn, None) == get_policy(conn, "informational")
 
 
 def test_policy_for_falls_back_to_informational_for_unknown_name(conn):
-    ensure_seeded(conn)
+    _ensure_transmit_policies_seeded(conn)
 
     assert policy_for(conn, "something-that-does-not-exist") == get_policy(conn, "informational")
 
 
 def test_policy_for_falls_back_to_hardcoded_default_if_informational_missing(conn):
-    ensure_seeded(conn)
+    _ensure_transmit_policies_seeded(conn)
     delete_policy(conn, "informational")
 
     assert policy_for(conn, None) == RepeatPolicy(repeat_times=1, interval_seconds=0)
@@ -121,7 +121,7 @@ def test_set_policy_records_audit_event(conn):
         "SELECT event_type, actor, details FROM audit_log WHERE event_type = 'policy.set'"
     ).fetchone()
     assert row[0] == "policy.set"
-    assert row[1] == "dispatcher.policy"
+    assert row[1] == "adapters.transmit_policy"
     assert '"name": "custom"' in row[2]
 
 

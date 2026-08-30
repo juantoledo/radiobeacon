@@ -7,18 +7,18 @@ def test_config_list_page_returns_200_and_lists_every_group(client):
     response = client.get("/config")
 
     assert response.status_code == 200
-    assert "Adapters — CSN" in response.text
+    assert "Dispatcher" in response.text
     assert "Actions — AI" in response.text
     assert "Secrets" in response.text
-    assert "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD" in response.text
+    assert "DISPATCHER_INTERVAL_SECONDS" in response.text
 
 
 def test_config_group_edit_page_returns_200_and_prefills_known_values(client):
-    response = client.get("/config/adapters-csn")
+    response = client.get("/config/dispatcher")
 
     assert response.status_code == 200
-    assert "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD" in response.text
-    assert "4.5" in response.text  # catalog default shown when no override exists
+    assert "DISPATCHER_INTERVAL_SECONDS" in response.text
+    assert "5" in response.text  # catalog default shown when no override exists
 
 
 def test_config_group_edit_page_404s_for_unknown_group(client):
@@ -29,14 +29,14 @@ def test_config_group_edit_page_404s_for_unknown_group(client):
 
 def test_config_group_save_persists_and_redirects(client, conn):
     response = client.post(
-        "/config/adapters-csn",
-        data={"ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD": "5.0"},
+        "/config/dispatcher",
+        data={"DISPATCHER_INTERVAL_SECONDS": "15"},
         follow_redirects=False,
     )
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/config/adapters-csn?msg=")
-    assert get_setting("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", conn=conn) == "5.0"
+    assert response.headers["location"].startswith("/config/dispatcher?msg=")
+    assert get_setting("DISPATCHER_INTERVAL_SECONDS", conn=conn) == "15"
 
 
 def test_config_group_save_ignores_blank_fields(client, conn):
@@ -46,41 +46,41 @@ def test_config_group_save_ignores_blank_fields(client, conn):
     field to resolve to "" instead of falling through to its env var or
     catalog default."""
     client.post(
-        "/config/adapters-csn",
+        "/config/dispatcher",
         data={
-            "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD": "5.0",
-            "ADAPTERS_CSN_API_URL": "",
+            "DISPATCHER_INTERVAL_SECONDS": "15",
+            "DISPATCHER_CONSUMER_NAME": "",
         },
         follow_redirects=False,
     )
 
     rows = list_settings(conn)
-    assert [row[0] for row in rows] == ["ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD"]
+    assert [row[0] for row in rows] == ["DISPATCHER_INTERVAL_SECONDS"]
 
 
 def test_config_group_edit_page_shows_env_value_when_no_db_override(client, monkeypatch):
-    monkeypatch.setenv("ADAPTERS_CSN_API_URL", "https://example.test/sismos")
+    monkeypatch.setenv("DISPATCHER_CONSUMER_NAME", "custom-consumer")
 
-    response = client.get("/config/adapters-csn")
+    response = client.get("/config/dispatcher")
 
-    assert "https://example.test/sismos" in response.text
+    assert "custom-consumer" in response.text
 
 
 def test_config_setting_reset_deletes_override_and_redirects(client, conn):
-    set_setting(conn, "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", "5.0")
+    set_setting(conn, "DISPATCHER_INTERVAL_SECONDS", "15")
 
     response = client.post(
-        "/config/adapters-csn/ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD/reset",
+        "/config/dispatcher/DISPATCHER_INTERVAL_SECONDS/reset",
         follow_redirects=False,
     )
 
     assert response.status_code == 303
-    assert get_setting("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", conn=conn) is None
+    assert get_setting("DISPATCHER_INTERVAL_SECONDS", conn=conn) is None
 
 
 def test_config_setting_reset_404s_for_key_not_in_group(client):
     response = client.post(
-        "/config/adapters-csn/ANTHROPIC_API_KEY/reset", follow_redirects=False
+        "/config/dispatcher/ANTHROPIC_API_KEY/reset", follow_redirects=False
     )
 
     assert response.status_code == 404

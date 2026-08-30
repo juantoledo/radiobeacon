@@ -35,15 +35,10 @@ _PUBLISHED_EVENT_TYPES = frozenset(
     }
 )
 
-# item.dispatched fires once per delivery attempt, including every
-# redelivery under a repeat policy (e.g. "urgent": 5x over ~4 minutes) —
-# but a redelivery is the same logical dispatch happening again, not a new
-# occurrence, and downstream MQTT subscribers (e.g. actions/) have no way
-# to tell the difference without this filter. audit_log still records
-# every redelivery — this only trims what reaches MQTT. item.dispatch_failed
-# is deliberately NOT filtered: each failed attempt is its own noteworthy
-# event, unlike a successful redelivery which just repeats the last one.
-_FIRST_DELIVERY_ONLY_EVENT_TYPES = frozenset({"item.dispatched"})
+# The dispatcher now delivers each item exactly once (the "put it on air N
+# times, spaced out" concern moved to beacon/'s beacon_tx_schedule), so
+# item.dispatched fires once per item and every one is published — no
+# first-delivery filter needed any more.
 
 _client = None
 
@@ -119,10 +114,6 @@ def publish_cloud_event(
     already committed by the time this runs."""
     if event_type not in _PUBLISHED_EVENT_TYPES:
         return
-
-    if event_type in _FIRST_DELIVERY_ONLY_EVENT_TYPES:
-        if (details or {}).get("times_triggered") != 1:
-            return
 
     host = get_setting("DISPATCHER_MQ_HOST")
     if not host:

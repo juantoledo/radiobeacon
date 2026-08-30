@@ -1,5 +1,5 @@
 from adapters.storage import record_audit_event
-from dispatcher.policy import set_policy
+from adapters.transmit_policy import set_policy
 
 from ui import queries
 
@@ -14,13 +14,13 @@ def _insert_item(
     url="http://example.test",
     event_key=None,
     type_=None,
-    dispatch_policy=None,
+    transmit_policy=None,
     source_date_time=None,
 ):
     conn.execute(
         "INSERT INTO items "
         "(source, item_id, extracted_title, extracted_contents, url, "
-        "event_key, type, dispatch_policy, source_date_time, fetched_at, rawdata) "
+        "event_key, type, transmit_policy, source_date_time, fetched_at, rawdata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), '{}')",
         (
             source,
@@ -30,7 +30,7 @@ def _insert_item(
             url,
             event_key,
             type_,
-            dispatch_policy,
+            transmit_policy,
             source_date_time,
         ),
     )
@@ -88,12 +88,12 @@ def test_list_items_filters_by_source(conn):
     assert rows[0]["source"] == "csn"
 
 
-def test_list_items_filters_by_type_and_dispatch_policy_combined(conn):
-    _insert_item(conn, "csn", "1", type_="Alerta", dispatch_policy="urgent")
-    _insert_item(conn, "csn", "2", type_="Alerta", dispatch_policy="informational")
-    _insert_item(conn, "csn", "3", type_="Evento", dispatch_policy="urgent")
+def test_list_items_filters_by_type_and_transmit_policy_combined(conn):
+    _insert_item(conn, "csn", "1", type_="Alerta", transmit_policy="urgent")
+    _insert_item(conn, "csn", "2", type_="Alerta", transmit_policy="informational")
+    _insert_item(conn, "csn", "3", type_="Evento", transmit_policy="urgent")
 
-    rows, total = queries.list_items(conn, type_="Alerta", dispatch_policy="urgent")
+    rows, total = queries.list_items(conn, type_="Alerta", transmit_policy="urgent")
 
     assert total == 1
     assert rows[0]["item_id"] == "1"

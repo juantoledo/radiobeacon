@@ -1,7 +1,7 @@
 """Write operations backing the Developers section (/dev) — direct
 add/edit/delete on `items`. Deliberately separate from queries.py
 (read-only) and from adapters.storage/dispatcher.* (which enforce the
-"items are immutable after insert, except summary/dispatch_policy"
+"items are immutable after insert, except summary/transmit_policy"
 contract — see adapters.storage.store_reading's docstring): the
 Developers section is an explicit, clearly-labeled escape hatch around
 that contract for debugging/backfilling, not a replacement for it. Every
@@ -27,7 +27,7 @@ def create_item(
     event_key: str | None,
     type_: str | None,
     subtype: str | None,
-    dispatch_policy: str | None,
+    transmit_policy: str | None,
     source_date_time: str | None,
 ) -> None:
     """Raises sqlite3.IntegrityError if (source, item_id) already exists
@@ -40,7 +40,7 @@ def create_item(
     conn.execute(
         "INSERT INTO items "
         "(source, item_id, extracted_title, extracted_contents, summary, url, "
-        "event_key, type, subtype, dispatch_policy, source_date_time, "
+        "event_key, type, subtype, transmit_policy, source_date_time, "
         "fetched_at, rawdata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
@@ -53,7 +53,7 @@ def create_item(
             event_key,
             type_,
             subtype,
-            dispatch_policy,
+            transmit_policy,
             source_date_time,
             utc_now().isoformat(),
             json.dumps({"_created_via": "ui.dev"}),
@@ -66,7 +66,7 @@ def create_item(
         actor="ui.dev",
         source=source,
         item_id=item_id,
-        details={"dispatch_policy": dispatch_policy},
+        details={"transmit_policy": transmit_policy},
     )
 
 
@@ -82,7 +82,7 @@ def update_item(
     event_key: str | None,
     type_: str | None,
     subtype: str | None,
-    dispatch_policy: str | None,
+    transmit_policy: str | None,
     source_date_time: str | None,
 ) -> bool:
     """Full-row edit of every field except the primary key (source,
@@ -94,7 +94,7 @@ def update_item(
     recreate it instead. Returns whether a row was actually updated."""
     cursor = conn.execute(
         "UPDATE items SET extracted_title = ?, extracted_contents = ?, summary = ?, "
-        "url = ?, event_key = ?, type = ?, subtype = ?, dispatch_policy = ?, "
+        "url = ?, event_key = ?, type = ?, subtype = ?, transmit_policy = ?, "
         "source_date_time = ? WHERE source = ? AND item_id = ?",
         (
             extracted_title,
@@ -104,7 +104,7 @@ def update_item(
             event_key,
             type_,
             subtype,
-            dispatch_policy,
+            transmit_policy,
             source_date_time,
             source,
             item_id,
@@ -118,27 +118,30 @@ def update_item(
             actor="ui.dev",
             source=source,
             item_id=item_id,
-            details={"dispatch_policy": dispatch_policy},
+            details={"transmit_policy": transmit_policy},
         )
     return cursor.rowcount > 0
 
 
 def delete_item(conn: sqlite3.Connection, source: str, item_id: str) -> bool:
-    """Deletes an item and its operational rows — chunks and
-    trigger_dispatches/item_policy_state (all scoped to this item, and
-    meaningless once it's gone). audit_log rows are deliberately kept as
-    a historical record of what happened while the item existed, and
-    this deletion itself is recorded as one more audit_log row — even
-    though the items row it references is now gone, audit_log's
-    source/item_id are plain text columns, not a SQL FOREIGN KEY, so a
-    historical reference to a since-deleted item is fine. Returns
-    whether an items row was actually deleted."""
+    """Deletes an item and its operational rows — chunks,
+    trigger_dispatches/item_policy_state, and beacon_tx_schedule (all
+    scoped to this item, and meaningless once it's gone). audit_log rows
+    are deliberately kept as a historical record of what happened while
+    the item existed, and this deletion itself is recorded as one more
+    audit_log row — even though the items row it references is now gone,
+    audit_log's source/item_id are plain text columns, not a SQL FOREIGN
+    KEY, so a historical reference to a since-deleted item is fine.
+    Returns whether an items row was actually deleted."""
     conn.execute("DELETE FROM chunks WHERE source = ? AND item_id = ?", (source, item_id))
     conn.execute(
         "DELETE FROM trigger_dispatches WHERE source = ? AND item_id = ?", (source, item_id)
     )
     conn.execute(
         "DELETE FROM item_policy_state WHERE source = ? AND item_id = ?", (source, item_id)
+    )
+    conn.execute(
+        "DELETE FROM beacon_tx_schedule WHERE source = ? AND item_id = ?", (source, item_id)
     )
     cursor = conn.execute("DELETE FROM items WHERE source = ? AND item_id = ?", (source, item_id))
     conn.commit()

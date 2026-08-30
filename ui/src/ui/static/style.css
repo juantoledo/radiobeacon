@@ -638,6 +638,69 @@ label { display: block; font-size: var(--text-xs); font-weight: 600; color: var(
 .form-table input[readonly] { background: var(--bg-subtle); color: var(--fg-muted); }
 .form-table tr.advanced-row { background: var(--warn-bg); }
 
+/* --- Key-value / mapping row tables (/adapters form: headers, query
+   params, field mapping) --- */
+
+.kv-table td { padding: 0.35rem 0.4rem; vertical-align: middle; }
+.kv-table input[type="text"], .kv-table select {
+  width: 100%;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-size: var(--text-sm);
+  font-family: inherit;
+}
+.kv-table .field-name { font-weight: 600; white-space: nowrap; }
+.kv-table .remove-row-btn { padding: 0.25rem 0.55rem; font-size: var(--text-xs); }
+
+.field-name-chip, .use-items-path-btn {
+  padding: 0.25rem 0.6rem;
+  font-size: var(--text-xs);
+  margin: 0 0.35rem 0.35rem 0;
+}
+.field-name-chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* Row-mapped indicator (/adapters field mapping table): a quiet dot next
+   to the field name, filled in once a strategy other than "(none)" is
+   selected — lets an operator scan the 7-row table and tell what's left
+   to configure at a glance. */
+.mapped-indicator {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+tr.mapping-row-mapped .mapped-indicator { background: var(--success); border-color: var(--success); }
+tr.mapping-row-mapped { background: color-mix(in srgb, var(--success) 6%, transparent); }
+
+/* Drag-and-drop for field names (chips + the sample JSON's own keys) onto
+   a mapping/date/dispatch input — see the "Drag-and-drop + click-to-insert"
+   script block in adapter_form.html. */
+.draggable-field { cursor: grab; }
+.draggable-field:active { cursor: grabbing; }
+.json-key.draggable-field {
+  text-decoration: underline dotted;
+  text-underline-offset: 0.15em;
+}
+.json-key.draggable-field:hover { color: var(--accent); }
+.field-drop-target.drop-target-active {
+  outline: 2px dashed var(--accent);
+  outline-offset: 1px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+}
+
+/* Syntax coloring for the sample-response JSON preview
+   (ui.routers.adapters._json_to_html). */
+.json-preview .json-key { color: var(--info); }
+.json-preview .json-string { color: var(--success); }
+.json-preview .json-number { color: var(--warn); }
+.json-preview .json-bool, .json-preview .json-null { color: var(--accent); font-style: italic; }
+
 /* --- Buttons --- */
 
 button, input[type="submit"], .btn {

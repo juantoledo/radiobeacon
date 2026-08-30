@@ -1,15 +1,14 @@
 """Redirects adapters.storage.DEFAULT_DB_PATH to a throwaway location for
 the whole test session, before any test module is collected.
 
-Several adapters (csn, senapred) resolve their module-level config via
-get_setting() at import time, and get_setting() falls back to opening its
-own connection against DEFAULT_DB_PATH whenever a caller doesn't pass
-conn/db_path explicitly (as an import-time module-level read can't).
-Without this redirect, merely importing/collecting those modules would
-open a connection against the real repo's storage/radiobeacon.db — this
-runs at conftest import time (before any fixture, before any test module
-in this directory is collected) so it's in place before that first import
-happens."""
+get_connection() (called below, and by anything that opens a connection
+without an explicit db_path) creates and seeds the full schema — including
+the adapter_instances table's csn/senapred rows — against whatever
+DEFAULT_DB_PATH currently points at. Without this redirect, merely
+importing adapters.storage would risk touching the real repo's
+storage/radiobeacon.db — this runs at conftest import time (before any
+fixture, before any test module in this directory is collected) so it's in
+place before that first open happens."""
 import tempfile
 from pathlib import Path
 

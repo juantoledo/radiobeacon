@@ -77,11 +77,13 @@ def test_disabled_by_default_when_host_unset_is_a_no_op(monkeypatch):
         actor="log_handler",
         source="senapred",
         item_id="1",
-        details={"consumer": "log", "times_triggered": 1},
+        details={"consumer": "log"},
     )
 
 
-def test_publish_skips_item_dispatched_redelivery(monkeypatch):
+def test_publish_publishes_every_item_dispatched(monkeypatch):
+    """The dispatcher delivers each item once now — there is no
+    first-delivery filter any more, every item.dispatched is published."""
     fake = _install_fake_client(monkeypatch)
     monkeypatch.setenv("DISPATCHER_MQ_HOST", "localhost")
 
@@ -90,23 +92,7 @@ def test_publish_skips_item_dispatched_redelivery(monkeypatch):
         actor="log_handler",
         source="senapred",
         item_id="1",
-        details={"consumer": "log", "times_triggered": 2},
-    )
-
-    assert fake.published == []
-    assert fake.connected is None  # a filtered event never even connects
-
-
-def test_publish_publishes_item_dispatched_first_delivery(monkeypatch):
-    fake = _install_fake_client(monkeypatch)
-    monkeypatch.setenv("DISPATCHER_MQ_HOST", "localhost")
-
-    publish_cloud_event(
-        event_type="item.dispatched",
-        actor="log_handler",
-        source="senapred",
-        item_id="1",
-        details={"consumer": "log", "times_triggered": 1},
+        details={"consumer": "log"},
     )
 
     assert len(fake.published) == 1
@@ -121,7 +107,7 @@ def test_publish_does_not_filter_dispatch_failed(monkeypatch):
         actor="log_handler",
         source="senapred",
         item_id="1",
-        details={"consumer": "log", "error": "boom"},  # no times_triggered key at all
+        details={"consumer": "log", "error": "boom"},
     )
 
     assert len(fake.published) == 1
@@ -140,7 +126,7 @@ def test_publish_uses_settings_row_over_env_var_for_host(monkeypatch):
         actor="log_handler",
         source="senapred",
         item_id="1",
-        details={"consumer": "log", "times_triggered": 1},
+        details={"consumer": "log"},
     )
 
     assert fake.connected == ("db-host", 1883)
@@ -155,7 +141,7 @@ def test_publish_builds_cloud_event_envelope_with_expected_fields(monkeypatch):
         actor="log_handler",
         source="senapred",
         item_id="1",
-        details={"consumer": "log", "dispatch_policy": "urgent", "times_triggered": 1},
+        details={"consumer": "log", "transmit_policy": "urgent"},
     )
 
     assert len(fake.published) == 1
@@ -172,7 +158,7 @@ def test_publish_builds_cloud_event_envelope_with_expected_fields(monkeypatch):
         "source": "senapred",
         "item_id": "1",
         "actor": "log_handler",
-        "details": {"consumer": "log", "dispatch_policy": "urgent", "times_triggered": 1},
+        "details": {"consumer": "log", "transmit_policy": "urgent"},
     }
 
 

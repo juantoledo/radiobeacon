@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from adapters.storage import get_setting
 from adapters.timeutil import utc_now
 from dispatcher.override import reset_dispatch_state
-from dispatcher.policy import DEFAULT_POLICY_NAME, list_policies
+from adapters.transmit_policy import DEFAULT_POLICY_NAME, list_policies
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import RedirectResponse
 
@@ -42,7 +42,7 @@ def dev_hub_page(
     request: Request,
     source: str | None = None,
     type: str | None = None,
-    dispatch_policy: str | None = None,
+    transmit_policy: str | None = None,
     event_key: str | None = None,
     q: str | None = None,
     page: int = 1,
@@ -55,7 +55,7 @@ def dev_hub_page(
         conn,
         source=source or None,
         type_=type or None,
-        dispatch_policy=dispatch_policy or None,
+        transmit_policy=transmit_policy or None,
         event_key=event_key or None,
         q=q or None,
         limit=page_size,
@@ -76,7 +76,7 @@ def dev_hub_page(
             "filters": {
                 "source": source or "",
                 "type": type or "",
-                "dispatch_policy": dispatch_policy or "",
+                "transmit_policy": transmit_policy or "",
                 "event_key": event_key or "",
                 "q": q or "",
             },
@@ -103,13 +103,13 @@ def new_item_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
             # fresh uuid4 is collision-safe against anything already in
             # `items` without having to query for one.
             "suggested_item_id": str(uuid.uuid4()),
-            # "Now" and the same default an item with no dispatch_policy
-            # would resolve to anyway (dispatcher.policy.policy_for) —
+            # "Now" and the same default an item with no transmit_policy
+            # would resolve to anyway (adapters.transmit_policy.policy_for) —
             # both are just pre-filled, editable suggestions, not
             # requirements: a hand-created item usually represents
             # something happening now, on the least surprising policy.
             "suggested_source_date_time": utc_now().isoformat(),
-            "suggested_dispatch_policy": DEFAULT_POLICY_NAME,
+            "suggested_transmit_policy": DEFAULT_POLICY_NAME,
         },
     )
 
@@ -125,7 +125,7 @@ def create_item_action(
     event_key: str = Form(""),
     type: str = Form(""),
     subtype: str = Form(""),
-    dispatch_policy: str = Form(""),
+    transmit_policy: str = Form(""),
     source_date_time: str = Form(""),
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -141,7 +141,7 @@ def create_item_action(
             event_key=event_key or None,
             type_=type or None,
             subtype=subtype or None,
-            dispatch_policy=dispatch_policy or None,
+            transmit_policy=transmit_policy or None,
             source_date_time=source_date_time or None,
         )
     except sqlite3.IntegrityError:
@@ -189,7 +189,7 @@ def update_item_action(
     event_key: str = Form(""),
     type: str = Form(""),
     subtype: str = Form(""),
-    dispatch_policy: str = Form(""),
+    transmit_policy: str = Form(""),
     source_date_time: str = Form(""),
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -204,7 +204,7 @@ def update_item_action(
         event_key=event_key or None,
         type_=type or None,
         subtype=subtype or None,
-        dispatch_policy=dispatch_policy or None,
+        transmit_policy=transmit_policy or None,
         source_date_time=source_date_time or None,
     )
     msg = "item updated" if updated else "item not found — nothing updated"

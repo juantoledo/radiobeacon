@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Adapters{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Data adapters</h1><a class="btn" href="/adapters/new">+ New adapter</a></div>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Source</th><th>Type</th><th>Enabled</th><th>Interval (s)</th><th>Last fetch</th><th></th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><strong>{{ row.source }}</strong></td>
+      <td><span class="badge badge-neutral">{{ row.adapter_type }}</span></td>
+      <td>{% if row.enabled %}<span class="badge badge-success">on</span>{% else %}<span class="badge badge-neutral">off</span>{% endif %}</td>
+      <td>{{ row.interval_seconds or "default" }}</td>
+      <td class="muted">
+        {% if row.last_fetch %}
+          {% if row.last_fetch.ok %}<span class="badge badge-success">ok</span>{% else %}<span class="badge badge-warn">error</span>{% endif %}
+          {{ row.last_fetch.recorded_at }}
+        {% else %}
+          never
+        {% endif %}
+      </td>
+      <td class="actions-cell">
+        <a class="btn secondary" href="/adapters/{{ row.source }}/edit">Edit</a>
+        <form method="post" action="/adapters/{{ row.source }}/delete">
+          <button type="submit" class="danger">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="6">No adapters configured.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

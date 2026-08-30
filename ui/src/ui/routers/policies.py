@@ -1,7 +1,7 @@
 import sqlite3
 from urllib.parse import urlencode
 
-from dispatcher.policy import delete_policy, list_policies, set_policy
+from adapters.transmit_policy import delete_policy, list_policies, set_policy
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import RedirectResponse
 

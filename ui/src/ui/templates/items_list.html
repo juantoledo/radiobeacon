@@ -17,10 +17,10 @@
     <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
     {% endfor %}
   </select>
-  <select name="dispatch_policy">
+  <select name="transmit_policy">
     <option value="">Any policy</option>
     {% for p in policies %}
-    <option value="{{ p[0] }}" {% if filters.dispatch_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
+    <option value="{{ p[0] }}" {% if filters.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
     {% endfor %}
   </select>
   <input type="text" name="event_key" placeholder="event_key" value="{{ filters.event_key }}">
@@ -38,7 +38,7 @@
       <td class="mono"><a href="/items/{{ item.source }}/{{ item.item_id }}">{{ item.item_id }}</a></td>
       <td class="wrap">{{ item.extracted_title or "—" }}</td>
       <td>{{ item.type or "" }}</td>
-      <td>{% if item.dispatch_policy %}<span class="{{ item.dispatch_policy | policy_badge }}">{{ item.dispatch_policy }}</span>{% endif %}</td>
+      <td>{% if item.transmit_policy %}<span class="{{ item.transmit_policy | policy_badge }}">{{ item.transmit_policy }}</span>{% endif %}</td>
       <td class="muted">{{ item.source_date_time | display_dt }}</td>
     </tr>
     {% else %}

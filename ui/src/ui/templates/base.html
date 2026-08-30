@@ -13,6 +13,7 @@
     <nav>
       <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">{{ icon('dashboard') }}Dashboard</a>
       <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">{{ icon('items') }}Items</a>
+      <a href="/adapters" class="{{ 'active' if request.url.path.startswith('/adapters') else '' }}">{{ icon('layers') }}Adapters</a>
       <a href="/policies" class="{{ 'active' if request.url.path.startswith('/policies') else '' }}">{{ icon('policies') }}Policies</a>
       <a href="/config" class="{{ 'active' if request.url.path.startswith('/config') else '' }}">{{ icon('config') }}Config{% if not is_beacon_configured() %} <span class="badge badge-warn">!</span>{% endif %}</a>
       <a href="/audit" class="{{ 'active' if request.url.path.startswith('/audit') else '' }}">{{ icon('audit') }}Audit log</a>

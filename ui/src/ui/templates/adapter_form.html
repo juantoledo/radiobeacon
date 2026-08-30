@@ -1,0 +1,442 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "edit" %}Edit adapter{% else %}New adapter{% endif %}{% endblock %}
+{% block content %}
+<a class="crumb" href="/adapters">&larr; Back to adapters</a>
+<div class="page-header"><h1>{% if mode == "edit" %}Edit adapter: {{ source }}{% else %}New adapter{% endif %}</h1></div>
+
+{% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
+
+<form method="post" action="{{ '/adapters/' + source if mode == 'edit' else '/adapters' }}" id="adapter-form">
+  <input type="hidden" name="mode" value="{{ mode }}">
+  <table class="form-table">
+    <tr>
+      <th><label for="source">Source</label></th>
+      <td>
+        <input id="source" name="source" type="text" required
+               placeholder="e.g. csn, senapred, my-new-source"
+               value="{{ source }}" {% if mode == "edit" %}readonly{% endif %}>
+        <div class="meta-line">Internal key — same one used in items.source. Cannot be changed after creation.</div>
+      </td>
+    </tr>
+    <tr>
+      <th><label for="display_name">Display name</label></th>
+      <td><input id="display_name" name="display_name" type="text" value="{{ display_name }}"
+                 placeholder="Shown as {source_name} in templates"></td>
+    </tr>
+    <tr>
+      <th><label for="site_url">Site URL</label></th>
+      <td><input id="site_url" name="site_url" type="text" value="{{ site_url }}"
+                 placeholder="Shown as {source_url} in templates"></td>
+    </tr>
+    <tr>
+      <th><label for="adapter_type">Type</label></th>
+      <td>
+        <select id="adapter_type" name="adapter_type">
+          <option value="api" {% if adapter_type == "api" %}selected{% endif %}>API — calls an HTTP endpoint, maps the JSON response via config</option>
+          <option value="custom" {% if adapter_type == "custom" %}selected{% endif %}>CUSTOM — a Python code snippet you write, executed on every poll</option>
+        </select>
+      </td>
+    </tr>
+    <tr>
+      <th><label for="enabled">Enabled</label></th>
+      <td><label><input id="enabled" name="enabled" type="checkbox" {% if enabled %}checked{% endif %}> Poll this instance</label></td>
+    </tr>
+    <tr>
+      <th><label for="interval_seconds">Poll interval (s)</label></th>
+      <td>
+        <input id="interval_seconds" name="interval_seconds" type="number" min="1" value="{{ interval_seconds }}"
+               placeholder="blank = ADAPTERS_DEFAULT_INTERVAL_SECONDS">
+      </td>
+    </tr>
+  </table>
+
+  <fieldset id="api-fields">
+    <div class="page-header"><h2>API configuration</h2></div>
+
+    <h3>1. Connection</h3>
+    <table class="form-table">
+      <tr>
+        <th><label for="url">URL</label></th>
+        <td><input id="url" name="url" type="text" value="{{ api_fields.url }}" placeholder="https://api.example.com/..."></td>
+      </tr>
+      <tr>
+        <th><label for="method">Method</label></th>
+        <td>
+          <select id="method" name="method">
+            {% for m in ("GET", "POST", "PUT", "PATCH", "DELETE") %}
+            <option value="{{ m }}" {% if api_fields.method == m %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      <tr>
+        <th><label for="items_path">Items path</label></th>
+        <td>
+          <input id="items_path" name="items_path" type="text" value="{{ api_fields.items_path }}"
+                 placeholder="blank = response root is the list, e.g. result.items">
+        </td>
+      </tr>
+      <tr>
+        <th><label for="body">Body</label></th>
+        <td><textarea id="body" name="body">{{ api_fields.body }}</textarea>
+          <div class="meta-line">Raw request body, sent as-is (e.g. for POST/PUT).</div>
+        </td>
+      </tr>
+    </table>
+
+    <h3>Headers</h3>
+    <div class="table-wrap">
+      <table class="kv-table">
+        <thead><tr><th>Key</th><th>Value</th><th></th></tr></thead>
+        <tbody id="headers-body">
+          {% for row in api_fields.headers %}
+          <tr>
+            <td><input type="text" name="header_key" value="{{ row.key }}"></td>
+            <td><input type="text" name="header_value" value="{{ row.value }}"></td>
+            <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">Remove</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="button" class="secondary" onclick="addKvRow('headers-body', 'header_key', 'header_value')">+ Add header</button>
+
+    <h3>Query parameters</h3>
+    <div class="table-wrap">
+      <table class="kv-table">
+        <thead><tr><th>Key</th><th>Value</th><th></th></tr></thead>
+        <tbody id="params-body">
+          {% for row in api_fields.query_params %}
+          <tr>
+            <td><input type="text" name="param_key" value="{{ row.key }}"></td>
+            <td><input type="text" name="param_value" value="{{ row.value }}"></td>
+            <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">Remove</button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="button" class="secondary" onclick="addKvRow('params-body', 'param_key', 'param_value')">+ Add parameter</button>
+
+    <h3>2. Preview a sample response</h3>
+    <p class="meta-line">
+      Calls the endpoint with the connection settings above — no mapping needed yet — so you can see the
+      real field names before configuring the mapping below, instead of guessing them blind.
+    </p>
+    <button type="submit" formaction="/adapters/sample" formnovalidate class="secondary">Fetch sample response</button>
+    {% if sample_response %}
+
+    {% if sample_response.is_list %}
+    <p class="meta-line"><span class="badge badge-success">list</span> Items path resolves to a list of {{ sample_response.total_count }} item(s) — this is what "Test fetch" will iterate over.</p>
+    {% elif sample_response.items_path_resolved %}
+    <p class="banner-warn">⚠ Items path resolves to a single value, not a list — pick one of the detected lists below, or leave it pointed at one of them.</p>
+    {% else %}
+    <p class="banner-warn">⚠ Items path doesn't exist in this response. Pick one of the detected lists below.</p>
+    {% endif %}
+
+    {% if sample_response.candidates %}
+    <p class="meta-line">Detected list(s) in this response — click to use one as the items path:</p>
+    <p>
+      {% for c in sample_response.candidates %}
+      <button type="button" class="secondary use-items-path-btn"
+              data-path="{{ c.path }}"
+              title="{{ c.sample_keys | join(', ') }}">
+        {{ c.path if c.path else "(root)" }} — {{ c.count }} item{{ "s" if c.count != 1 else "" }}
+      </button>
+      {% endfor %}
+    </p>
+    {% endif %}
+
+    <p class="meta-line">
+      Showing {{ sample_response.count }} of {{ sample_response.total_count }} item(s) at the current items path.
+      Drag a field name — from the list below or straight out of the JSON — onto a mapping row's value box,
+      or click one to drop it into whichever value box you last clicked.
+    </p>
+    {% if sample_response.field_names %}
+    <p>
+      {% for name in sample_response.field_names %}
+      <button type="button" class="secondary field-name-chip draggable-field" draggable="true" data-field-name="{{ name }}">{{ name }}</button>
+      {% endfor %}
+    </p>
+    {% endif %}
+    <pre class="contents mono json-preview">{{ sample_response.highlighted_html }}</pre>
+    {% endif %}
+    <datalist id="sample-field-names">
+      {% for name in (sample_response.field_names if sample_response else []) %}
+      <option value="{{ name }}">
+      {% endfor %}
+    </datalist>
+
+    <h3>3. Field mapping</h3>
+    <p class="meta-line">
+      How each item's contract field is built from one raw response item (see the sample above). The
+      template box is a free-form construction — <code>{Fecha}</code> alone is a raw passthrough, plain
+      text with no braces is a constant, and anything else — <code>Sismo M{Magnitud} - {RefGeografica}</code>
+      — combines several raw fields into one string. It can also use <code>{uuid}</code> for a stable,
+      content-derived id when a source has no natural one. Drag a field name — from the list or the JSON
+      below — onto a box to insert it, or click one to drop it where you last clicked.
+    </p>
+    <div class="table-wrap">
+      <table class="kv-table">
+        <thead><tr><th>Field</th><th>Template</th><th>Date format<br><span class="muted">(only for a bare {field})</span></th></tr></thead>
+        <tbody>
+          {% for name in mapped_fields %}
+          {% set row = api_fields.mapping[name] %}
+          <tr class="{{ 'mapping-row-mapped' if row.template else '' }}">
+            <td class="field-name"><span class="mapped-indicator"></span>{{ name }}</td>
+            <td>
+              <input type="text" name="map_{{ name }}_template" value="{{ row.template }}" list="sample-field-names"
+                     class="mapping-value-input field-drop-target" placeholder="e.g. {Fecha}, a constant, or Sismo M{Magnitud} - {RefGeografica}">
+            </td>
+            <td>
+              <input type="text" name="map_{{ name }}_date_format" value="{{ row.date_format }}"
+                     placeholder="e.g. %Y-%m-%d %H:%M:%S">
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>4. Date parsing (source_date_time)</h3>
+    <table class="form-table">
+      <tr>
+        <th><label for="date_field">Date field</label></th>
+        <td><input id="date_field" name="date_field" type="text" value="{{ api_fields.date_field }}" list="sample-field-names" class="field-drop-target"></td>
+      </tr>
+      <tr>
+        <th><label for="date_format">Date format</label></th>
+        <td><input id="date_format" name="date_format" type="text" value="{{ api_fields.date_format }}"
+                   placeholder="strptime format, e.g. %Y-%m-%d %H:%M:%S — blank = ISO 8601"></td>
+      </tr>
+      <tr>
+        <th><label for="source_timezone">Source timezone</label></th>
+        <td><input id="source_timezone" name="source_timezone" type="text" value="{{ api_fields.source_timezone }}"
+                   placeholder="IANA name, e.g. America/Santiago — only needed if the date field is naive"></td>
+      </tr>
+    </table>
+
+    <h3><label><input id="transmit_enabled" name="transmit_enabled" type="checkbox" {% if api_fields.transmit_enabled %}checked{% endif %}> 5. Dispatch policy rule</label></h3>
+    <table class="form-table" id="dispatch-fields">
+      <tr>
+        <th><label for="transmit_field">Field</label></th>
+        <td><input id="transmit_field" name="transmit_field" type="text" value="{{ api_fields.transmit_field }}" list="sample-field-names" class="field-drop-target"></td>
+      </tr>
+      <tr>
+        <th><label for="transmit_operator">Operator</label></th>
+        <td>
+          <select id="transmit_operator" name="transmit_operator">
+            {% for op in (">=", ">", "<=", "<", "==", "!=") %}
+            <option value="{{ op }}" {% if api_fields.transmit_operator == op %}selected{% endif %}>{{ op }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      <tr>
+        <th><label for="transmit_threshold">Threshold</label></th>
+        <td><input id="transmit_threshold" name="transmit_threshold" type="text" value="{{ api_fields.transmit_threshold }}"></td>
+      </tr>
+      <tr>
+        <th><label for="transmit_if_true">If true</label></th>
+        <td><input id="transmit_if_true" name="transmit_if_true" type="text" value="{{ api_fields.transmit_if_true }}"></td>
+      </tr>
+      <tr>
+        <th><label for="transmit_if_false">If false</label></th>
+        <td><input id="transmit_if_false" name="transmit_if_false" type="text" value="{{ api_fields.transmit_if_false }}"></td>
+      </tr>
+    </table>
+  </fieldset>
+
+  <fieldset id="custom-fields">
+    <div class="page-header"><h2>Python code</h2></div>
+    <p class="meta-line">
+      Must define <code>def fetch(config: dict) -> list[dict]</code>, returning dicts with an <code>id</code> key
+      (title, contents, url, event_key, type, subtype, transmit_policy, source_date_time, raw are optional).
+      Executed as trusted admin code — no sandboxing.
+    </p>
+    <textarea id="code" name="code" class="mono" rows="22">{{ custom_fields.code }}</textarea>
+  </fieldset>
+
+  <button type="submit">Save</button>
+  <button type="submit" formaction="/adapters/test" formnovalidate class="secondary">Test fetch</button>
+</form>
+
+{% if test_result %}
+<div class="page-header"><h2>Test result</h2></div>
+{% if test_result.ok %}
+<p class="meta-line">Fetched {{ test_result.total }} item(s) — showing up to 5, every mapped contract field.</p>
+<div class="table-wrap">
+<table>
+  <thead><tr>
+    <th>id</th><th>title</th><th>contents</th><th>url</th><th>event_key</th>
+    <th>type</th><th>subtype</th><th>transmit_policy</th><th>source_date_time</th><th>raw</th>
+  </tr></thead>
+  <tbody>
+    {% for item in test_result.sample_items %}
+    <tr>
+      <td class="mono">{{ item.id }}</td>
+      <td class="wrap">{{ item.title or "" }}</td>
+      <td class="wrap">{{ item.contents or "" }}</td>
+      <td class="wrap">{{ item.url or "" }}</td>
+      <td class="mono">{{ item.event_key or "" }}</td>
+      <td>{{ item.type or "" }}</td>
+      <td>{{ item.subtype or "" }}</td>
+      <td>{{ item.transmit_policy or "" }}</td>
+      <td>{{ item.source_date_time or "" }}</td>
+      <td>
+        <details>
+          <summary class="muted">view</summary>
+          <pre class="contents mono json-preview">{{ item.raw_html }}</pre>
+        </details>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<p class="banner-warn">⚠ Fetch failed: {{ test_result.error }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function addKvRow(bodyId, keyName, valueName) {
+    var tbody = document.getElementById(bodyId);
+    var tr = document.createElement("tr");
+    var keyTd = document.createElement("td");
+    var keyInput = document.createElement("input");
+    keyInput.type = "text";
+    keyInput.name = keyName;
+    keyTd.appendChild(keyInput);
+    var valueTd = document.createElement("td");
+    var valueInput = document.createElement("input");
+    valueInput.type = "text";
+    valueInput.name = valueName;
+    valueTd.appendChild(valueInput);
+    var removeTd = document.createElement("td");
+    var removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "secondary remove-row-btn";
+    removeBtn.textContent = "Remove";
+    removeBtn.addEventListener("click", function () { tr.remove(); });
+    removeTd.appendChild(removeBtn);
+    tr.appendChild(keyTd);
+    tr.appendChild(valueTd);
+    tr.appendChild(removeTd);
+    tbody.appendChild(tr);
+    keyInput.focus();
+  }
+
+  function updateAdapterTypeVisibility() {
+    var type = document.getElementById("adapter_type").value;
+    document.getElementById("api-fields").style.display = type === "api" ? "" : "none";
+    document.getElementById("custom-fields").style.display = type === "custom" ? "" : "none";
+  }
+  document.getElementById("adapter_type").addEventListener("change", updateAdapterTypeVisibility);
+  updateAdapterTypeVisibility();
+
+  function updateDispatchVisibility() {
+    var enabled = document.getElementById("transmit_enabled").checked;
+    document.getElementById("dispatch-fields").style.display = enabled ? "" : "none";
+  }
+  document.getElementById("transmit_enabled").addEventListener("change", updateDispatchVisibility);
+  updateDispatchVisibility();
+
+  // A row's "mapped" indicator (see .mapped-indicator/.mapping-row-mapped
+  // in style.css) just reflects whether its template box is non-empty —
+  // there's no separate strategy state to track anymore.
+  document.querySelectorAll(".mapping-value-input").forEach(function (input) {
+    function update() {
+      input.closest("tr").classList.toggle("mapping-row-mapped", input.value.trim() !== "");
+    }
+    input.addEventListener("input", update);
+    update();
+  });
+
+  // Detected list paths (see adapters.api_adapter.preview_response):
+  // clicking one fills items_path and immediately re-fetches the sample
+  // with that path, so "is this the right list?" gets an answer in one
+  // click instead of hand-typing a dotted path and re-submitting.
+  document.querySelectorAll(".use-items-path-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.getElementById("items_path").value = btn.dataset.path;
+      var form = document.getElementById("adapter-form");
+      form.action = "/adapters/sample";
+      form.submit();
+    });
+  });
+
+  // Drag-and-drop + click-to-insert for field names — both work from two
+  // sources: the deduped chip row, and every top-level key rendered
+  // directly inside the sample JSON below (adapters.api_adapter's
+  // preview_response / ui.routers.adapters._json_to_html), so an
+  // operator can drag straight out of the response they're looking at
+  // instead of retyping a key they can already see.
+  //
+  // Drop targets: every mapping row's template box, plus the date-field
+  // and dispatch-rule field inputs. Click targets: only the mapping
+  // template boxes (via "whichever was last focused"), since date_field/
+  // transmit_field are single fields with no ambiguity to resolve — drag
+  // is precise enough there on its own.
+  var lastFocusedMappingInput = document.querySelector('input[name="map_id_template"]');
+  document.querySelectorAll(".mapping-value-input").forEach(function (input) {
+    input.addEventListener("focus", function () { lastFocusedMappingInput = input; });
+  });
+
+  // A mapping template is a construction ("Sismo M{Magnitud} - {Ref}"),
+  // not a single value — so a field name is INSERTED as a {token} at
+  // the input's current cursor position, not a wholesale replacement,
+  // letting an operator build a multi-field template by dragging several
+  // names into the same box one after another.
+  function insertFieldToken(input, name) {
+    var token = "{" + name + "}";
+    var start = input.selectionStart != null ? input.selectionStart : input.value.length;
+    var end = input.selectionEnd != null ? input.selectionEnd : start;
+    var value = input.value || "";
+    input.value = value.slice(0, start) + token + value.slice(end);
+    var newPos = start + token.length;
+    input.focus();
+    input.setSelectionRange(newPos, newPos);
+    input.dispatchEvent(new Event("input"));
+    lastFocusedMappingInput = input;
+  }
+
+  document.querySelectorAll(".draggable-field").forEach(function (el) {
+    el.addEventListener("dragstart", function (event) {
+      event.dataTransfer.setData("text/plain", el.dataset.fieldName);
+      event.dataTransfer.effectAllowed = "copy";
+    });
+    el.addEventListener("click", function () {
+      if (!lastFocusedMappingInput) return;
+      insertFieldToken(lastFocusedMappingInput, el.dataset.fieldName);
+    });
+  });
+
+  document.querySelectorAll(".field-drop-target").forEach(function (target) {
+    target.addEventListener("dragover", function (event) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      target.classList.add("drop-target-active");
+    });
+    target.addEventListener("dragleave", function () {
+      target.classList.remove("drop-target-active");
+    });
+    target.addEventListener("drop", function (event) {
+      event.preventDefault();
+      target.classList.remove("drop-target-active");
+      var name = event.dataTransfer.getData("text/plain");
+      if (!name) return;
+      if (target.classList.contains("mapping-value-input")) {
+        insertFieldToken(target, name);
+      } else {
+        // date_field / transmit_field are a single raw field name, not a
+        // template — a whole-value replacement is what's wanted there.
+        target.value = name;
+        target.focus();
+      }
+    });
+  });
+</script>
+{% endblock %}

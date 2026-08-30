@@ -4,11 +4,14 @@ grouping), never imported outside this package. The actual read/write
 happens through adapters.storage.get_setting/set_setting/list_settings,
 keyed by the exact env var name each SettingSpec.key names.
 
-Covers adapters (senapred, csn), actions (chunk, ai), dispatcher, MQ infra,
-the two provider secrets, beacon (including "Beacon — Identity", the
-operator profile — required, DB-only, see SettingSpec.env_fallback/
-required below), and the "Display"/"UI" groups (display timezone, page
-size, dev tools, refresh intervals, default consumer name).
+Covers the adapters' shared default poll interval, actions (chunk, ai),
+dispatcher, MQ infra, the two provider secrets, beacon (including
+"Beacon — Identity", the operator profile — required, DB-only, see
+SettingSpec.env_fallback/required below), and the "Display"/"UI" groups
+(display timezone, page size, dev tools, refresh intervals, default
+consumer name). Per-source adapter config (CSN, SENAPRED, and any
+operator-added instance) lives in the adapter_instances table instead,
+managed at /adapters — see ui.routers.adapters.
 UI_HOST/UI_PORT/UI_DB_PATH are the only settings that stay env-only — they're
 needed before the app can even reach its own database, so they can never be
 DB-backed like everything else here (see ui.config)."""
@@ -62,113 +65,9 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "int",
         "10",
     ),
-    # --- Adapters — SENAPRED ---
-    SettingSpec(
-        "ADAPTERS_SENAPRED_INTERVAL_SECONDS",
-        "Adapters — SENAPRED",
-        "Poll interval (s)",
-        "How often the SENAPRED adapter polls for new alerts.",
-        "int",
-        "10",
-    ),
-    SettingSpec(
-        "ADAPTERS_SENAPRED_IDENTITY_POOL_ID",
-        "Adapters — SENAPRED",
-        "Cognito identity pool ID",
-        "AWS Cognito Identity Pool ID used for SENAPRED's anonymous-visitor auth.",
-        "text",
-        "us-east-1:17c696bc-53e1-49a2-991f-f1b65f752fda",
-    ),
-    SettingSpec(
-        "ADAPTERS_SENAPRED_COGNITO_REGION",
-        "Adapters — SENAPRED",
-        "Cognito region",
-        "AWS region for the Cognito identity pool above.",
-        "text",
-        "us-east-1",
-    ),
-    SettingSpec(
-        "ADAPTERS_SENAPRED_APPSYNC_REGION",
-        "Adapters — SENAPRED",
-        "AppSync region",
-        "AWS region used for AppSync GraphQL SigV4 request signing.",
-        "text",
-        "us-east-1",
-    ),
-    SettingSpec(
-        "ADAPTERS_SENAPRED_APPSYNC_HOST",
-        "Adapters — SENAPRED",
-        "AppSync host",
-        "AppSync GraphQL API host (no scheme/path).",
-        "text",
-        "rz2uv7ifxbgflh2bqmp6kmh4le.appsync-api.us-east-1.amazonaws.com",
-    ),
-    SettingSpec(
-        "ADAPTERS_SENAPRED_ALERTA_BASE_URL",
-        "Adapters — SENAPRED",
-        "Alerta base URL",
-        "Base URL used to build public links for 'Alerta'-type items.",
-        "text",
-        "https://senapred.cl/alerta/",
-    ),
-    SettingSpec(
-        "ADAPTERS_SENAPRED_EVENTO_BASE_URL",
-        "Adapters — SENAPRED",
-        "Evento base URL",
-        "Base URL used to build public links for 'Evento'-type items.",
-        "text",
-        "https://senapred.cl/evento/",
-    ),
-    SettingSpec(
-        "ADAPTERS_SENAPRED_QUERY_LIMIT",
-        "Adapters — SENAPRED",
-        "Query limit",
-        "Max items fetched per SENAPRED feed call (Alerta + Evento each).",
-        "int",
-        "20",
-    ),
-    # --- Adapters — CSN ---
-    SettingSpec(
-        "ADAPTERS_CSN_INTERVAL_SECONDS",
-        "Adapters — CSN",
-        "Poll interval (s)",
-        "How often the CSN adapter polls for new earthquakes.",
-        "int",
-        "10",
-    ),
-    SettingSpec(
-        "ADAPTERS_CSN_API_URL",
-        "Adapters — CSN",
-        "API URL",
-        "CSN earthquake API endpoint (unofficial JSON mirror).",
-        "text",
-        "https://api.gael.cloud/general/public/sismos",
-    ),
-    SettingSpec(
-        "ADAPTERS_CSN_SITE_URL",
-        "Adapters — CSN",
-        "Site URL",
-        "Public site URL linked from every CSN item.",
-        "text",
-        "https://www.sismologia.cl/",
-    ),
-    SettingSpec(
-        "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD",
-        "Adapters — CSN",
-        "Urgent magnitude threshold",
-        "Magnitude at/above which a CSN item gets dispatch_policy=\"urgent\" "
-        "instead of \"informational\".",
-        "float",
-        "4.5",
-    ),
-    SettingSpec(
-        "ADAPTERS_CSN_SOURCE_TZ",
-        "Adapters — CSN",
-        "Source timezone",
-        "IANA timezone assumed for CSN's naive timestamps, used to convert to UTC.",
-        "text",
-        "America/Santiago",
-    ),
+    # Per-source adapter config (CSN, SENAPRED, and any operator-added
+    # instance) no longer lives here — each is a row in the adapter_instances
+    # table, managed at /adapters instead of /config. See ui.routers.adapters.
     # --- Dispatcher ---
     SettingSpec(
         "DISPATCHER_INTERVAL_SECONDS",
@@ -836,12 +735,13 @@ SETTINGS_CATALOG: list[SettingSpec] = [
     SettingSpec(
         "BEACON_QUEUE_MAX_SIZE",
         "Beacon — Queue",
-        "Max queue size",
-        "Max items held per channel (voice/frame) before the oldest is "
-        "dropped to make room for new content. Frame content is one slot "
-        "per CHUNK, not per item — a real SENAPRED report has produced 57 "
-        "chunks on its own, so keep this comfortably above the largest "
-        "item you expect. Applies live — no restart needed.",
+        "Max pending transmit rows per kind",
+        "Max pending beacon_tx_schedule rows held per kind (voice/frame) "
+        "before the oldest is dropped to make room for new content. Frame "
+        "content is one row per CHUNK, not per item — a real SENAPRED "
+        "report has produced 57 chunks on its own, so keep this comfortably "
+        "above the largest item you expect. Applies to newly scheduled "
+        "items — no restart needed.",
         "int",
         BEACON_QUEUE_MAX_SIZE_DEFAULT,
     ),

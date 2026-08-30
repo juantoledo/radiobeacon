@@ -19,7 +19,7 @@
 {% if item.url %}<p><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.url }}</a></p>{% endif %}
 
 <table class="form-table">
-  <tr><th>dispatch_policy</th><td>{% if item.dispatch_policy %}<span class="{{ item.dispatch_policy | policy_badge }}">{{ item.dispatch_policy }}</span>{% else %}<span class="muted">(unset)</span>{% endif %}</td></tr>
+  <tr><th>transmit_policy</th><td>{% if item.transmit_policy %}<span class="{{ item.transmit_policy | policy_badge }}">{{ item.transmit_policy }}</span>{% else %}<span class="muted">(unset)</span>{% endif %}</td></tr>
   <tr><th>source_date_time</th><td>{{ item.source_date_time | display_dt }}</td></tr>
   <tr><th>fetched_at</th><td>{{ item.fetched_at | display_dt }}</td></tr>
   <tr><th>captured_at</th><td>{{ item.captured_at | display_dt }}</td></tr>
@@ -35,10 +35,10 @@
 
 <h2>Actions</h2>
 <form class="action" method="post" action="/items/{{ item.source }}/{{ item.item_id }}/override">
-  <label for="dispatch_policy">Set dispatch_policy</label>
-  <select id="dispatch_policy" name="dispatch_policy">
+  <label for="transmit_policy">Set transmit_policy</label>
+  <select id="transmit_policy" name="transmit_policy">
     {% for p in policies %}
-    <option value="{{ p[0] }}" {% if item.dispatch_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
+    <option value="{{ p[0] }}" {% if item.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
     {% endfor %}
   </select>
   <button type="submit" {% if not is_beacon_configured() %}disabled{% endif %}>Override</button>

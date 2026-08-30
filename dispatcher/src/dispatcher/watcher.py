@@ -1,12 +1,9 @@
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Callable
 
 from adapters.storage import record_audit_event
-from adapters.timeutil import utc_now as _now_dt
-
-from . import policy as policy_module
 
 logger = logging.getLogger(__name__)
 
@@ -19,23 +16,17 @@ CREATE TABLE IF NOT EXISTS dispatcher_state (
 );
 """
 
+# Just a "this item is armed for one delivery" marker now — the repeat
+# count / interval that used to live here (times_triggered,
+# last_triggered_at) moved into beacon/'s beacon_tx_schedule when the
+# retransmit concept moved to the transmit layer. The dispatcher delivers
+# each armed item to its handlers exactly once, then deletes the row.
 _CREATE_TRIGGER_DISPATCHES = """
 CREATE TABLE IF NOT EXISTS trigger_dispatches (
     consumer TEXT NOT NULL,
     source TEXT NOT NULL,
     item_id TEXT NOT NULL,
-    times_triggered INTEGER NOT NULL DEFAULT 0,
-    last_triggered_at TEXT,
     PRIMARY KEY (consumer, source, item_id)
-);
-"""
-
-_CREATE_DISPATCH_POLICIES = """
-CREATE TABLE IF NOT EXISTS dispatch_policies (
-    name TEXT PRIMARY KEY,
-    repeat_times INTEGER NOT NULL,
-    interval_seconds INTEGER NOT NULL,
-    description TEXT
 );
 """
 
@@ -44,7 +35,7 @@ CREATE TABLE IF NOT EXISTS item_policy_state (
     consumer TEXT NOT NULL,
     source TEXT NOT NULL,
     item_id TEXT NOT NULL,
-    dispatch_policy TEXT,
+    transmit_policy TEXT,
     PRIMARY KEY (consumer, source, item_id)
 );
 """
@@ -65,32 +56,52 @@ def _migrate_trigger_state_table(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_trigger_dispatches_table(conn: sqlite3.Connection) -> None:
-    """trigger_dispatches used to store an absolute next_due_at, computed
-    once at schedule time — which meant a policy's interval_seconds
-    change didn't move an already-scheduled item's due time until it
-    next fired. Replaced by last_triggered_at, so due-ness is recomputed
-    live against the *current* policy on every poll. There's no lossless
-    conversion between the two (next_due_at doesn't reveal what interval
-    produced it), but this table is disposable scheduling state, not a
-    source of truth — items/dispatch_policies are — so an old-schema
-    table is just dropped and recreated; any item mid-redelivery simply
-    restarts its count from 0 on the next poll.
+    """trigger_dispatches is disposable scheduling state, not a source of
+    truth (items / transmit_policies / beacon_tx_schedule are), so an
+    old-schema table is just dropped and recreated.
 
-    A short-lived intermediate schema also had a last_dispatch_policy
-    column here, tracking policy drift per in-flight row — replaced by
-    the standalone item_policy_state table (below), which covers every
-    item ever seen, not just ones currently in trigger_dispatches, so a
-    policy change on an already-retired or never-discovered item is
-    detected too. Dropped if present."""
+    - A very old schema stored an absolute next_due_at, and a short-lived
+      one a last_dispatch_policy column — the whole table is dropped if
+      either is present.
+    - The repeat-loop schema had times_triggered / last_triggered_at.
+      Those columns are dropped in place (keeping any currently-armed rows,
+      which then deliver once more and retire) now that the dispatcher
+      delivers each item exactly once and the retransmit count lives in
+      beacon/."""
     columns = {row[1] for row in conn.execute("PRAGMA table_info(trigger_dispatches)")}
-    if "next_due_at" in columns:
+    if not columns:
+        return
+    if "next_due_at" in columns or "last_dispatch_policy" in columns:
         conn.execute("DROP TABLE trigger_dispatches")
         conn.commit()
         return
 
-    if "last_dispatch_policy" in columns:
-        conn.execute("ALTER TABLE trigger_dispatches DROP COLUMN last_dispatch_policy")
-        conn.commit()
+    for legacy_column in ("times_triggered", "last_triggered_at"):
+        if legacy_column in columns:
+            try:
+                conn.execute(
+                    f"ALTER TABLE trigger_dispatches DROP COLUMN {legacy_column}"
+                )
+                conn.commit()
+            except sqlite3.OperationalError:
+                logger.debug("trigger_dispatches.%s already dropped", legacy_column)
+
+
+def _migrate_item_policy_state_table(conn: sqlite3.Connection) -> None:
+    """item_policy_state.dispatch_policy was renamed to transmit_policy
+    alongside the items column rename (see
+    adapters.storage._migrate_items_table). This is a per-consumer
+    baseline snapshot, not a source of truth, but renaming in place keeps
+    a running consumer from re-firing every item as "drifted" once."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(item_policy_state)")}
+    if "dispatch_policy" in columns and "transmit_policy" not in columns:
+        try:
+            conn.execute(
+                "ALTER TABLE item_policy_state RENAME COLUMN dispatch_policy TO transmit_policy"
+            )
+            conn.commit()
+        except sqlite3.OperationalError:
+            logger.debug("item_policy_state.dispatch_policy already renamed")
 
 
 def _ensure_tables(conn: sqlite3.Connection) -> None:
@@ -98,10 +109,9 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
     _migrate_trigger_dispatches_table(conn)
     conn.execute(_CREATE_DISPATCHER_STATE)
     conn.execute(_CREATE_TRIGGER_DISPATCHES)
-    conn.execute(_CREATE_DISPATCH_POLICIES)
     conn.execute(_CREATE_ITEM_POLICY_STATE)
+    _migrate_item_policy_state_table(conn)
     conn.commit()
-    policy_module.ensure_seeded(conn)
 
 
 def _last_seen_rowid(conn: sqlite3.Connection, consumer: str) -> int:
@@ -125,16 +135,13 @@ def _last_seen_rowid(conn: sqlite3.Connection, consumer: str) -> int:
 
 
 def _arm(conn: sqlite3.Connection, consumer: str, source: str, item_id: str) -> None:
-    """Marks an item due right now: inserts a trigger_dispatches row if
-    none exists, or resets an existing one's progress — either way,
-    granting the item's *current* dispatch_policy a fresh delivery budget
-    from scratch (see dispatch_due_items)."""
+    """Marks an item armed for one delivery on the next poll. A no-op if
+    it's already armed (dispatch_due_items delivers and retires it either
+    way)."""
     conn.execute(
-        "INSERT INTO trigger_dispatches "
-        "(consumer, source, item_id, times_triggered, last_triggered_at) "
-        "VALUES (?, ?, ?, 0, NULL) "
-        "ON CONFLICT (consumer, source, item_id) "
-        "DO UPDATE SET times_triggered = 0, last_triggered_at = NULL",
+        "INSERT INTO trigger_dispatches (consumer, source, item_id) "
+        "VALUES (?, ?, ?) "
+        "ON CONFLICT (consumer, source, item_id) DO NOTHING",
         (consumer, source, item_id),
     )
 
@@ -162,7 +169,7 @@ def discover_new_items(
     max-age, so a genuinely new event is never excluded no matter how
     long this process has been running since.
 
-    Also records each row's current dispatch_policy as its baseline in
+    Also records each row's current transmit_policy as its baseline in
     item_policy_state (armed or not), so sync_policy_changes doesn't
     treat this same item as newly-changed on the very next poll.
     Returns the number of rows discovered (armed or skipped as stale)."""
@@ -171,7 +178,7 @@ def discover_new_items(
 
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT rowid, source, item_id, dispatch_policy, source_date_time FROM items "
+        "SELECT rowid, source, item_id, transmit_policy, source_date_time FROM items "
         "WHERE rowid > ? ORDER BY rowid",
         (last_seen,),
     ).fetchall()
@@ -207,8 +214,8 @@ def discover_new_items(
 
         conn.execute(
             "INSERT OR REPLACE INTO item_policy_state "
-            "(consumer, source, item_id, dispatch_policy) VALUES (?, ?, ?, ?)",
-            (consumer, row["source"], row["item_id"], row["dispatch_policy"]),
+            "(consumer, source, item_id, transmit_policy) VALUES (?, ?, ?, ?)",
+            (consumer, row["source"], row["item_id"], row["transmit_policy"]),
         )
         conn.execute(
             "UPDATE dispatcher_state SET last_seen_rowid = ? WHERE consumer = ?",
@@ -221,13 +228,14 @@ def discover_new_items(
 
 def sync_policy_changes(conn: sqlite3.Connection, consumer: str) -> int:
     """Scans *every* row in `items` (not just ones currently tracked in
-    trigger_dispatches) for a dispatch_policy that's drifted since this
+    trigger_dispatches) for a transmit_policy that's drifted since this
     consumer last recorded it in item_policy_state, and arms any that
     have — regardless of whether the item is currently in-flight, already
-    retired (its repeat budget was previously exhausted), or was never
-    discovered as "new" at all (predates this consumer's watermark, i.e.
-    backlog). This is what makes a dispatch_policy edit on *any* existing
-    row reactive, not just ones already mid-delivery.
+    retired, or was never discovered as "new" at all (predates this
+    consumer's watermark, i.e. backlog). This is what makes a
+    transmit_policy edit on *any* existing row re-flow through the pipeline
+    (one fresh dispatch -> actions -> content_ready -> beacon picks up the
+    new tier), not just ones already mid-delivery.
 
     An item with no recorded state yet (never checked before by this
     consumer — true for backlog items discover_new_items always skipped)
@@ -240,28 +248,28 @@ def sync_policy_changes(conn: sqlite3.Connection, consumer: str) -> int:
 
     # A dict lookup (vs. a LEFT JOIN) cleanly distinguishes "no snapshot
     # recorded yet" from "recorded, and it happens to be NULL" — an item
-    # whose dispatch_policy is itself genuinely unset.
+    # whose transmit_policy is itself genuinely unset.
     known = {
-        (row["source"], row["item_id"]): row["dispatch_policy"]
+        (row["source"], row["item_id"]): row["transmit_policy"]
         for row in conn.execute(
-            "SELECT source, item_id, dispatch_policy FROM item_policy_state "
+            "SELECT source, item_id, transmit_policy FROM item_policy_state "
             "WHERE consumer = ?",
             (consumer,),
         )
     }
 
-    items = conn.execute("SELECT source, item_id, dispatch_policy FROM items").fetchall()
+    items = conn.execute("SELECT source, item_id, transmit_policy FROM items").fetchall()
 
     changed = 0
     for row in items:
         key = (row["source"], row["item_id"])
-        current = row["dispatch_policy"]
+        current = row["transmit_policy"]
 
         if key not in known:
             # Never seen by this consumer before — baseline silently.
             conn.execute(
                 "INSERT INTO item_policy_state "
-                "(consumer, source, item_id, dispatch_policy) VALUES (?, ?, ?, ?)",
+                "(consumer, source, item_id, transmit_policy) VALUES (?, ?, ?, ?)",
                 (consumer, row["source"], row["item_id"], current),
             )
             conn.commit()
@@ -270,7 +278,7 @@ def sync_policy_changes(conn: sqlite3.Connection, consumer: str) -> int:
         if known[key] != current:
             _arm(conn, consumer, row["source"], row["item_id"])
             conn.execute(
-                "UPDATE item_policy_state SET dispatch_policy = ? "
+                "UPDATE item_policy_state SET transmit_policy = ? "
                 "WHERE consumer = ? AND source = ? AND item_id = ?",
                 (current, consumer, row["source"], row["item_id"]),
             )
@@ -291,41 +299,26 @@ def sync_policy_changes(conn: sqlite3.Connection, consumer: str) -> int:
 def dispatch_due_items(
     conn: sqlite3.Connection, consumer: str, handlers: list[Handler]
 ) -> int:
-    """Delivers every in-flight trigger_dispatches row for `consumer`
-    that's currently due to every handler, then reschedules or retires
-    each row per the RepeatPolicy its `dispatch_policy` name resolves to
-    (see policy.policy_for and adapters.storage's store_reading
-    docstring). Due-ness is computed live, every call, from
-    `last_triggered_at + policy.interval_seconds` using each row's
-    *current* policy — never a precomputed timestamp — so editing a
-    policy's own repeat_times/interval_seconds (e.g. via
-    dispatcher/policies.py) takes effect immediately: a shortened interval
-    makes an already-scheduled item due sooner, a lengthened one pushes
-    it out, both without waiting for the item's old schedule to elapse
-    first. (A dispatch_policy change on the item itself is handled
-    earlier, by sync_policy_changes forcing last_triggered_at back to
-    NULL — by the time this function runs, that just looks like an item
-    that's due.) Returns the number of rows dispatched."""
+    """Delivers every armed trigger_dispatches row for `consumer` to every
+    handler exactly once, then retires the row — success or failure. The
+    "put it on air N times, spaced out" concern that used to live here
+    (repeat_times / interval_seconds) now belongs to beacon/'s
+    beacon_tx_schedule, downstream of content preparation; the dispatcher
+    just decides *when an item goes live once*. A genuine re-send is a
+    fresh arm (a transmit_policy change caught by sync_policy_changes, or
+    an explicit override.rearm_item). Returns the number of rows
+    dispatched."""
     conn.row_factory = sqlite3.Row
-    in_flight = conn.execute(
-        "SELECT d.source, d.item_id, d.times_triggered, d.last_triggered_at, i.* "
+    armed = conn.execute(
+        "SELECT d.source, d.item_id, i.* "
         "FROM trigger_dispatches d "
         "JOIN items i ON i.source = d.source AND i.item_id = d.item_id "
         "WHERE d.consumer = ?",
         (consumer,),
     ).fetchall()
 
-    now = _now_dt()
     dispatched = 0
-    for row in in_flight:
-        policy = policy_module.policy_for(conn, row["dispatch_policy"])
-        if row["last_triggered_at"] is not None:
-            due_at = datetime.fromisoformat(row["last_triggered_at"]) + timedelta(
-                seconds=policy.interval_seconds
-            )
-            if now < due_at:
-                continue  # not due yet, under the current policy
-
+    for row in armed:
         for handler in handlers:
             handler_name = getattr(handler, "__name__", str(handler))
             try:
@@ -349,7 +342,7 @@ def dispatch_due_items(
                         item_id=row["item_id"],
                         details={
                             "consumer": consumer,
-                            "dispatch_policy": row["dispatch_policy"],
+                            "transmit_policy": row["transmit_policy"],
                             "error": str(exc),
                         },
                     )
@@ -365,26 +358,17 @@ def dispatch_due_items(
                         item_id=row["item_id"],
                         details={
                             "consumer": consumer,
-                            "dispatch_policy": row["dispatch_policy"],
-                            "times_triggered": row["times_triggered"] + 1,
+                            "transmit_policy": row["transmit_policy"],
                         },
                     )
                 except Exception:
                     logger.error("failed to record audit event for dispatch success", exc_info=True)
 
-        times_triggered = row["times_triggered"] + 1
-        if times_triggered < policy.repeat_times:
-            conn.execute(
-                "UPDATE trigger_dispatches SET times_triggered = ?, last_triggered_at = ? "
-                "WHERE consumer = ? AND source = ? AND item_id = ?",
-                (times_triggered, now.isoformat(), consumer, row["source"], row["item_id"]),
-            )
-        else:
-            conn.execute(
-                "DELETE FROM trigger_dispatches "
-                "WHERE consumer = ? AND source = ? AND item_id = ?",
-                (consumer, row["source"], row["item_id"]),
-            )
+        conn.execute(
+            "DELETE FROM trigger_dispatches "
+            "WHERE consumer = ? AND source = ? AND item_id = ?",
+            (consumer, row["source"], row["item_id"]),
+        )
         conn.commit()
         dispatched += 1
 
@@ -402,9 +386,9 @@ def check_for_new_items(
     1. discover_new_items — brand-new rows since this consumer last looked
        (skips arming any whose source_date_time predates `not_before` —
        see its docstring).
-    2. sync_policy_changes — any row (new, in-flight, retired, or backlog)
-       whose dispatch_policy has drifted since last recorded.
-    3. dispatch_due_items — delivers everything currently due.
+    2. sync_policy_changes — any row (new, armed, retired, or backlog)
+       whose transmit_policy has drifted since last recorded.
+    3. dispatch_due_items — delivers every armed item once and retires it.
     Returns the number of rows dispatched this call."""
     discover_new_items(conn, consumer, not_before=not_before)
     sync_policy_changes(conn, consumer)
@@ -415,11 +399,11 @@ def log_handler(row: sqlite3.Row) -> None:
     """The one built-in handler — logs the item. Real handlers (radio TX,
     etc.) register alongside/instead of this in dispatcher.__main__."""
     logger.info(
-        "trigger: source=%s item_id=%s type=%s dispatch_policy=%s title=%r url=%s",
+        "trigger: source=%s item_id=%s type=%s transmit_policy=%s title=%r url=%s",
         row["source"],
         row["item_id"],
         row["type"],
-        row["dispatch_policy"],
+        row["transmit_policy"],
         row["extracted_title"],
         row["url"],
     )

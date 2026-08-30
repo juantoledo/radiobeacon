@@ -2,11 +2,14 @@
 
 The TDMA transmission orchestrator for the CD3DXZ-1 experimental VHF
 propagation beacon — the RF/transmission layer CONTEXT.md describes as
-"designed but not implemented." This is that layer: it strictly queues
-content arriving from the rest of the pipeline and delivers it to a voice
-channel (SvxLink) or an AX.25 frame channel (Direwolf), inside a
-configurable, repeating time window, since the two channels compete for
-the same audio hardware and can't transmit simultaneously.
+"designed but not implemented." This is that layer: it schedules content
+arriving from the rest of the pipeline into a durable transmit schedule
+and delivers it to a voice channel (SvxLink) or an AX.25 frame channel
+(Direwolf), inside a configurable, repeating time window, since the two
+channels compete for the same audio hardware and can't transmit
+simultaneously. Each item is put on air `repeat_times` times, spaced
+`interval_seconds` apart — the numbers its `transmit_policy` names (see
+"Transmit schedule" below).
 
 Not the same thing as `ui/src/ui/beacon.py` — that module is the "beacon
 identity" settings page (`/beacon`'s callsign/description fields). No
@@ -16,7 +19,7 @@ Python import connects the two; they only share the DB.
 
 ```
 dispatcher --item.dispatched--> actions.ai --item.ai_settled--> actions.chunk --item.chunked--\
-                                                                                                 \-- actions.content_ready --item.content_ready--> beacon (frame + voice queues)
+                                                                                                 \-- actions.content_ready --item.content_ready--> beacon (beacon_tx_schedule)
 ```
 
 A linear pipeline, not a race: `actions.ai` always runs first (and
@@ -29,17 +32,14 @@ falling back to `extracted_contents` otherwise. By the time
 and only once — both `chunk` and `ai` have finished, mostly
 defense-in-depth at this point given the ordering above), the `chunks`
 table already holds the best available content, correctly sized. Beacon's
-job on that event is therefore simple:
+job on that event is therefore simple — insert (or reset, on a rearm) rows
+into `beacon_tx_schedule`, snapshotting the item's `transmit_policy` name:
 
-- **Frame**: one `QueuedFrame` per row in `chunks`, always — no
-  special-casing for whether a summary existed, since `chunks` already
-  reflects it.
-- **Voice**: always one `QueuedVoice`, resolved via `items.summary` if
-  present else `items.extracted_contents` at transmit time — the same
-  summary-else-raw fallback `chunk` itself now uses, kept independently
-  in `content.py` so CSN (whose short templated contents structurally
-  never get summarized) stays voice-able regardless of whether AI is
-  enabled.
+- **Frame**: one `kind="frame"` row per row in `chunks` (`ref` =
+  `str(chunk_index)`), always — no special-casing for whether a summary
+  existed, since `chunks` already reflects it.
+- **Voice**: always one `kind="voice"` row (`ref = ""`), resolved via
+  `items.summary` at transmit time.
 
 **MQTT delivery alone isn't trusted as the sole path in.** beacon's MQTT
 client uses `clean_session=True` (see `_run_mqtt_client`'s docstring for
@@ -51,13 +51,15 @@ periodically (`BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS`, default
 30s — plus once immediately on startup, which is what actually matters
 most), it compares `actions.content_ready`'s own durable publish record
 (`item_readiness`) against beacon's own `beacon.content_ready.enqueued`
-audit trail, and enqueues anything genuinely missed. Confirmed live: on
+audit trail, and schedules anything genuinely missed. Confirmed live: on
 one restart, `actions.content_ready` published a backlog of 52 items
 faster than beacon's client finished connecting — all 52 would have been
-silently lost without this.
+silently lost without this. (Since the schedule table is now durable, a
+beacon restart no longer loses rows already scheduled — but reconcile
+still covers publishes that landed while beacon was down.)
 
-Text resolution stays lazy (not baked in at enqueue time) for both: a
-later rearm, or a summary changing between enqueue and transmit, is
+Text resolution stays lazy (not baked in at schedule time) for both: a
+later rearm, or a summary changing between schedule and transmit, is
 naturally reflected — whatever's true right now is what gets sent.
 
 Frame's length limit is **not** a new beacon-specific setting — it reuses
@@ -99,42 +101,33 @@ never adjusts anything itself.
 Every tick, `_write_heartbeat` persists the current `SlotState` (already
 computed by `schedule.py`, nothing new derived) to `beacon_status`:
 `current_slot`, `current_cycle_index`, `current_cycle_elapsed_seconds`,
-`current_slot_remaining_seconds`, plus both queues' depth/dropped-total.
-`ui/`'s `/beacon` page reads these to render a live cycle timeline and
-slot countdown — see [ui/README.md](../ui/README.md#live-dashboard).
+`current_slot_remaining_seconds`, plus each kind's pending
+`beacon_tx_schedule` row count (still written under the historical
+`voice_queue_depth`/`frame_queue_depth` keys; `*_dropped_total` is always
+`0` now and kept for one release only). `ui/`'s `/beacon` page reads these
+to render a live cycle timeline and slot countdown — see
+[ui/README.md](../ui/README.md#live-dashboard).
 
-**Content is acted on as soon as it's queued, not just at a slot's start.**
-`_handle_content_ready_event` sets a `wake_event` right after `queue.put()`
-succeeds, so `_run_tdma_loop`'s tick-wait (normally
-`BEACON_TICK_SECONDS`) returns almost immediately instead of waiting out
-the rest of that tick. Draining itself is no longer gated to "once per
-slot occurrence" either — `_drain_and_transmit` is attempted on every
-iteration the current slot matches, a cheap no-op when its queue is
-already empty. An item queued 5 seconds before a voice slot ends is still
-transmitted within that same occurrence, not deferred to the next cycle.
+**Content is acted on as soon as it's scheduled, not just at a slot's
+start.** `_handle_content_ready_event` sets a `wake_event` right after
+inserting the schedule rows, so `_run_tdma_loop`'s tick-wait (normally
+`BEACON_TICK_SECONDS`) returns almost immediately. `_drain_kind` is
+attempted on every iteration the current slot matches, a cheap query when
+nothing of that kind is due.
 
 **A slot's length is a floor, not a hard ceiling.** Whenever it runs,
-`_run_tdma_loop` drains its *entire* queue — not one item — pausing
+`_drain_kind` transmits *every* currently-due row of that kind — pausing
 `BEACON_VOICE_INTER_TX_DELAY_SECONDS`/`BEACON_FRAME_INTER_TX_DELAY_SECONDS`
-(default 2s each, a placeholder pending real-hardware measurement, same
-caveat as `BEACON_SLOT_LEAD_TIME_SECONDS`) between consecutive
-transmissions so PTT can release/re-key and the TNC/listener can clear
-the previous one. If draining runs past the slot's nominal end, it
-finishes the backlog before handing control back — nothing gets cut off
-mid-queue, and this now applies just as much to an item that arrives with
-only seconds left in the slot as to a full backlog at the slot's start.
-This blocks `_maybe_control_services`, the NTP check, and the
-status heartbeat for the drain's duration; `BEACON_QUEUE_MAX_SIZE`
-(default 200 — sized for frame content, where one queue slot is one
-*chunk*, not one item; a real SENAPRED report has been observed
-producing 57 chunks on its own) bounds the worst case to that many
-sequential transmissions before control returns. Re-applied every tick
-via `BoundedDropOldestQueue.set_maxsize` (`src/beacon/queues.py`), not
-just read once at process start — a `/config` edit takes effect
-immediately, same as every other beacon setting; shrinking it live drops
-the oldest excess items right away rather than waiting for the next
-`put()`. A deliberate tradeoff —
-full-drain priority over strict timing — not an oversight.
+(default 2s each) between transmissions so PTT can release/re-key. If it
+runs past the slot's nominal end, it finishes before handing control back.
+This blocks `_maybe_control_services`, the NTP check, and the status
+heartbeat for that duration; `BEACON_QUEUE_MAX_SIZE` (default 200 — sized
+for frame content, where one row is one *chunk*, not one item; a real
+SENAPRED report has been observed producing 57 chunks) caps how many
+`beacon_tx_schedule` rows of a kind can be pending — `add_tx_schedule_unit`
+trims the oldest by `created_at` beyond that. Read fresh every
+`item.content_ready`, so a `/config` edit takes effect on the next
+scheduled item.
 
 One known edge case this doesn't address: if a transmission overruns far
 enough to blow through `BEACON_SLOT_LEAD_TIME_SECONDS` before the *next*
@@ -143,6 +136,49 @@ service switch entirely — its lead-time trigger only fires on a small
 *positive* ETA, not on "we're already past due." Pre-existing (a large
 backlog at slot start could already overrun this way); now reachable from
 any point in a slot, not just its start.
+
+## Transmit schedule (durable repeat)
+
+`beacon_tx_schedule` (owned by
+[`adapters.storage`](../data-adapters/src/adapters/storage.py)) is the
+source of truth for what beacon still has to put on air:
+
+```sql
+CREATE TABLE beacon_tx_schedule (
+    source              TEXT NOT NULL,
+    item_id             TEXT NOT NULL,
+    kind                TEXT NOT NULL,             -- 'frame' | 'voice' | future
+    ref                 TEXT NOT NULL DEFAULT '',  -- frame = str(chunk_index); voice = ''
+    transmit_policy     TEXT,                      -- policy NAME snapshot
+    sent_count          INTEGER NOT NULL DEFAULT 0,
+    last_transmitted_at TEXT,                      -- NULL = never sent (due now)
+    enqueued_event_id   TEXT,
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (source, item_id, kind, ref)
+);
+```
+
+- **Durable** — survives a beacon restart (unlike the in-memory queues it
+  replaced). `_reconcile_missed_content_ready` still covers publishes that
+  landed while beacon was down.
+- **Live policy** — every cycle, `_drain_kind` resolves
+  `adapters.transmit_policy.policy_for(row.transmit_policy)` fresh.
+  Due iff `last_transmitted_at IS NULL` or
+  `utc_now() >= last_transmitted_at + interval_seconds`. Retired (row
+  deleted, `beacon.tx.retired` recorded) iff `sent_count >= repeat_times`.
+  Editing a tier in `transmit_policies` changes in-flight behavior on the
+  next cycle.
+- **Every attempt counts** — `sent_count` increments whether the KISS send
+  / TTS+TX succeeded or not, so a persistently failing link still retires
+  the row instead of wedging the slot. Mirrors the old `_try_transmit_*`.
+- **Rearm / policy change** — a fresh `item.content_ready` (new CloudEvent
+  id) PK-upserts each row back to `sent_count = 0`,
+  `last_transmitted_at = NULL`, refreshing the policy name.
+- **Kind-generic** — `SLOT_KINDS` maps a `schedule.Slot` to the kinds it
+  transmits; `KIND_TRANSMITTERS` maps a kind to its `(conn, row, ctx) ->
+  bool` transmitter. A future repeatable TDMA slot type is a new `Slot`
+  value plus one entry in each — `_drain_kind` never special-cases.
 
 ## Enable / disable ("start/stop/restart")
 
@@ -154,8 +190,8 @@ tick — same pattern `ACTIONS_AI_ENABLED` already uses elsewhere in this
 repo. "Restart" means the next tick picks up whatever's in `settings`
 now; nothing kills or respawns the actual process. Deliberate: this avoids
 giving the still-auth-less UI the power to spawn/kill OS processes.
-Content keeps being *enqueued* even while disabled (the "strict queue"
-framing) — only the dequeue/transmit step checks the flag.
+Schedule rows keep being written even while disabled — only the transmit
+step checks the flag.
 
 ## Audio-device contention & service control
 
@@ -165,7 +201,7 @@ package resolves it by actively stopping/starting each service around its
 slot (`src/beacon/service_control.py`) — before a content slot begins
 (with a configurable lead time, `BEACON_SLOT_LEAD_TIME_SECONDS`, standing
 in for CONTEXT.md's own unmeasured `PTT_LATENCY_S`/`TNC_LATENCY_S`), and
-only when there's actually something queued for it.
+only when there's actually a pending `beacon_tx_schedule` row for it.
 
 **`BEACON_SERVICE_CONTROLLER=logging`** (default) just logs what it would
 do — the only path verifiable without the real shack host.
@@ -272,10 +308,9 @@ cause an overflow at transmit time.
 Continuous, content-independent periodic station identification (CW ID)
 — CONTEXT.md's regulatory section requires "mantener identificación en CW
 según normativa del país," a third content channel (Morse code) distinct
-from both voice and AX.25 frames. This package's queue-driven design
-("only transmit when there's something queued") doesn't produce that on
-its own — a real compliance gap worth a follow-up, not silently decided
-here.
+from both voice and AX.25 frames. This package's schedule-driven design
+("only transmit when there's a pending row") doesn't produce that on its
+own — a real compliance gap worth a follow-up, not silently decided here.
 
 ## Setup
 
@@ -339,7 +374,8 @@ regulatory requirement).
 ```
 
 Fully covered without any real hardware: `schedule.py` (pure timing,
-injected time), `queues.py`, `formatters.py`, `content.py`, `kiss.py`
+injected time), the `beacon_tx_schedule` drain/retire logic (injected
+`now_dt`), `formatters.py`, `content.py`, `kiss.py`
 (a real fake TCP server stands in for Direwolf), the MQTT subscriber glue
 (a fake `paho.mqtt` client, same convention as
 [actions/tests/test_main.py](../actions/tests/test_main.py) and

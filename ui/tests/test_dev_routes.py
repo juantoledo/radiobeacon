@@ -6,11 +6,11 @@ from adapters.storage import get_connection, set_setting
 from ui import config
 
 
-def _insert_item(conn, source, item_id, *, dispatch_policy="informational"):
+def _insert_item(conn, source, item_id, *, transmit_policy="informational"):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_title, fetched_at, dispatch_policy, rawdata) "
+        "INSERT INTO items (source, item_id, extracted_title, fetched_at, transmit_policy, rawdata) "
         "VALUES (?, ?, 'Title', datetime('now'), ?, '{}')",
-        (source, item_id, dispatch_policy),
+        (source, item_id, transmit_policy),
     )
     conn.commit()
 
@@ -78,12 +78,12 @@ def test_new_item_page_suggests_a_different_uuid_each_request(client):
     assert first != second
 
 
-def test_new_item_page_suggests_informational_dispatch_policy(client):
+def test_new_item_page_suggests_informational_transmit_policy(client):
     import re
 
     response = client.get("/dev/items/new")
 
-    match = re.search(r'id="dispatch_policy"[^>]*value="([^"]*)"', response.text)
+    match = re.search(r'id="transmit_policy"[^>]*value="([^"]*)"', response.text)
     assert match is not None
     assert match.group(1) == "informational"
 
@@ -101,16 +101,16 @@ def test_new_item_page_suggests_current_source_date_time(client):
     assert abs(datetime.now(timezone.utc) - suggested) < timedelta(seconds=10)
 
 
-def test_edit_item_page_does_not_override_existing_dispatch_policy_or_date(client, conn):
+def test_edit_item_page_does_not_override_existing_transmit_policy_or_date(client, conn):
     conn.execute(
-        "INSERT INTO items (source, item_id, fetched_at, dispatch_policy, source_date_time, rawdata) "
+        "INSERT INTO items (source, item_id, fetched_at, transmit_policy, source_date_time, rawdata) "
         "VALUES ('csn', '1', datetime('now'), 'urgent', '2020-01-01T00:00:00+00:00', '{}')"
     )
     conn.commit()
 
     response = client.get("/dev/items/csn/1/edit")
 
-    assert 'id="dispatch_policy"' in response.text
+    assert 'id="transmit_policy"' in response.text
     assert 'value="urgent"' in response.text
     assert 'value="2020-01-01T00:00:00+00:00"' in response.text
 
@@ -122,7 +122,7 @@ def test_create_item_redirects_and_persists(client, conn):
             "source": "csn",
             "item_id": "new-1",
             "extracted_title": "Manually created",
-            "dispatch_policy": "urgent",
+            "transmit_policy": "urgent",
         },
         follow_redirects=False,
     )
@@ -130,7 +130,7 @@ def test_create_item_redirects_and_persists(client, conn):
     assert response.status_code == 303
     assert response.headers["location"] == "/items/csn/new-1?msg=item+created"
     row = conn.execute(
-        "SELECT extracted_title, dispatch_policy FROM items WHERE source='csn' AND item_id='new-1'"
+        "SELECT extracted_title, transmit_policy FROM items WHERE source='csn' AND item_id='new-1'"
     ).fetchone()
     assert tuple(row) == ("Manually created", "urgent")
 
@@ -158,7 +158,7 @@ def test_edit_item_page_returns_200_for_known_item(client, conn):
 
 
 def test_edit_item_page_renders_null_fields_as_empty_not_the_word_none(client, conn):
-    # _insert_item only sets extracted_title/dispatch_policy — every other
+    # _insert_item only sets extracted_title/transmit_policy — every other
     # editable column (extracted_contents, summary, url, event_key, type,
     # subtype, source_date_time) is genuinely NULL. Regression test for a
     # bug where those fields rendered the literal text "None" instead of
@@ -179,18 +179,18 @@ def test_edit_item_page_returns_404_for_unknown_item(client):
 
 
 def test_update_item_action_redirects_to_detail_page(client, conn):
-    _insert_item(conn, "csn", "1", dispatch_policy="informational")
+    _insert_item(conn, "csn", "1", transmit_policy="informational")
 
     response = client.post(
         "/dev/items/csn/1",
-        data={"extracted_title": "Updated", "dispatch_policy": "urgent"},
+        data={"extracted_title": "Updated", "transmit_policy": "urgent"},
         follow_redirects=False,
     )
 
     assert response.status_code == 303
     assert response.headers["location"].startswith("/items/csn/1")
     row = conn.execute(
-        "SELECT extracted_title, dispatch_policy FROM items WHERE item_id='1'"
+        "SELECT extracted_title, transmit_policy FROM items WHERE item_id='1'"
     ).fetchone()
     assert tuple(row) == ("Updated", "urgent")
 
@@ -283,6 +283,6 @@ def test_open_readonly_connection_blocks_writes_at_the_driver_level(tmp_path, mo
     ro_conn = open_readonly_connection()
     try:
         with pytest.raises(sqlite3.OperationalError):
-            ro_conn.execute("UPDATE items SET dispatch_policy = 'urgent'")
+            ro_conn.execute("UPDATE items SET transmit_policy = 'urgent'")
     finally:
         ro_conn.close()

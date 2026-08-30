@@ -1,6 +1,6 @@
-"""Lazy content resolution — the queue holds lightweight references, not
-pre-rendered text; the actual text is read fresh from the DB at transmit
-time, not at enqueue time.
+"""Lazy content resolution — beacon_tx_schedule rows hold lightweight
+references (source, item_id, kind, ref), not pre-rendered text; the actual
+text is read fresh from the DB at transmit time, not at schedule time.
 
 Why lazy: actions.ai runs concurrently with beacon's own MQTT subscriber
 (both react to item.dispatched-adjacent events independently), so a
@@ -27,23 +27,9 @@ plus source_name/source_url, which aren't item data at all but the
 current source's own display metadata (adapters.storage.sources,
 seeded with csn/senapred, editable via data-adapters/sources.sh)."""
 import sqlite3
-from dataclasses import dataclass
 from datetime import datetime
 
 from adapters.storage import get_source_fields
-
-
-@dataclass(frozen=True)
-class QueuedFrame:
-    source: str
-    item_id: str
-    chunk_index: int
-
-
-@dataclass(frozen=True)
-class QueuedVoice:
-    source: str
-    item_id: str
 
 
 def resolve_frame_text(conn: sqlite3.Connection, source: str, item_id: str, chunk_index: int) -> str | None:

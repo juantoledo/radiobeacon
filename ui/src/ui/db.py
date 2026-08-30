@@ -42,10 +42,11 @@ def get_db(request: Request) -> Iterator[sqlite3.Connection]:
     # threads for the same request — see get_connection's docstring.
     conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    # dispatch_policies/trigger_dispatches/item_policy_state aren't created
+    # dispatcher_state/trigger_dispatches/item_policy_state aren't created
     # by get_connection() alone, only by dispatcher.watcher._ensure_tables
-    # — called unconditionally here, same as override_item.py/policies.py
-    # already do regardless of which action is actually requested.
+    # — called unconditionally here, same as override_item.py already does
+    # regardless of which action is actually requested. (transmit_policies
+    # is created + seeded by get_connection() itself now.)
     _ensure_tables(conn)
     # Stashed so templating.py's is_beacon_configured Jinja global can
     # reuse this exact connection instead of opening a second one to

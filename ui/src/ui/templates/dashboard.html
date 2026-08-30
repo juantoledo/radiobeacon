@@ -100,7 +100,7 @@
       <td class="mono"><a href="/items/{{ item.source }}/{{ item.item_id }}">{{ item.item_id }}</a></td>
       <td class="wrap">{{ item.extracted_title or "—" }}</td>
       <td>{{ item.type or "" }}</td>
-      <td>{% if item.dispatch_policy %}<span class="{{ item.dispatch_policy | policy_badge }}">{{ item.dispatch_policy }}</span>{% endif %}</td>
+      <td>{% if item.transmit_policy %}<span class="{{ item.transmit_policy | policy_badge }}">{{ item.transmit_policy }}</span>{% endif %}</td>
       <td class="muted">{{ item.source_date_time | display_dt }}</td>
     </tr>
     {% else %}
