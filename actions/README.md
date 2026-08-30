@@ -125,6 +125,15 @@ not every action needs somewhere downstream to publish to).
 A fresh action instance is created per message, so actions stay
 stateless between messages by construction.
 
+An action also declares its default MQTT wiring as three class
+attributes — `default_subscribe_topic`, `default_output_topic`,
+`default_output_event_type` (all `None` on the base). `__main__.py`
+resolves the matching `ACTIONS_<NAME>_*` setting as DB row → env var →
+this declared default, so the built-in `ai` → `chunk` → `content_ready`
+chain works with nothing in `.env` or the settings table; an env var or
+DB row still overrides, and an explicit empty `SUBSCRIBE_TOPIC` disables
+the action.
+
 ## How a message is handled
 
 Each action runs on its own thread, with its own MQTT connection (full
@@ -172,11 +181,17 @@ Package-generic (all actions share one broker connection config):
 Per-action (`ACTIONS_<NAME>_*`, `NAME` = the action's own module name
 uppercased, e.g. `CHUNK` for `src/actions/chunk.py`):
 
+Each resolves DB row → env var → the value the action class declares in
+code (`default_subscribe_topic` / `default_output_topic` /
+`default_output_event_type`, see `src/actions/base.py`). The built-in
+`ai` and `chunk` actions declare theirs, so the pipeline flows on a fresh
+install with none of these set:
+
 | var | required? | notes |
 |---|---|---|
-| `ACTIONS_<NAME>_SUBSCRIBE_TOPIC` | yes | comma-separated for multiple topics; the action is skipped (warning logged) if unset — there's no sensible generic default, unlike e.g. `ADAPTERS_DEFAULT_INTERVAL_SECONDS` |
-| `ACTIONS_<NAME>_OUTPUT_TOPIC` | no | omit for a terminal action |
-| `ACTIONS_<NAME>_OUTPUT_EVENT_TYPE` | no | defaults to the action's own module name (e.g. `chunk`); set explicitly (e.g. `item.chunked`) for readability — the MQTT topic and the CloudEvents `type` are separate concerns |
+| `ACTIONS_<NAME>_SUBSCRIBE_TOPIC` | no* | comma-separated for multiple topics. Falls back to the action's declared `default_subscribe_topic` (`ai` → `item.dispatched`, `chunk` → `item.ai_settled`). *An action that declares **no** default is skipped (warning logged) when unset. Set to an empty string to explicitly disable an action that has a default. |
+| `ACTIONS_<NAME>_OUTPUT_TOPIC` | no | falls back to the declared `default_output_topic` (`ai` → `item.ai_settled`, `chunk` → `item.chunked`); an action that declares none and gets no override is terminal |
+| `ACTIONS_<NAME>_OUTPUT_EVENT_TYPE` | no | falls back to the declared `default_output_event_type`, else the action's own module name — the MQTT topic and the CloudEvents `type` are separate concerns |
 
 Chunk-specific: `ACTIONS_CHUNK_MAX_CHARS` (default `200` — a ceiling,
 dynamically clamped down at runtime once `BEACON_CALLSIGN` is

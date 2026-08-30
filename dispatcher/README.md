@@ -166,9 +166,11 @@ itself:
 `adapter.fetch`, `item.stored`, `policy.set`, `policy.deleted` are
 recorded in `audit_log` but never published here.
 
-Enabled by default (`DISPATCHER_MQ_HOST=localhost`, see `.env.example`) —
-leave it unset/commented out to disable, in which case no connection is
-ever attempted. This is also the only way `actions/` (chunk, ai) learns
+Enabled by default: `DISPATCHER_MQ_HOST` resolves to `localhost` when
+unset, the same as `ACTIONS_MQ_HOST` / `BEACON_MQ_HOST` — set it to an
+empty string (`DISPATCHER_MQ_HOST=` in `.env`, or a blank settings row) to
+disable, in which case no connection is ever attempted. This is also the
+only way `actions/` (chunk, ai) learns
 about new or re-armed items: it subscribes to the same
 `radiobeacon/events/item.dispatched` topic published here, so disabling
 this leaves `actions` permanently idle even if it and the broker are

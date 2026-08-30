@@ -57,26 +57,37 @@ def _env_name(action_class: type[Action]) -> str:
 
 def _subscribe_topics(action_class: type[Action]) -> list[str] | None:
     """ACTIONS_<NAME>_SUBSCRIBE_TOPIC, comma-separated for multiple
-    topics. Required — no sensible generic default exists (unlike e.g.
-    ADAPTERS_DEFAULT_INTERVAL_SECONDS), so returns None if unset; the
-    caller logs a warning and skips this action rather than crashing the
-    whole process over one misconfigured action."""
-    raw = get_setting(f"ACTIONS_{_env_name(action_class)}_SUBSCRIBE_TOPIC")
+    topics. Resolves DB row -> env var -> the action's declared
+    default_subscribe_topic (see base.Action) — so the built-in ai/chunk
+    pipeline flows on a fresh install with nothing configured. Returns
+    None (the caller logs a warning and skips this action, rather than
+    crashing the whole process) when an action declares no default and
+    none is configured, or when the resolved value is an explicit empty
+    string — the deliberate per-action disable switch."""
+    raw = get_setting(
+        f"ACTIONS_{_env_name(action_class)}_SUBSCRIBE_TOPIC",
+        action_class.default_subscribe_topic,
+    )
     if not raw:
         return None
     return [topic.strip() for topic in raw.split(",") if topic.strip()]
 
 
 def _output_config(action_class: type[Action]) -> tuple[str | None, str]:
-    """(output_topic, output_event_type). output_topic is optional — an
-    action can legitimately have nowhere to publish (a terminal action
+    """(output_topic, output_event_type), each DB row -> env var ->
+    action-declared default (see base.Action). output_topic is optional —
+    an action can legitimately have nowhere to publish (a terminal action
     whose run() always returns [], or output that's intentionally
-    dropped); output_event_type defaults to the action's own module leaf
-    name if not set explicitly."""
+    dropped), so it stays None when neither configured nor declared.
+    output_event_type falls back to the declared default_output_event_type
+    and, failing that, the action's own module leaf name."""
     name = _env_name(action_class)
-    output_topic = get_setting(f"ACTIONS_{name}_OUTPUT_TOPIC")
+    output_topic = get_setting(
+        f"ACTIONS_{name}_OUTPUT_TOPIC", action_class.default_output_topic
+    )
     output_event_type = get_setting(
-        f"ACTIONS_{name}_OUTPUT_EVENT_TYPE", name.lower()
+        f"ACTIONS_{name}_OUTPUT_EVENT_TYPE",
+        action_class.default_output_event_type or name.lower(),
     )
     return output_topic, output_event_type
 

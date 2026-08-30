@@ -7,7 +7,9 @@ from typing import Any
 import paho.mqtt.client
 
 import actions.__main__ as main_module
+from actions.ai import AiAction
 from actions.base import Action
+from actions.chunk import ChunkAction
 
 
 class FakeAction(Action):
@@ -89,16 +91,66 @@ def test_subscribe_topics_splits_comma_separated_list(monkeypatch):
 
 
 def test_subscribe_topics_returns_none_when_unset(monkeypatch):
+    # FakeAction declares no default_subscribe_topic, so the skip-when-unset
+    # contract still holds for an action that opts out of declarative wiring.
     monkeypatch.delenv("ACTIONS_FAKEACTION_SUBSCRIBE_TOPIC", raising=False)
 
     assert main_module._subscribe_topics(FakeAction) is None
 
 
 def test_output_config_returns_none_topic_and_default_event_type_when_unset(monkeypatch):
+    # Likewise: FakeAction declares no default_output_topic / _event_type.
     monkeypatch.delenv("ACTIONS_FAKEACTION_OUTPUT_TOPIC", raising=False)
     monkeypatch.delenv("ACTIONS_FAKEACTION_OUTPUT_EVENT_TYPE", raising=False)
 
     assert main_module._output_config(FakeAction) == (None, "fakeaction")
+
+
+def test_subscribe_topics_falls_back_to_declared_class_default(monkeypatch):
+    monkeypatch.delenv("ACTIONS_AI_SUBSCRIBE_TOPIC", raising=False)
+    monkeypatch.delenv("ACTIONS_CHUNK_SUBSCRIBE_TOPIC", raising=False)
+
+    assert main_module._subscribe_topics(AiAction) == ["radiobeacon/events/item.dispatched"]
+    assert main_module._subscribe_topics(ChunkAction) == ["radiobeacon/events/item.ai_settled"]
+
+
+def test_output_config_uses_declared_class_defaults(monkeypatch):
+    for var in (
+        "ACTIONS_AI_OUTPUT_TOPIC",
+        "ACTIONS_AI_OUTPUT_EVENT_TYPE",
+        "ACTIONS_CHUNK_OUTPUT_TOPIC",
+        "ACTIONS_CHUNK_OUTPUT_EVENT_TYPE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    assert main_module._output_config(AiAction) == (
+        "radiobeacon/events/item.ai_settled",
+        "item.ai_settled",
+    )
+    assert main_module._output_config(ChunkAction) == (
+        "radiobeacon/events/item.chunked",
+        "item.chunked",
+    )
+
+
+def test_env_var_overrides_declared_class_default(monkeypatch):
+    monkeypatch.setenv("ACTIONS_AI_SUBSCRIBE_TOPIC", "radiobeacon/events/custom")
+    monkeypatch.setenv("ACTIONS_AI_OUTPUT_TOPIC", "radiobeacon/events/custom_out")
+    monkeypatch.setenv("ACTIONS_AI_OUTPUT_EVENT_TYPE", "custom.type")
+
+    assert main_module._subscribe_topics(AiAction) == ["radiobeacon/events/custom"]
+    assert main_module._output_config(AiAction) == (
+        "radiobeacon/events/custom_out",
+        "custom.type",
+    )
+
+
+def test_empty_string_still_disables_action_with_a_declared_default(monkeypatch):
+    # The per-action kill switch: an explicit empty string wins over the
+    # declared default, so get_setting returns "" and the action is skipped.
+    monkeypatch.setenv("ACTIONS_AI_SUBSCRIBE_TOPIC", "")
+
+    assert main_module._subscribe_topics(AiAction) is None
 
 
 def test_output_config_reads_action_specific_env_vars(monkeypatch):

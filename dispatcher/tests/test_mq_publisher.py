@@ -67,9 +67,24 @@ def test_unpublished_event_type_is_a_no_op(monkeypatch):
     )
 
 
-def test_disabled_by_default_when_host_unset_is_a_no_op(monkeypatch):
+def test_disabled_when_host_explicitly_empty_is_a_no_op(monkeypatch):
     monkeypatch.setattr(mq_publisher, "_client", None)
     monkeypatch.setattr(paho.mqtt.client, "Client", _raise_if_called)
+    monkeypatch.setenv("DISPATCHER_MQ_HOST", "")
+
+    publish_cloud_event(
+        event_type="item.dispatched",
+        actor="log_handler",
+        source="senapred",
+        item_id="1",
+        details={"consumer": "log"},
+    )
+
+
+def test_enabled_by_default_when_host_unset(monkeypatch):
+    """DISPATCHER_MQ_HOST resolves to localhost when unset (like
+    ACTIONS_MQ_HOST / BEACON_MQ_HOST), so publishing is on out of the box."""
+    fake = _install_fake_client(monkeypatch)
     monkeypatch.delenv("DISPATCHER_MQ_HOST", raising=False)
 
     publish_cloud_event(
@@ -79,6 +94,9 @@ def test_disabled_by_default_when_host_unset_is_a_no_op(monkeypatch):
         item_id="1",
         details={"consumer": "log"},
     )
+
+    assert fake.connected == ("localhost", 1883)
+    assert len(fake.published) == 1
 
 
 def test_publish_publishes_every_item_dispatched(monkeypatch):

@@ -8,8 +8,11 @@ tests importing those modules directly never trigger MQTT side effects.
 
 paho-mqtt and cloudevents are imported lazily, inside functions, so
 importing this module has no hard dependency on either package being
-installed — only actually publishing (DISPATCHER_MQ_HOST set, an event
-type in _PUBLISHED_EVENT_TYPES) does. (cloudevents.http.CloudEvent is used
+installed — only actually publishing (DISPATCHER_MQ_HOST non-empty, an
+event type in _PUBLISHED_EVENT_TYPES) does. Publishing is on by default:
+DISPATCHER_MQ_HOST resolves to "localhost" when unset, matching
+ACTIONS_MQ_HOST / BEACON_MQ_HOST — set it to an empty string to disable
+publishing entirely (no connection is ever attempted). (cloudevents.http.CloudEvent is used
 here despite the "http" in its name — the CloudEvents Python SDK's
 envelope construction/conversion utilities are transport-agnostic; "http"
 just reflects HTTP being the first binding the SDK implemented.)"""
@@ -84,7 +87,7 @@ def _get_client():
 
     import paho.mqtt.client as mqtt_client
 
-    host = get_setting("DISPATCHER_MQ_HOST")
+    host = get_setting("DISPATCHER_MQ_HOST", "localhost")
     port = int(get_setting("DISPATCHER_MQ_PORT", "1883"))
     timeout = int(get_setting("DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS", "5"))
 
@@ -106,16 +109,17 @@ def publish_cloud_event(
 ) -> None:
     """The registered adapters.storage audit-event hook. Filters to the 6
     published event types first (cheap — no env lookup, no import) before
-    doing anything else. No-ops entirely if DISPATCHER_MQ_HOST is unset (no
-    paho-mqtt import, no connection attempt — same "leave unset to
-    disable" convention the rest of this repo uses). Never raises: any
-    failure (broker down, timeout, etc.) is logged and swallowed —
-    publishing is best-effort on top of the audit_log row, which is
-    already committed by the time this runs."""
+    doing anything else. Publishing is on by default (DISPATCHER_MQ_HOST
+    defaults to "localhost", like ACTIONS_MQ_HOST / BEACON_MQ_HOST); it
+    no-ops entirely only when DISPATCHER_MQ_HOST is explicitly set to an
+    empty string (no paho-mqtt import, no connection attempt). Never
+    raises: any failure (broker down, timeout, etc.) is logged and
+    swallowed — publishing is best-effort on top of the audit_log row,
+    which is already committed by the time this runs."""
     if event_type not in _PUBLISHED_EVENT_TYPES:
         return
 
-    host = get_setting("DISPATCHER_MQ_HOST")
+    host = get_setting("DISPATCHER_MQ_HOST", "localhost")
     if not host:
         return
 

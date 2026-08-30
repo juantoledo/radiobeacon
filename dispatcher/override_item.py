@@ -19,7 +19,8 @@ from dispatcher.override import override_item, rearm_item  # noqa: E402
 logger = logging.getLogger(__name__)
 
 # Publishes select audit events (see dispatcher/mq_publisher.py) to MQTT as
-# CloudEvents — no-ops unless DISPATCHER_MQ_HOST is set.
+# CloudEvents — on by default (DISPATCHER_MQ_HOST defaults to localhost),
+# no-ops only when DISPATCHER_MQ_HOST is explicitly set empty.
 register_audit_event_hook(publish_cloud_event)
 
 

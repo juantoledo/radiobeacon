@@ -90,10 +90,10 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "DISPATCHER_MQ_HOST",
         "MQ — Dispatcher",
         "MQTT host",
-        "Broker host for dispatcher's audit-event publishing. Unset disables "
-        "publishing entirely.",
+        "Broker host for dispatcher's audit-event publishing. Defaults to "
+        "localhost; set to an empty string to disable publishing entirely.",
         "text",
-        None,
+        "localhost",
     ),
     SettingSpec(
         "DISPATCHER_MQ_PORT",
@@ -159,7 +159,9 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Subscribe topic",
         "MQTT topic ChunkAction subscribes to — actions.ai's own output, "
         "not item.dispatched directly, so chunk always runs after ai has "
-        "settled. Required — action is skipped if unset.",
+        "settled. ChunkAction falls back to this exact value in code, so "
+        "chunking works with no config; override only to re-wire the "
+        "pipeline, or set empty to disable the action.",
         "text",
         "radiobeacon/events/item.ai_settled",
         advanced=True,
@@ -207,7 +209,9 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ACTIONS_AI_SUBSCRIBE_TOPIC",
         "Actions — AI",
         "Subscribe topic",
-        "MQTT topic AiAction subscribes to.",
+        "MQTT topic AiAction subscribes to. AiAction falls back to this "
+        "exact value in code, so the pipeline runs with no config; "
+        "override only to re-wire it, or set empty to disable the action.",
         "text",
         "radiobeacon/events/item.dispatched",
         advanced=True,

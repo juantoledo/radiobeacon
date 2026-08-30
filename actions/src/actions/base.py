@@ -4,6 +4,17 @@ from typing import Any
 
 
 class Action(ABC):
+    # Declarative default MQTT wiring for this action. __main__.py resolves
+    # ACTIONS_<NAME>_SUBSCRIBE_TOPIC / _OUTPUT_TOPIC / _OUTPUT_EVENT_TYPE as
+    # DB row -> env var -> these — so a fresh install with an empty settings
+    # table still flows the pipeline end-to-end with no manual config. A
+    # subclass that leaves default_subscribe_topic as None is skipped (with a
+    # warning) when nothing configures its subscribe topic; an explicit empty
+    # string is the deliberate per-action disable switch either way.
+    default_subscribe_topic: str | None = None
+    default_output_topic: str | None = None
+    default_output_event_type: str | None = None
+
     @abstractmethod
     def run(self, event: dict[str, Any], *, conn: sqlite3.Connection) -> list[dict[str, Any]]:
         """`event` is the full parsed CloudEvent envelope as a dict

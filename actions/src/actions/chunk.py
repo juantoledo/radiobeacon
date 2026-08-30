@@ -161,6 +161,10 @@ class ChunkAction(Action):
     pointer — not a payload carrier — for actions.content_ready and,
     downstream of that, beacon to consume."""
 
+    default_subscribe_topic = "radiobeacon/events/item.ai_settled"
+    default_output_topic = "radiobeacon/events/item.chunked"
+    default_output_event_type = "item.chunked"
+
     def run(self, event: dict[str, Any], *, conn: sqlite3.Connection) -> list[dict[str, Any]]:
         data = event.get("data") or {}
         source, item_id = data.get("source"), data.get("item_id")

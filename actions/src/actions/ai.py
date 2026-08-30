@@ -133,6 +133,10 @@ class AiAction(Action):
     audit entry. Every skip below is a legitimate no-op, not a failure,
     so those still publish (with summarized: False) rather than raising."""
 
+    default_subscribe_topic = "radiobeacon/events/item.dispatched"
+    default_output_topic = "radiobeacon/events/item.ai_settled"
+    default_output_event_type = "item.ai_settled"
+
     def run(self, event: dict[str, Any], *, conn: sqlite3.Connection) -> list[dict[str, Any]]:
         data = event.get("data") or {}
         source, item_id = data.get("source"), data.get("item_id")
