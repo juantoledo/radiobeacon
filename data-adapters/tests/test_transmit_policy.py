@@ -31,17 +31,17 @@ def conn():
 def test_ensure_seeded_inserts_defaults_into_empty_table(conn):
     _ensure_transmit_policies_seeded(conn)
 
-    assert get_policy(conn, "urgent") == RepeatPolicy(repeat_times=5, interval_seconds=60)
     assert get_policy(conn, "informational") == RepeatPolicy(repeat_times=1, interval_seconds=0)
+    assert get_policy(conn, "urgent") is None  # a fresh install seeds only informational
 
 
 def test_ensure_seeded_is_idempotent_and_does_not_clobber_edits(conn):
     _ensure_transmit_policies_seeded(conn)
-    set_policy(conn, "urgent", repeat_times=9, interval_seconds=15)
+    set_policy(conn, "informational", repeat_times=9, interval_seconds=15)
 
     _ensure_transmit_policies_seeded(conn)  # table non-empty now — must not re-seed
 
-    assert get_policy(conn, "urgent") == RepeatPolicy(repeat_times=9, interval_seconds=15)
+    assert get_policy(conn, "informational") == RepeatPolicy(repeat_times=9, interval_seconds=15)
 
 
 def test_get_policy_returns_none_for_unknown_name(conn):
@@ -52,6 +52,7 @@ def test_get_policy_returns_none_for_unknown_name(conn):
 
 def test_policy_for_resolves_known_name(conn):
     _ensure_transmit_policies_seeded(conn)
+    set_policy(conn, "urgent", repeat_times=5, interval_seconds=60)
 
     assert policy_for(conn, "urgent") == RepeatPolicy(repeat_times=5, interval_seconds=60)
 

@@ -23,6 +23,14 @@ from actions.base import Action  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+# Diagnostic keys a single-output action may attach for humans reading the
+# /audit page — copied verbatim from the output payload into the
+# action.<name>.executed audit row. `summary` is deliberately NOT here: it
+# is already persisted in items.summary and would only bloat the row.
+# `prompt` only appears in ai's output when ACTIONS_AI_EVENT_INCLUDE_PROMPT
+# is on, so it lands in the audit row on exactly the same opt-in.
+_AUDIT_DETAIL_KEYS = ("reason", "provider", "model", "prompt")
+
 # MQ is this package's entire job (unlike dispatcher, where publishing is
 # an optional bonus on top of its real job of SQLite polling) — defaults
 # to the local broker mq/start.sh brings up rather than requiring
@@ -154,6 +162,19 @@ def _make_on_message(action_class: type[Action], output_topic: str | None, outpu
                     )
                     return
                 outputs = action_class().run(event, conn=conn)
+                audit_details = {
+                    "input_type": event.get("type"),
+                    "output_count": len(outputs),
+                    "event_id": event_id,
+                }
+                # A single-output action may attach diagnostic detail
+                # (ai's skip `reason`, the `provider`/`model` used, the
+                # rendered `prompt`) — surface it on /audit rather than
+                # leaving it only in logs. See _AUDIT_DETAIL_KEYS.
+                if len(outputs) == 1:
+                    for key in _AUDIT_DETAIL_KEYS:
+                        if outputs[0].get(key) is not None:
+                            audit_details[key] = outputs[0][key]
                 try:
                     record_audit_event(
                         conn,
@@ -161,11 +182,7 @@ def _make_on_message(action_class: type[Action], output_topic: str | None, outpu
                         actor=f"actions.{name}",
                         source=data.get("source"),
                         item_id=data.get("item_id"),
-                        details={
-                            "input_type": event.get("type"),
-                            "output_count": len(outputs),
-                            "event_id": event_id,
-                        },
+                        details=audit_details,
                     )
                 except Exception:
                     logger.error(

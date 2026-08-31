@@ -24,7 +24,10 @@ that interprets `config`:
   `_content_uuid` in `api_adapter.py`: a uuid5 derived from the item's own
   content, not `uuid.uuid4()` — the same item always produces the same
   value, so a source with no natural id can still get a stable one instead
-  of a new random id flooding storage every poll). One template covers
+  of a new random id flooding storage every poll) and `{source_name}` /
+  `{source_url}` (this source's display name and site URL from the
+  `sources` table — the same placeholders `beacon`/`actions` expose;
+  fail-soft to the raw source key when unmanaged). One template covers
   every case: `{Fecha}` alone is a raw passthrough, plain text with no
   `{...}` is a constant, and `Sismo M{Magnitud} - {RefGeografica}` is a
   real construction — there's no separate "raw field"/"constant" mode,
@@ -80,9 +83,10 @@ hand-written adapter modules:
   `Python-urllib/x.y` one). The API gives no stable id or per-event page,
   so the seeded config derives `id`/`event_key` from the raw `Fecha`
   timestamp field (`mapping.id.field_date_format`), and every item's `url`
-  is a constant pointing at the sismologia.cl homepage. `transmit_policy`
-  comes from the seeded `transmit_policy_rule` (urgent at/above a magnitude
-  threshold, informational below it).
+  is a constant pointing at the sismologia.cl homepage. The seeded config
+  sets no `transmit_policy_rule`, so every item resolves to the default
+  `informational` policy; an operator can add a magnitude-threshold rule at
+  `/adapters` if they want big quakes on a different tier.
 
 - **senapred** (`custom`) — active early-warning alerts from senapred.cl.
   The seeded snippet (`storage._build_senapred_code`) uses senapred.cl's
@@ -99,8 +103,7 @@ hand-written adapter modules:
   by every item belonging to the same event, so its full timeline can be
   reconstructed with `WHERE event_key = ? ORDER BY source_date_time` (see
   [query_history.sh](../query_history.sh) at the repo root).
-  `transmit_policy` is `"urgent"` for `"Alerta"` items, `"informational"`
-  for `"Evento"` items.
+  The seeded snippet assigns every item `transmit_policy = "informational"`.
 
 If this operator's database already had `ADAPTERS_CSN_*`/
 `ADAPTERS_SENAPRED_*` settings overridden via the old `/config` groups

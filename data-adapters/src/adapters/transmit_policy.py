@@ -6,11 +6,11 @@ from adapters.storage import record_audit_event
 DEFAULT_POLICY_NAME = "informational"
 
 # Seeded into transmit_policies by adapters.storage._ensure_transmit_policies_seeded
-# on first get_connection() call, only if the table is empty — the starting
-# set an operator can then edit via dispatcher/policies.sh (list/set/delete)
-# or the ui's /policies page, not by changing these constants.
+# on first get_connection() call, only if the table is empty. A fresh install
+# ships just `informational`; any further tier (e.g. an `urgent` at 5x/60s for
+# escalated items) is added by an operator via dispatcher/policies.sh
+# (list/set/delete) or the ui's /policies page, not by changing this constant.
 SEED_POLICIES = (
-    ("urgent", 5, 60, "Retransmitted several times, spread out."),
     ("informational", 1, 0, "Transmitted once."),
 )
 

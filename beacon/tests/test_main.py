@@ -179,7 +179,7 @@ def test_resolve_beacon_type_falls_back_on_garbage(tmp_path):
 def test_handle_content_ready_frame_type_schedules_one_row_per_chunk(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _set_type(conn, "frame")
-    _insert_item(conn, "csn", "1", transmit_policy="urgent")
+    _insert_item(conn, "csn", "1", transmit_policy="informational")
     _insert_chunk(conn, "csn", "1", 0, "chunk zero", chunk_count=3)
     _insert_chunk(conn, "csn", "1", 1, "chunk one", chunk_count=3)
     _insert_chunk(conn, "csn", "1", 2, "chunk two", chunk_count=3)
@@ -192,7 +192,7 @@ def test_handle_content_ready_frame_type_schedules_one_row_per_chunk(tmp_path):
         "SELECT ref, transmit_policy, sent_count FROM beacon_tx_schedule "
         "WHERE kind='frame' AND ref='0'"
     ).fetchone()
-    assert frame0 == ("0", "urgent", 0)
+    assert frame0 == ("0", "informational", 0)
 
 
 def test_handle_content_ready_voice_type_schedules_one_voice_row_only(tmp_path):
@@ -374,9 +374,9 @@ def test_on_message_skips_event_missing_source_or_item_id(tmp_path, monkeypatch)
 
 def test_write_heartbeat_persists_type_and_schedule_counts(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
-    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "urgent", "e1")
-    add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "urgent", "e1")
-    add_tx_schedule_unit(conn, "csn", "1", "frame", "1", "urgent", "e1")
+    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "informational", "e1")
+    add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "informational", "e1")
+    add_tx_schedule_unit(conn, "csn", "1", "frame", "1", "informational", "e1")
 
     main_module._write_heartbeat(conn, "frame")
 
@@ -396,7 +396,8 @@ def test_write_heartbeat_persists_type_and_schedule_counts(tmp_path):
 def test_drain_kind_transmits_due_frame_row_and_increments_sent_count(tmp_path, _stub_frame_audio):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "urgent", "e1")
+    set_policy(conn, "repeat", repeat_times=3, interval_seconds=60)
+    add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "repeat", "e1")
     tx = _RecordingWavTransmitter()
 
     n = main_module._drain_kind(
@@ -417,7 +418,7 @@ def test_drain_kind_transmits_due_frame_row_and_increments_sent_count(tmp_path, 
 def test_drain_kind_transmits_due_voice_row(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_item(conn, "csn", "1", summary="hola mundo")
-    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "urgent", "e1")
+    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "informational", "e1")
     tx = _RecordingWavTransmitter()
 
     n = main_module._drain_kind(
@@ -479,7 +480,7 @@ def test_drain_kind_stops_early_on_stop_event(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     for i in range(5):
         _insert_chunk(conn, "csn", str(i), 0, "chunk text")
-        add_tx_schedule_unit(conn, "csn", str(i), "frame", "0", "urgent", "e1")
+        add_tx_schedule_unit(conn, "csn", str(i), "frame", "0", "informational", "e1")
 
     stop_event = threading.Event()
     stop_event.set()

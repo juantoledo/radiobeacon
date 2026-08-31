@@ -199,8 +199,8 @@ def test_dashboard_counts(conn):
     assert counts["items_last_24h"] == 2
     assert counts["total_audit_events"] == 1
     assert counts["in_flight_dispatches"] == 0
-    # _ensure_tables seeds the two default policies (urgent, informational).
-    assert counts["total_policies"] == 2
+    # _ensure_tables seeds a single default policy (informational).
+    assert counts["total_policies"] == 1
 
 
 def test_recent_items_orders_newest_first_and_respects_limit(conn):

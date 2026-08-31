@@ -290,10 +290,30 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ACTIONS_AI_PROMPT",
         "Actions — AI",
         "Prompt template",
-        "str.format-style override of the default summarization prompt "
-        "(placeholders: {extracted_title}, {type}, {subtype}, {extracted_contents}, {url}).",
+        "Global str.format-style override of the default summarization prompt. Any "
+        "of an item's mapped adapter attributes can be referenced as a placeholder: "
+        "{source}, {item_id}, {extracted_title}, {extracted_contents}, {summary}, {url}, "
+        "{event_key}, {type}, {subtype}, {transmit_policy}, {source_date_time}, "
+        "{fetched_at}, {captured_at}, {rawdata}, plus the source's display name and "
+        "site URL as {source_name} / {source_url} — an unknown placeholder just renders "
+        "blank. A single adapter can override this further via its own 'AI prompt "
+        "override' field on the /adapters form.",
         "text",
         None,
+    ),
+    SettingSpec(
+        "ACTIONS_AI_EVENT_INCLUDE_PROMPT",
+        "Actions — AI",
+        "Include prompt in events",
+        "When on, the fully rendered prompt sent to the provider is attached to "
+        "each item.ai_settled event and its action.ai.executed audit row (visible "
+        "on /audit). Off by default — the prompt embeds the item's full text, so "
+        "it bloats every event, log line, and audit row. The event/audit row "
+        "already carry a `reason` (on skips) and `provider`/`model` (on success) "
+        "regardless of this setting.",
+        "bool",
+        "false",
+        advanced=True,
     ),
     # --- Actions — Content Ready ---
     SettingSpec(

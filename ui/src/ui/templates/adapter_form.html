@@ -48,6 +48,23 @@
                placeholder="blank = ADAPTERS_DEFAULT_INTERVAL_SECONDS">
       </td>
     </tr>
+    <tr>
+      <th><label for="ai_prompt">AI prompt override</label></th>
+      <td>
+        <textarea id="ai_prompt" name="ai_prompt" rows="8"
+                  placeholder="{{ ai_prompt_default }}">{{ ai_prompt }}</textarea>
+        <div class="meta-line">Optional. <code>str.format</code> template used by the AI
+          summarizer for this source only. Any of the item's mapped adapter attributes
+          can be referenced as a placeholder — <code>{source}</code>, <code>{item_id}</code>,
+          <code>{extracted_title}</code>, <code>{extracted_contents}</code>, <code>{summary}</code>,
+          <code>{url}</code>, <code>{event_key}</code>, <code>{type}</code>, <code>{subtype}</code>,
+          <code>{transmit_policy}</code>, <code>{source_date_time}</code>, <code>{fetched_at}</code>,
+          <code>{captured_at}</code>, <code>{rawdata}</code>, plus the source's display name and
+          site URL as <code>{source_name}</code> / <code>{source_url}</code> — an unknown
+          placeholder just renders blank. Leave blank to use the current default (shown greyed above): the global
+          <code>ACTIONS_AI_PROMPT</code> if set, otherwise the built-in prompt.</div>
+      </td>
+    </tr>
   </table>
 
   <fieldset id="api-fields">
@@ -173,8 +190,9 @@
       template box is a free-form construction — <code>{Fecha}</code> alone is a raw passthrough, plain
       text with no braces is a constant, and anything else — <code>Sismo M{Magnitud} - {RefGeografica}</code>
       — combines several raw fields into one string. It can also use <code>{uuid}</code> for a stable,
-      content-derived id when a source has no natural one. Drag a field name — from the list or the JSON
-      below — onto a box to insert it, or click one to drop it where you last clicked.
+      content-derived id when a source has no natural one, and <code>{source_name}</code> /
+      <code>{source_url}</code> for this source's display name and site URL. Drag a field name — from the
+      list or the JSON below — onto a box to insert it, or click one to drop it where you last clicked.
     </p>
     <div class="table-wrap">
       <table class="kv-table">

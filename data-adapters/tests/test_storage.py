@@ -566,7 +566,7 @@ def test_get_connection_seeds_transmit_policies_and_creates_beacon_tx_schedule(t
     conn = get_connection(tmp_path / "radiobeacon.db")
 
     seeded = {row[0] for row in conn.execute("SELECT name FROM transmit_policies")}
-    assert seeded == {"urgent", "informational"}
+    assert seeded == {"informational"}
 
     cols = {row[1] for row in conn.execute("PRAGMA table_info(beacon_tx_schedule)")}
     assert {"source", "item_id", "kind", "ref", "transmit_policy", "sent_count"} <= cols
@@ -1319,6 +1319,59 @@ def test_get_connection_seeds_csn_api_and_senapred_custom_instances(tmp_path):
     # time (see _build_senapred_code), not read from config at call time.
     assert 'config.get("identity_pool_id"' not in senapred_config["code"]
     assert "IDENTITY_POOL_ID = 'us-east-1:17c696bc-53e1-49a2-991f-f1b65f752fda'" in senapred_config["code"]
+
+
+def _senapred_strip_html():
+    """Render the seeded SENAPRED CUSTOM snippet and pull its private
+    _strip_html helper out, so its HTML-cleaning behavior is unit-testable
+    without a live network fetch."""
+    code = storage_module._build_senapred_code(
+        identity_pool_id="pool",
+        cognito_region="us-east-1",
+        appsync_region="us-east-1",
+        appsync_host="example.appsync-api.us-east-1.amazonaws.com",
+        alerta_base_url="https://senapred.cl/alerta/",
+        evento_base_url="https://senapred.cl/evento/",
+        query_limit=50,
+    )
+    namespace: dict = {}
+    exec(code, namespace)  # noqa: S102 - rendering our own seed template
+    return namespace["_strip_html"]
+
+
+def test_senapred_strip_html_drops_script_and_style_bodies():
+    strip = _senapred_strip_html()
+    raw = (
+        "<p>Alerta roja</p><script>var x = 1 < 2;</script>"
+        "<style>.a{color:red}</style><p>Evacuar</p>"
+    )
+    assert strip(raw) == "Alerta roja Evacuar"
+
+
+def test_senapred_strip_html_decodes_entities():
+    strip = _senapred_strip_html()
+    assert strip("Marea alta &amp; oleaje&nbsp;fuerte &lt;zona&gt;") == (
+        "Marea alta & oleaje fuerte <zona>"
+    )
+
+
+def test_senapred_strip_html_keeps_inline_word_boundaries():
+    strip = _senapred_strip_html()
+    assert strip("<p>eva<strong>cua</strong>ción in<em>me</em>diata</p>") == (
+        "evacuación inmediata"
+    )
+
+
+def test_senapred_strip_html_separates_block_elements():
+    strip = _senapred_strip_html()
+    assert strip("<ul><li>Norte</li><li>Centro</li><li>Sur</li></ul>") == "Norte Centro Sur"
+
+
+def test_senapred_strip_html_tolerates_malformed_and_empty():
+    strip = _senapred_strip_html()
+    assert strip("") == ""
+    assert strip(None) == ""
+    assert strip("<p>texto <b>sin cerrar") == "texto sin cerrar"
 
 
 def test_get_connection_does_not_reseed_or_reset_edited_adapter_instances(tmp_path):
