@@ -29,8 +29,8 @@ are str.format templates that, beyond {date}, can reference item_fields:
 {source}, {item_id}, {type}, {subtype}, {extracted_title}, {url} (see
 beacon.content.resolve_item_fields). Rendered via adapters.templating.
 safe_format, which falls back to "" on an invalid placeholder rather than
-raising — a misconfigured template must never crash the TDMA loop, which
-has no per-tick catch-all."""
+raising — a misconfigured template must never crash the transmit loop,
+which has no per-tick catch-all."""
 import textwrap
 from dataclasses import dataclass
 

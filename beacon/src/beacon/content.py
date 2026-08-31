@@ -6,9 +6,9 @@ Why lazy: actions.ai runs concurrently with beacon's own MQTT subscriber
 (both react to item.dispatched-adjacent events independently), so a
 summary genuinely may not exist yet at enqueue time even when AI is
 enabled and will eventually produce one. Deferring the read to transmit
-time — which, given typical TDMA window lengths of tens of seconds to
-minutes, is almost always well after a same-item AI call would have
-completed — avoids ever needing to guess "is a summary coming or not."
+time — which, given the poll cadence and the transmit-policy interval, is
+almost always well after a same-item AI call would have completed — avoids
+ever needing to guess "is a summary coming or not."
 It also means a later rearm, or the item's summary changing between
 enqueue and transmit, is naturally reflected: whatever's true right now
 is what gets sent.

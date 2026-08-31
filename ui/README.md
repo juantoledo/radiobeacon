@@ -91,18 +91,13 @@ framework, no build step). Paused while the tab is backgrounded, resumed
 immediately on refocus. Set `UI_DASHBOARD_REFRESH_SECONDS=0` to disable
 entirely.
 
-The dashboard's own "Beacon" section (enable/disable, cycle timeline,
-slot countdown, queue cards) refreshes on that same interval — it's part
-of the same `#dashboard-content` block, not a separate page. The
-timeline's segment widths come from the `/config` →
-"Beacon — Schedule" window settings; the "now" marker and time-left
-countdown come from `beacon_status.current_cycle_elapsed_seconds`/
-`current_slot_remaining_seconds`, written every TDMA tick by
-`beacon/src/beacon/__main__.py::_write_heartbeat` straight from
-`schedule.SlotState` (see `beacon/README.md`). The countdown (but not the
-last-known slot name, which stays informative even stale) is hidden
-whenever the heartbeat itself is stale — a frozen number would actively
-mislead in a way a stale-but-static slot name doesn't.
+The dashboard's own "Beacon" section (enable/disable, beacon type,
+pending-transmit count, last-transmit time) refreshes on that same
+interval — it's part of the same `#dashboard-content` block, not a
+separate page. The values come from `beacon_status` (`beacon_type`, the
+active type's `*_queue_depth`, `last_{voice,frame}_transmit_at`), written
+every tick by `beacon/src/beacon/__main__.py::_write_heartbeat`. The
+"running" badge tracks whether `process_heartbeat_at` is recent.
 
 ## No authentication
 

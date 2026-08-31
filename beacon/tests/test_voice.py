@@ -2,20 +2,7 @@ import shutil
 
 import pytest
 
-from beacon.voice import LoggingVoiceTransmitter, SvxlinkControlTransmitter, synthesize_speech
-
-
-def test_logging_voice_transmitter_returns_true(tmp_path):
-    transmitter = LoggingVoiceTransmitter()
-
-    assert transmitter.transmit(text="hola", wav_path=tmp_path / "out.wav") is True
-
-
-def test_svxlink_control_transmitter_is_an_unverified_stub(tmp_path):
-    transmitter = SvxlinkControlTransmitter()
-
-    with pytest.raises(NotImplementedError):
-        transmitter.transmit(text="hola", wav_path=tmp_path / "out.wav")
+from beacon.voice import synthesize_speech
 
 
 def test_synthesize_speech_returns_false_when_binary_missing(tmp_path, monkeypatch):

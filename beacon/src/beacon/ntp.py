@@ -2,17 +2,12 @@
 
 The OS's own NTP daemon (systemd-timesyncd/chronyd — standard on any
 modern Linux, assumed already running) does actual clock discipline; this
-module never adjusts anything. beacon.schedule.current_slot() reading
-time.time() fresh every tick (recomputing cycle boundaries from scratch,
-never accumulating sleeps) is beacon's entire "resync" story — if the OS
-steps or slews the clock, the very next tick already reflects it, with no
-custom protocol code needed.
+module never adjusts anything.
 
-check_offset() on top of that is a purely optional, read-only visibility
-layer: how far off is the system clock right now, for logging/showing in
-the UI — never used to correct anything. Not testable against a real NTP
-server in this sandbox (no guaranteed outbound network) — tests mock this
-boundary."""
+check_offset() is a purely optional, read-only visibility layer: how far
+off is the system clock right now, for logging/showing in the UI — never
+used to correct anything. Not testable against a real NTP server in this
+sandbox (no guaranteed outbound network) — tests mock this boundary."""
 import logging
 from dataclasses import dataclass
 

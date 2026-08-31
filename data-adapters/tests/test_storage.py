@@ -572,6 +572,25 @@ def test_get_connection_seeds_transmit_policies_and_creates_beacon_tx_schedule(t
     assert {"source", "item_id", "kind", "ref", "transmit_policy", "sent_count"} <= cols
 
 
+def test_delete_tx_schedule_other_kinds_keeps_only_the_named_kind(tmp_path):
+    from adapters.storage import (
+        add_tx_schedule_unit,
+        count_tx_schedule_by_kind,
+        delete_tx_schedule_other_kinds,
+    )
+
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "informational", "e1")
+    add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "informational", "e1")
+    add_tx_schedule_unit(conn, "csn", "1", "frame", "1", "informational", "e1")
+
+    removed = delete_tx_schedule_other_kinds(conn, "frame")
+
+    assert removed == 1
+    assert count_tx_schedule_by_kind(conn) == {"frame": 2}
+    assert delete_tx_schedule_other_kinds(conn, "frame") == 0
+
+
 def test_migrate_adapter_instances_config_renames_rule_key_and_custom_code(tmp_path):
     db_path = tmp_path / "radiobeacon.db"
     legacy_conn = sqlite3.connect(db_path)

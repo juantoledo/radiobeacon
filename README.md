@@ -1,15 +1,17 @@
 # radiobeacon
 
 Data pipeline (and, as of [beacon/](beacon/README.md), the transmission
-orchestrator) for **CD3DXZ-1**, an experimental VHF (2m) propagation
-beacon project: pulling in raw data (starting with SENAPRED early-warning
-alerts and CSN earthquake reports), storing it, and delivering it to voice
-(SvxLink) or AX.25 frame (Direwolf) channels on a TDMA schedule.
-Deploying Direwolf/SvxLink themselves — their Dockerfiles, compose, and
-the host-level audio setup CONTEXT.md describes — remains out of scope
-here; `beacon/` assumes both already run as independently controllable
-services on the host. See [CONTEXT.md](CONTEXT.md) for the full system
-design.
+layer) for **CD3DXZ-1**, an experimental VHF (2m) propagation beacon
+project: pulling in raw data (starting with SENAPRED early-warning alerts
+and CSN earthquake reports), storing it, and — for a single operator-chosen
+**beacon type** (`voice` or AX.25 `frame`) — rendering each item to one WAV
+file that SvxLink plays on air when the channel is idle, via the
+`svxlink-txqueue` spool folder
+([documentation/svxlink-txqueue-SETUP.md](documentation/svxlink-txqueue-SETUP.md)).
+Deploying SvxLink and `svxlink-txqueue` themselves is out of scope here.
+Frame audio is rendered with Direwolf's `gen_packets` CLI (`apt install
+direwolf`) — no Direwolf process runs. See [CONTEXT.md](CONTEXT.md) for the
+original system design.
 
 ## Layout
 
@@ -20,8 +22,8 @@ mq/             optional local MQTT broker (Docker), dispatcher can publish Clou
 actions/        optional MQTT-subscribed pipeline of N configurable actions (e.g. chunking)
 ui/             server-rendered ops dashboard (FastAPI) — browse/override items, manage
                 transmit policies, view the audit log; dockerizable, localhost-only by default
-beacon/         TDMA transmission orchestrator — queues content, delivers it to voice
-                (SvxLink) or AX.25 frame (Direwolf) channels; disabled by default
+beacon/         transmission layer — renders content for the chosen BEACON_TYPE (voice
+                or AX.25 frame) to a WAV, hands it to SvxLink; disabled by default
 storage/        the shared SQLite database (radiobeacon.db) all packages read/write
 query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
 start.sh        one-command fresh-clone setup — see Quick start below
@@ -56,9 +58,9 @@ data-adapters (fetch)  →  storage/radiobeacon.db  ←  ui/ (browse + override,
                               ┊ (optional)
                      actions/ (chained MQTT-subscribed pipeline)
                               ┊ item.content_ready
-                     beacon/ (TDMA voice/frame transmission orchestrator)
-                              ┊ (needs real hardware, out of scope here)
-                     SvxLink / Direwolf (voice / AX.25 radio TX)
+                     beacon/ (renders the chosen BEACON_TYPE to one WAV per item)
+                              ┊ WAV dropped into the svxlink-txqueue spool
+                     SvxLink (plays each WAV on air when the channel is idle)
 ```
 
 ## Quick start

@@ -14,7 +14,7 @@ def safe_format(template: str, context: str, **kwargs) -> str:
     """str.format() that never raises. A misconfigured template (an
     unknown {placeholder}) logs an error naming which setting broke and
     falls back to "" -- never crashes actions.chunk's clamp estimate, and
-    never crashes beacon's TDMA tick loop, which has no per-tick
+    never crashes beacon's transmit loop, which has no per-tick
     catch-all and would otherwise die until restarted."""
     if not template:
         return ""

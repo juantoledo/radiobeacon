@@ -155,7 +155,7 @@ def test_format_frame_renders_item_field_placeholder_in_prefix():
 
 
 def test_format_frame_falls_back_to_empty_on_invalid_placeholder():
-    """A typo'd placeholder must not crash format_frame -- the TDMA loop
+    """A typo'd placeholder must not crash format_frame -- the transmit loop
     has no per-tick catch-all around this call."""
     result = format_frame(
         "hola mundo", callsign="CD3DXZ-1", destination="WXALRT", prefix="[{typeo}] ", type="alerta",
@@ -199,7 +199,7 @@ def test_format_voice_renders_item_field_placeholder_in_template_and_prefix():
 
 def test_format_voice_falls_back_to_empty_on_invalid_placeholder():
     """A typo'd placeholder in prefix/suffix/template must not crash
-    format_voice -- the TDMA loop has no per-tick catch-all around this
+    format_voice -- the transmit loop has no per-tick catch-all around this
     call."""
     result = format_voice(
         "un resumen corto", callsign="CD3DXZ-1", template="{callsign}. {text}",
