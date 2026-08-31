@@ -20,10 +20,7 @@ from dataclasses import dataclass, field
 from adapters.beacon_defaults import (
     BEACON_ENABLED_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
-    BEACON_WINDOW_FRAME_SECONDS_DEFAULT,
-    BEACON_WINDOW_GUARD_SECONDS_DEFAULT,
-    BEACON_WINDOW_TOTAL_SECONDS_DEFAULT,
-    BEACON_WINDOW_VOICE_SECONDS_DEFAULT,
+    BEACON_TYPE_DEFAULT,
 )
 
 
@@ -454,99 +451,80 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         env_fallback=False,
         required=True,
     ),
-    # --- Beacon — Schedule ---
+    # --- Beacon — Transmission ---
     # BEACON_ENABLED also gets a first-class Enable/Disable control on
     # the dashboard (see ui/src/ui/routers/dashboard.py) — it stays
     # listed here too for discoverability/consistency with every other
     # setting.
     SettingSpec(
         "BEACON_ENABLED",
-        "Beacon — Schedule",
+        "Beacon — Transmission",
         "Enabled",
-        "Whether the beacon TDMA loop actually transmits queued voice/frame "
-        "content. Re-read every tick — no restart needed to flip it.",
+        "Whether the beacon transmit loop actually puts scheduled content on "
+        "air. Re-read every tick — no restart needed to flip it.",
         "bool",
         BEACON_ENABLED_DEFAULT,
     ),
     SettingSpec(
-        "BEACON_WINDOW_TOTAL_SECONDS",
-        "Beacon — Schedule",
-        "Window total (s)",
-        "Length of one full TDMA cycle: voice + guard + frame + idle.",
-        "int",
-        BEACON_WINDOW_TOTAL_SECONDS_DEFAULT,
-    ),
-    SettingSpec(
-        "BEACON_WINDOW_VOICE_SECONDS",
-        "Beacon — Schedule",
-        "Voice slot (s)",
-        "Seconds of the cycle reserved for voice transmission.",
-        "int",
-        BEACON_WINDOW_VOICE_SECONDS_DEFAULT,
-    ),
-    SettingSpec(
-        "BEACON_WINDOW_FRAME_SECONDS",
-        "Beacon — Schedule",
-        "Frame slot (s)",
-        "Seconds of the cycle reserved for AX.25 frame transmission.",
-        "int",
-        BEACON_WINDOW_FRAME_SECONDS_DEFAULT,
-    ),
-    SettingSpec(
-        "BEACON_WINDOW_GUARD_SECONDS",
-        "Beacon — Schedule",
-        "Guard time (s)",
-        "Gap between the voice and frame slots, letting the outgoing "
-        "transmitter release the shared audio device before the next one "
-        "opens it. 0 collapses voice straight into frame.",
-        "int",
-        BEACON_WINDOW_GUARD_SECONDS_DEFAULT,
+        "BEACON_TYPE",
+        "Beacon — Transmission",
+        "Beacon type",
+        "What each ready item is transmitted as. \"voice\" synthesizes a "
+        "spoken-word WAV (piper/espeak). \"frame\" renders an AX.25 UI frame "
+        "to a 1200-baud AFSK WAV via Direwolf's gen_packets, one per chunk. "
+        "Either way a single WAV is produced and handed to the WAV "
+        "transmitter (see Beacon — Output). Changing this clears any "
+        "pending rows of the other type on the next tick.",
+        "select",
+        BEACON_TYPE_DEFAULT,
+        choices=("voice", "frame"),
     ),
     SettingSpec(
         "BEACON_TICK_SECONDS",
-        "Beacon — Schedule",
-        "Tick interval (s)",
-        "Upper bound on how long the TDMA loop waits before re-evaluating "
+        "Beacon — Transmission",
+        "Poll interval (s)",
+        "Upper bound on how long the transmit loop waits before re-checking "
         "the schedule — newly queued content wakes it immediately, this is "
-        "just the fallback poll interval. Small relative to the slot "
-        "lengths so short slots aren't missed.",
-        "int",
-        "1",
-        advanced=True,
-    ),
-    SettingSpec(
-        "BEACON_SLOT_LEAD_TIME_SECONDS",
-        "Beacon — Schedule",
-        "Slot lead time (s)",
-        "How long before a content slot's start to stop/start SvxLink or "
-        "Direwolf, so the target service is ready by the time the slot "
-        "actually begins. A placeholder — CONTEXT.md's own PTT_LATENCY_S/ "
-        "TNC_LATENCY_S need measuring on the real hardware.",
+        "just the fallback poll interval.",
         "int",
         "2",
         advanced=True,
     ),
     SettingSpec(
-        "BEACON_VOICE_INTER_TX_DELAY_SECONDS",
-        "Beacon — Schedule",
-        "Voice inter-transmission delay (s)",
-        "Gap between consecutive voice transmissions when draining a full "
-        "backlog within one slot occurrence. A placeholder — needs real "
-        "hardware measurement, same as BEACON_SLOT_LEAD_TIME_SECONDS.",
+        "BEACON_INTER_TX_DELAY_SECONDS",
+        "Beacon — Transmission",
+        "Inter-transmission delay (s)",
+        "Gap between consecutive transmissions when draining a backlog, so "
+        "PTT / the svxlink-txqueue channel-idle wait can settle between "
+        "clips.",
         "float",
         "2",
         advanced=True,
     ),
+    # --- Beacon — Output ---
     SettingSpec(
-        "BEACON_FRAME_INTER_TX_DELAY_SECONDS",
-        "Beacon — Schedule",
-        "Frame inter-transmission delay (s)",
-        "Gap between consecutive frame transmissions when draining a full "
-        "backlog within one slot occurrence. A placeholder — needs real "
-        "hardware measurement, same as BEACON_SLOT_LEAD_TIME_SECONDS.",
-        "float",
-        "2",
+        "BEACON_WAV_TRANSMITTER",
+        "Beacon — Output",
+        "WAV transmitter",
+        "\"logging\" (default, safe) just logs the WAV it would hand off. "
+        "\"spool\" drops the WAV into the svxlink-txqueue spool for SvxLink "
+        "to play when the RF channel is idle — see "
+        "documentation/svxlink-txqueue-SETUP.md.",
+        "select",
+        "logging",
+        choices=("logging", "spool"),
         advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_TXQUEUE_INCOMING_DIR",
+        "Beacon — Output",
+        "svxlink-txqueue incoming dir",
+        "Folder the \"spool\" WAV transmitter drops rendered WAV files into — "
+        "svxlink-txqueue's documented drop point, which stamps a FIFO "
+        "timestamp, validates, and sanitizes the name. Must match "
+        "svxlink-txqueue's TXQUEUE_SPOOL/incoming.",
+        "text",
+        "/var/spool/svxlink-tx/incoming",
     ),
     # --- Beacon — Templates ---
     SettingSpec(
@@ -561,7 +539,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "no template — its ORIGEN>DESTINO: structure is fixed protocol "
         "code — but BEACON_FRAME_PREFIX/SUFFIX support the same "
         "placeholders. An invalid placeholder falls back to \"\" rather "
-        "than crashing the TDMA loop.",
+        "than crashing the transmit loop.",
         "text",
         "{callsign}. {text}. {date}",
     ),
@@ -595,10 +573,9 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Voice max chars",
         "Max characters of resolved voice text before word-boundary "
         "truncation (first piece only, no part markers — unlike frame "
-        "chunking, the rest is silently dropped). A time-budget cap sized "
-        "against BEACON_WINDOW_VOICE_SECONDS, not a protocol limit like "
-        "frame's. Deliberately separate from ACTIONS_AI_MAX_CHARS, whose "
-        "job is gating whether the LLM runs at all.",
+        "chunking, the rest is silently dropped). A time-budget cap, not a "
+        "protocol limit like frame's. Deliberately separate from "
+        "ACTIONS_AI_MAX_CHARS, whose job is gating whether the LLM runs at all.",
         "int",
         "500",
     ),
@@ -652,41 +629,28 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "",
     ),
     SettingSpec(
-        "BEACON_AX25_KISS_HOST",
+        "BEACON_GEN_PACKETS_BINARY",
         "Beacon — AX.25",
-        "Direwolf KISS host",
-        "Host of Direwolf's KISS TCP socket.",
+        "gen_packets binary",
+        "Command used to render an AX.25 frame to an AFSK WAV when "
+        "BEACON_TYPE=frame. Ships with the `direwolf` package "
+        "(apt install direwolf) — no Direwolf process runs, it's invoked "
+        "one-shot per frame.",
         "text",
-        "localhost",
-    ),
-    SettingSpec(
-        "BEACON_AX25_KISS_PORT",
-        "Beacon — AX.25",
-        "Direwolf KISS port",
-        "Port of Direwolf's KISS TCP socket.",
-        "int",
-        "8001",
-    ),
-    SettingSpec(
-        "BEACON_AX25_CONNECT_TIMEOUT_SECONDS",
-        "Beacon — AX.25",
-        "Connect timeout (s)",
-        "How long to wait when connecting to Direwolf's KISS socket.",
-        "int",
-        "5",
-    ),
-    # --- Beacon — Voice ---
-    SettingSpec(
-        "BEACON_VOICE_TRANSMITTER",
-        "Beacon — Voice",
-        "Voice transmitter",
-        "\"logging\" (default, safe) just logs what would be played. "
-        "\"svxlink\" is an unverified stub — see beacon/README.md.",
-        "select",
-        "logging",
-        choices=("logging", "svxlink"),
+        "gen_packets",
         advanced=True,
     ),
+    SettingSpec(
+        "BEACON_FRAME_LEAD_SILENCE_MS",
+        "Beacon — AX.25",
+        "Frame lead silence (ms)",
+        "Milliseconds of silence prepended to each rendered frame WAV so the "
+        "first bits aren't clipped while SvxLink keys the transmitter.",
+        "int",
+        "250",
+        advanced=True,
+    ),
+    # --- Beacon — Voice ---
     SettingSpec(
         "BEACON_TTS_ENGINE",
         "Beacon — Voice",
@@ -833,38 +797,6 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "float",
         "2.0",
     ),
-    # --- Beacon — Service control ---
-    SettingSpec(
-        "BEACON_SERVICE_CONTROLLER",
-        "Beacon — Service control",
-        "Service controller",
-        "\"logging\" (default, safe) just logs the start/stop it would "
-        "issue. \"systemctl\" actually controls SvxLink/Direwolf via "
-        "systemd — requires a scoped passwordless sudoers rule on the "
-        "host, see beacon/README.md.",
-        "select",
-        "logging",
-        choices=("logging", "systemctl"),
-        advanced=True,
-    ),
-    SettingSpec(
-        "BEACON_SVXLINK_SERVICE_NAME",
-        "Beacon — Service control",
-        "SvxLink service name",
-        "systemd unit name stopped/started around the voice slot.",
-        "text",
-        "svxlink",
-        advanced=True,
-    ),
-    SettingSpec(
-        "BEACON_DIREWOLF_SERVICE_NAME",
-        "Beacon — Service control",
-        "Direwolf service name",
-        "systemd unit name stopped/started around the frame slot.",
-        "text",
-        "direwolf",
-        advanced=True,
-    ),
 ]
 
 GROUPS: list[str] = list(dict.fromkeys(spec.group for spec in SETTINGS_CATALOG))
@@ -883,7 +815,7 @@ _SLUG_TO_GROUP: dict[str, str] = {group_slug(g): g for g in GROUPS}
 
 
 def category_for_group(group: str) -> str:
-    """"Beacon — Schedule" -> "Beacon", "Dispatcher" -> "Dispatcher" — the
+    """"Beacon — Transmission" -> "Beacon", "Dispatcher" -> "Dispatcher" — the
     " — " convention already used throughout GROUPS doubles as a
     category/subcategory split, so /config's category layer needs no new
     metadata on SettingSpec."""

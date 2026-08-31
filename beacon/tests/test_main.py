@@ -3,6 +3,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from adapters.storage import (
     add_tx_schedule_unit,
     get_connection,
@@ -13,7 +14,6 @@ from adapters.storage import (
 from adapters.transmit_policy import set_policy
 
 import beacon.__main__ as main_module
-from beacon.schedule import Slot, SlotState, WindowConfig
 
 
 class FakeMessage:
@@ -28,6 +28,38 @@ class FakeClient:
 
     def publish(self, topic, payload=None, qos=0):
         self.published.append((topic, payload, qos))
+
+
+class _RecordingWavTransmitter:
+    def __init__(self, result=True):
+        self.result = result
+        self.calls = []
+
+    def transmit(self, *, wav_path, label):
+        self.calls.append((str(wav_path), label))
+        return self.result
+
+
+@pytest.fixture(autouse=True)
+def _stub_frame_audio(monkeypatch):
+    """gen_packets isn't available in the test env — stub the render step so
+    _transmit_frame_unit / _drain_kind exercise everything around it. Returns
+    the list of TNC2 lines that would have been rendered."""
+    rendered = []
+
+    def _fake(tnc2_line, *, out_path, gen_packets_binary="gen_packets", lead_silence_ms=250):
+        rendered.append(tnc2_line)
+        return True
+
+    monkeypatch.setattr(main_module.frame_audio, "synthesize_frame_wav", _fake)
+    return rendered
+
+
+@pytest.fixture(autouse=True)
+def _stub_voice_synthesis(monkeypatch):
+    """Default: TTS succeeds without touching espeak/piper. Individual tests
+    override with their own monkeypatch when they need to inspect the text."""
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
 
 
 def _content_ready_payload(source="senapred", item_id="1", event_id=None):
@@ -65,13 +97,8 @@ def _insert_item(
     conn.commit()
 
 
-def _schedule(conn, kind=None):
-    sql = "SELECT source, item_id, kind, ref, transmit_policy, sent_count, last_transmitted_at FROM beacon_tx_schedule"
-    params = ()
-    if kind is not None:
-        sql += " WHERE kind = ?"
-        params = (kind,)
-    return conn.execute(sql + " ORDER BY kind, ref", params).fetchall()
+def _set_type(conn, beacon_type):
+    set_setting(conn, "BEACON_TYPE", beacon_type)
 
 
 def _count(conn, kind):
@@ -99,8 +126,9 @@ def _ctx(**overrides):
         "tts_engine": "espeak",
         "tts_piper_model": "",
         "tts_piper_binary": "piper",
-        "voice_transmitter": None,
-        "kiss_client": None,
+        "gen_packets_binary": "gen_packets",
+        "frame_lead_silence_ms": 0,
+        "wav_transmitter": _RecordingWavTransmitter(),
     }
     ctx.update(overrides)
     return ctx
@@ -125,11 +153,32 @@ def test_already_enqueued_true_for_matching_event_id(tmp_path):
     assert main_module._already_enqueued(conn, "different") is False
 
 
+# --- BEACON_TYPE resolution ---
+
+
+def test_resolve_beacon_type_defaults_to_voice(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    assert main_module._resolve_beacon_type(conn) == "voice"
+
+
+def test_resolve_beacon_type_reads_setting(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "frame")
+    assert main_module._resolve_beacon_type(conn) == "frame"
+
+
+def test_resolve_beacon_type_falls_back_on_garbage(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "morse")
+    assert main_module._resolve_beacon_type(conn) == "voice"
+
+
 # --- content_ready -> schedule rows ---
 
 
-def test_handle_content_ready_event_schedules_one_frame_row_per_chunk_and_one_voice(tmp_path):
+def test_handle_content_ready_frame_type_schedules_one_row_per_chunk(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "frame")
     _insert_item(conn, "csn", "1", transmit_policy="urgent")
     _insert_chunk(conn, "csn", "1", 0, "chunk zero", chunk_count=3)
     _insert_chunk(conn, "csn", "1", 1, "chunk one", chunk_count=3)
@@ -138,7 +187,7 @@ def test_handle_content_ready_event_schedules_one_frame_row_per_chunk_and_one_vo
     main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
 
     assert _count(conn, "frame") == 3
-    assert _count(conn, "voice") == 1
+    assert _count(conn, "voice") == 0
     frame0 = conn.execute(
         "SELECT ref, transmit_policy, sent_count FROM beacon_tx_schedule "
         "WHERE kind='frame' AND ref='0'"
@@ -146,9 +195,11 @@ def test_handle_content_ready_event_schedules_one_frame_row_per_chunk_and_one_vo
     assert frame0 == ("0", "urgent", 0)
 
 
-def test_handle_content_ready_event_no_chunks_yet_schedules_only_voice(tmp_path):
+def test_handle_content_ready_voice_type_schedules_one_voice_row_only(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "voice")
     _insert_item(conn, "csn", "1")
+    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
 
     main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
 
@@ -156,8 +207,20 @@ def test_handle_content_ready_event_no_chunks_yet_schedules_only_voice(tmp_path)
     assert _count(conn, "voice") == 1
 
 
+def test_handle_content_ready_frame_type_no_chunks_yet_schedules_nothing(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "frame")
+    _insert_item(conn, "csn", "1")
+
+    main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
+
+    assert _count(conn, "frame") == 0
+    assert _count(conn, "voice") == 0
+
+
 def test_handle_content_ready_event_idempotent_on_same_event_id(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "frame")
     _insert_item(conn, "csn", "1")
     _insert_chunk(conn, "csn", "1", 0, "chunk zero")
 
@@ -165,22 +228,20 @@ def test_handle_content_ready_event_idempotent_on_same_event_id(tmp_path):
     main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
 
     assert _count(conn, "frame") == 1
-    assert _count(conn, "voice") == 1
 
 
 def test_handle_content_ready_event_rearm_with_new_event_id_resets_rows(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "frame")
     _insert_item(conn, "csn", "1")
     _insert_chunk(conn, "csn", "1", 0, "chunk zero")
 
     main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
-    # simulate progress
     conn.execute("UPDATE beacon_tx_schedule SET sent_count = 3, last_transmitted_at = '2020-01-01T00:00:00'")
     conn.commit()
 
     main_module._handle_content_ready_event(conn, "csn", "1", "event-2")
 
-    # PK upsert: still one row per (kind, ref), but reset
     assert _count(conn, "frame") == 1
     row = conn.execute(
         "SELECT sent_count, last_transmitted_at, enqueued_event_id FROM beacon_tx_schedule "
@@ -189,8 +250,9 @@ def test_handle_content_ready_event_rearm_with_new_event_id_resets_rows(tmp_path
     assert row == (0, None, "event-2")
 
 
-def test_handle_content_ready_event_records_audit_event_with_event_id(tmp_path):
+def test_handle_content_ready_event_records_audit_event(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "frame")
     _insert_item(conn, "csn", "1")
     _insert_chunk(conn, "csn", "1", 0, "chunk zero")
 
@@ -201,8 +263,8 @@ def test_handle_content_ready_event_records_audit_event_with_event_id(tmp_path):
     ).fetchone()
     details = json.loads(row[0])
     assert details["event_id"] == "event-1"
+    assert details["beacon_type"] == "frame"
     assert details["frame_count"] == 1
-    assert details["voice_enqueued"] is True
 
 
 def test_handle_content_ready_event_sets_wake_event(tmp_path):
@@ -213,15 +275,6 @@ def test_handle_content_ready_event_sets_wake_event(tmp_path):
     main_module._handle_content_ready_event(conn, "csn", "1", "event-1", wake_event)
 
     assert wake_event.is_set()
-
-
-def test_handle_content_ready_event_wake_event_optional(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    _insert_item(conn, "csn", "1")
-
-    main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
-
-    assert _count(conn, "voice") == 1
 
 
 def test_handle_content_ready_event_does_not_set_wake_event_when_already_scheduled(tmp_path):
@@ -240,21 +293,19 @@ def test_handle_content_ready_event_does_not_set_wake_event_when_already_schedul
 
 def test_reconcile_schedules_item_readiness_row_never_scheduled(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "voice")
     _insert_item(conn, "csn", "1")
-    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
     mark_item_ready_published(conn, "csn", "1")
 
     reconciled = main_module._reconcile_missed_content_ready(conn)
 
     assert reconciled == 1
-    assert _count(conn, "frame") == 1
     assert _count(conn, "voice") == 1
 
 
 def test_reconcile_skips_item_already_scheduled_via_live_mqtt(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_item(conn, "csn", "1")
-    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
     main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
     mark_item_ready_published(conn, "csn", "1")
 
@@ -265,13 +316,11 @@ def test_reconcile_is_a_noop_with_nothing_pending(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
     assert main_module._reconcile_missed_content_ready(conn) == 0
-    assert _count(conn, "frame") == 0
 
 
 def test_reconcile_reschedules_after_a_rearm_republish(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_item(conn, "csn", "1")
-    _insert_chunk(conn, "csn", "1", 0, "chunk zero")
     main_module._handle_content_ready_event(conn, "csn", "1", "event-1")
     mark_item_ready_published(conn, "csn", "1")
 
@@ -290,6 +339,7 @@ def test_reconcile_reschedules_after_a_rearm_republish(tmp_path):
 def test_on_message_routes_content_ready_to_schedule(tmp_path, monkeypatch):
     monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
     conn = get_connection(tmp_path / "radiobeacon.db")
+    _set_type(conn, "frame")
     _insert_item(conn, "senapred", "1")
     _insert_chunk(conn, "senapred", "1", 0, "chunk zero")
 
@@ -297,7 +347,6 @@ def test_on_message_routes_content_ready_to_schedule(tmp_path, monkeypatch):
     handler(FakeClient(), None, FakeMessage(CONTENT_READY_TOPIC, _content_ready_payload()))
 
     assert _count(conn, "frame") == 1
-    assert _count(conn, "voice") == 1
 
 
 def test_on_message_swallows_malformed_payload(tmp_path, monkeypatch):
@@ -323,182 +372,41 @@ def test_on_message_skips_event_missing_source_or_item_id(tmp_path, monkeypatch)
 # --- _write_heartbeat ---
 
 
-def test_write_heartbeat_persists_slot_and_schedule_counts(tmp_path):
+def test_write_heartbeat_persists_type_and_schedule_counts(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     add_tx_schedule_unit(conn, "csn", "1", "voice", "", "urgent", "e1")
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "urgent", "e1")
     add_tx_schedule_unit(conn, "csn", "1", "frame", "1", "urgent", "e1")
-    state = SlotState(
-        slot=Slot.VOICE, cycle_index=3, elapsed_in_cycle=12.34, remaining_in_slot=47.66,
-        cycle_started_at=1000.0,
-    )
 
-    main_module._write_heartbeat(conn, state)
+    main_module._write_heartbeat(conn, "frame")
 
     status = {
         row[0]: row[1]
         for row in conn.execute("SELECT key, value FROM beacon_status").fetchall()
     }
-    assert status["current_slot"] == "voice"
-    assert status["current_cycle_index"] == "3"
-    assert status["current_cycle_elapsed_seconds"] == "12.3"
+    assert status["beacon_type"] == "frame"
     assert status["voice_queue_depth"] == "1"
     assert status["frame_queue_depth"] == "2"
-
-
-# --- window config ---
-
-
-def test_load_window_config_returns_config_from_settings(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    set_setting(conn, "BEACON_WINDOW_TOTAL_SECONDS", "90")
-    set_setting(conn, "BEACON_WINDOW_VOICE_SECONDS", "60")
-    set_setting(conn, "BEACON_WINDOW_FRAME_SECONDS", "30")
-
-    config = main_module._load_window_config(conn)
-
-    assert config == WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30, guard_seconds=0)
-
-
-def test_load_window_config_returns_none_on_invalid_combination(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    set_setting(conn, "BEACON_WINDOW_TOTAL_SECONDS", "90")
-    set_setting(conn, "BEACON_WINDOW_VOICE_SECONDS", "80")
-    set_setting(conn, "BEACON_WINDOW_FRAME_SECONDS", "80")
-
-    assert main_module._load_window_config(conn) is None
-
-
-# --- _seconds_until_slot_start ---
-
-
-def test_seconds_until_voice_start_from_within_voice_is_next_cycle():
-    config = WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30)
-    assert main_module._seconds_until_slot_start(config, Slot.VOICE, now=30.0) == 60.0
-
-
-def test_seconds_until_frame_start_from_within_voice():
-    config = WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30)
-    assert main_module._seconds_until_slot_start(config, Slot.FRAME, now=55.0) == 5.0
-
-
-def test_seconds_until_voice_start_with_zero_guard_still_correct():
-    config = WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30, guard_seconds=0)
-    assert main_module._seconds_until_slot_start(config, Slot.FRAME, now=58.0) == 2.0
-
-
-# --- _maybe_control_services ---
-
-
-class _RecordingServiceController:
-    def __init__(self):
-        self.calls = []
-
-    def start(self, service_name):
-        self.calls.append(("start", service_name))
-        return True
-
-    def stop(self, service_name):
-        self.calls.append(("stop", service_name))
-        return True
-
-    def is_active(self, service_name):
-        return True
-
-
-def test_maybe_control_services_preps_voice_when_scheduled_and_within_lead_time(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "urgent", "e1")
-    config = WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30)
-    controller = _RecordingServiceController()
-
-    prepped_voice, _ = main_module._maybe_control_services(
-        conn, config, 89.0, controller, "svxlink", "direwolf",
-        lead_time=2.0, prepped_voice=False, prepped_frame=False,
-    )
-
-    assert prepped_voice is True
-    assert ("stop", "direwolf") in controller.calls
-    assert ("start", "svxlink") in controller.calls
-
-
-def test_maybe_control_services_does_not_prep_when_nothing_scheduled(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    config = WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30)
-    controller = _RecordingServiceController()
-
-    prepped_voice, _ = main_module._maybe_control_services(
-        conn, config, 89.0, controller, "svxlink", "direwolf",
-        lead_time=2.0, prepped_voice=False, prepped_frame=False,
-    )
-
-    assert prepped_voice is False
-    assert controller.calls == []
-
-
-def test_maybe_control_services_does_not_double_trigger_within_same_window(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "urgent", "e1")
-    config = WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30)
-    controller = _RecordingServiceController()
-
-    prepped_voice, _ = main_module._maybe_control_services(
-        conn, config, 89.0, controller, "svxlink", "direwolf",
-        lead_time=2.0, prepped_voice=True, prepped_frame=False,
-    )
-
-    assert prepped_voice is True
-    assert controller.calls == []
-
-
-def test_maybe_control_services_resets_flag_outside_lead_time_window(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    config = WindowConfig(total_seconds=90, voice_seconds=60, frame_seconds=30)
-    controller = _RecordingServiceController()
-
-    prepped_voice, _ = main_module._maybe_control_services(
-        conn, config, 30.0, controller, "svxlink", "direwolf",
-        lead_time=2.0, prepped_voice=True, prepped_frame=False,
-    )
-
-    assert prepped_voice is False
+    assert status["process_heartbeat_at"]
 
 
 # --- _drain_kind ---
 
 
-class _StubVoiceTransmitter:
-    def __init__(self):
-        self.calls = []
-
-    def transmit(self, *, text, wav_path):
-        self.calls.append(text)
-        return True
-
-
-class _StubKissClient:
-    def __init__(self, result=True):
-        self.result = result
-        self.calls = []
-
-    def send_ui_frame(self, *, source_callsign, dest_callsign, info):
-        self.calls.append((source_callsign, dest_callsign, info))
-        return self.result
-
-
-def test_drain_kind_transmits_due_row_and_increments_sent_count(tmp_path):
+def test_drain_kind_transmits_due_frame_row_and_increments_sent_count(tmp_path, _stub_frame_audio):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "urgent", "e1")
-    kiss = _StubKissClient()
+    tx = _RecordingWavTransmitter()
 
     n = main_module._drain_kind(
         threading.Event(), conn, "frame", datetime(2026, 1, 1, tzinfo=timezone.utc),
-        _ctx(kiss_client=kiss), 0.0,
+        _ctx(wav_transmitter=tx), 0.0,
     )
 
     assert n == 1
-    assert kiss.calls == [("CD3DXZ-1", "WXALRT", b"chunk text")]
+    assert _stub_frame_audio == ["CD3DXZ-1>WXALRT:chunk text"]
+    assert len(tx.calls) == 1
     row = conn.execute(
         "SELECT sent_count, last_transmitted_at FROM beacon_tx_schedule WHERE kind='frame'"
     ).fetchone()
@@ -506,18 +414,32 @@ def test_drain_kind_transmits_due_row_and_increments_sent_count(tmp_path):
     assert row[1] is not None
 
 
+def test_drain_kind_transmits_due_voice_row(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", summary="hola mundo")
+    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "urgent", "e1")
+    tx = _RecordingWavTransmitter()
+
+    n = main_module._drain_kind(
+        threading.Event(), conn, "voice", datetime(2026, 1, 1, tzinfo=timezone.utc),
+        _ctx(wav_transmitter=tx), 0.0,
+    )
+
+    assert n == 1
+    assert len(tx.calls) == 1
+    assert tx.calls[0][1] == "voice csn/1"
+
+
 def test_drain_kind_retires_row_at_repeat_times(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "informational", "e1")  # 1x / 0s
-    kiss = _StubKissClient()
 
     main_module._drain_kind(
-        threading.Event(), conn, "frame", datetime(2026, 1, 1, tzinfo=timezone.utc),
-        _ctx(kiss_client=kiss), 0.0,
+        threading.Event(), conn, "frame", datetime(2026, 1, 1, tzinfo=timezone.utc), _ctx(), 0.0,
     )
 
-    assert _count(conn, "frame") == 0  # retired after its single transmission
+    assert _count(conn, "frame") == 0
     assert conn.execute(
         "SELECT 1 FROM audit_log WHERE event_type='beacon.tx.retired'"
     ).fetchone() is not None
@@ -528,20 +450,15 @@ def test_drain_kind_respects_interval_seconds(tmp_path):
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
     set_policy(conn, "slow", repeat_times=5, interval_seconds=60)
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "slow", "e1")
-    kiss = _StubKissClient()
 
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    # first pass: due (never transmitted)
-    assert main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(kiss_client=kiss), 0.0) == 1
-    # 30s later: not due (interval 60s)
+    assert main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(), 0.0) == 1
     assert main_module._drain_kind(
-        threading.Event(), conn, "frame", base + timedelta(seconds=30), _ctx(kiss_client=kiss), 0.0
+        threading.Event(), conn, "frame", base + timedelta(seconds=30), _ctx(), 0.0
     ) == 0
-    # 61s later: due again
     assert main_module._drain_kind(
-        threading.Event(), conn, "frame", base + timedelta(seconds=61), _ctx(kiss_client=kiss), 0.0
+        threading.Event(), conn, "frame", base + timedelta(seconds=61), _ctx(), 0.0
     ) == 1
-    assert len(kiss.calls) == 2
 
 
 def test_drain_kind_counts_failed_attempts_against_budget(tmp_path):
@@ -549,13 +466,12 @@ def test_drain_kind_counts_failed_attempts_against_budget(tmp_path):
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
     set_policy(conn, "twice", repeat_times=2, interval_seconds=0)
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "twice", "e1")
-    kiss = _StubKissClient(result=False)  # every send fails
+    tx = _RecordingWavTransmitter(result=False)  # every hand-off fails
 
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(kiss_client=kiss), 0.0)
-    main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(kiss_client=kiss), 0.0)
+    main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(wav_transmitter=tx), 0.0)
+    main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(wav_transmitter=tx), 0.0)
 
-    # two attempts, both failed, row still retired
     assert _count(conn, "frame") == 0
 
 
@@ -569,16 +485,15 @@ def test_drain_kind_stops_early_on_stop_event(tmp_path):
     stop_event.set()
 
     n = main_module._drain_kind(
-        stop_event, conn, "frame", datetime(2026, 1, 1, tzinfo=timezone.utc),
-        _ctx(kiss_client=_StubKissClient()), 0.0,
+        stop_event, conn, "frame", datetime(2026, 1, 1, tzinfo=timezone.utc), _ctx(), 0.0,
     )
 
     assert n == 0
 
 
 def test_drain_kind_is_generic_over_kinds(tmp_path):
-    """A new kind just needs a SLOT_KINDS + KIND_TRANSMITTERS entry — the
-    drain loop itself never special-cases."""
+    """A new kind just needs a KIND_TRANSMITTERS entry — the drain loop itself
+    never special-cases."""
     conn = get_connection(tmp_path / "radiobeacon.db")
     seen = []
     main_module.KIND_TRANSMITTERS["telemetry"] = lambda c, row, ctx: seen.append(row["item_id"]) or True
@@ -592,24 +507,6 @@ def test_drain_kind_is_generic_over_kinds(tmp_path):
         assert _count(conn, "telemetry") == 0
     finally:
         del main_module.KIND_TRANSMITTERS["telemetry"]
-
-
-def test_drain_kind_survives_reopened_connection(tmp_path):
-    """The schedule table is the durable source of truth — a restart
-    (new connection) still sees pending rows."""
-    db = tmp_path / "radiobeacon.db"
-    conn = get_connection(db)
-    _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    set_policy(conn, "twice", repeat_times=2, interval_seconds=0)
-    add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "twice", "e1")
-    kiss = _StubKissClient()
-    main_module._drain_kind(threading.Event(), conn, "frame", datetime(2026, 1, 1, tzinfo=timezone.utc), _ctx(kiss_client=kiss), 0.0)
-    conn.close()
-
-    conn2 = get_connection(db)
-    assert _count(conn2, "frame") == 1  # still one pass left
-    main_module._drain_kind(threading.Event(), conn2, "frame", datetime(2026, 1, 1, 0, 1, tzinfo=timezone.utc), _ctx(kiss_client=kiss), 0.0)
-    assert _count(conn2, "frame") == 0
 
 
 # --- _format_source_date_time ---
@@ -639,21 +536,20 @@ def test_format_source_date_time_blank_when_no_source_date_time(tmp_path):
 def test_transmit_voice_unit_skips_when_no_callsign(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_item(conn, "csn", "1", extracted_contents="raw contents")
-    transmitter = _StubVoiceTransmitter()
+    tx = _RecordingWavTransmitter()
 
     sent = main_module._transmit_voice_unit(
-        conn, {"source": "csn", "item_id": "1", "ref": ""},
-        _ctx(callsign=None, voice_transmitter=transmitter),
+        conn, {"source": "csn", "item_id": "1", "ref": ""}, _ctx(callsign=None, wav_transmitter=tx),
     )
 
     assert sent is False
-    assert transmitter.calls == []
+    assert tx.calls == []
     assert conn.execute(
         "SELECT 1 FROM audit_log WHERE event_type = 'beacon.voice.skipped_no_callsign'"
     ).fetchone() is not None
 
 
-def test_transmit_voice_unit_uses_summary_not_extracted_contents(tmp_path, monkeypatch):
+def test_transmit_voice_unit_uses_summary_and_hands_wav_to_transmitter(tmp_path, monkeypatch):
     synth = []
     monkeypatch.setattr("beacon.voice.synthesize_speech", lambda text, **k: synth.append(text) or True)
     conn = get_connection(tmp_path / "radiobeacon.db")
@@ -662,97 +558,119 @@ def test_transmit_voice_unit_uses_summary_not_extracted_contents(tmp_path, monke
         extracted_contents="Raw sensor payload -- should never be spoken.",
         summary="Sismo de magnitud 4.2.",
     )
-    transmitter = _StubVoiceTransmitter()
+    tx = _RecordingWavTransmitter()
 
     main_module._transmit_voice_unit(
-        conn, {"source": "csn", "item_id": "1", "ref": ""},
-        _ctx(voice_transmitter=transmitter),
+        conn, {"source": "csn", "item_id": "1", "ref": ""}, _ctx(wav_transmitter=tx),
     )
 
     assert synth == ["CD3DXZ-1. Sismo de magnitud 4.2."]
-    assert transmitter.calls == ["CD3DXZ-1. Sismo de magnitud 4.2."]
+    assert len(tx.calls) == 1
     assert conn.execute(
         "SELECT 1 FROM audit_log WHERE event_type = 'beacon.voice.transmitted'"
     ).fetchone() is not None
 
 
-def test_transmit_voice_unit_applies_prefix_and_suffix(tmp_path, monkeypatch):
-    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+def test_transmit_voice_unit_records_tts_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: False)
     conn = get_connection(tmp_path / "radiobeacon.db")
-    _insert_item(conn, "csn", "1", summary="Sismo de magnitud 4.2.")
-    transmitter = _StubVoiceTransmitter()
+    _insert_item(conn, "csn", "1", summary="hola")
+    tx = _RecordingWavTransmitter()
 
-    main_module._transmit_voice_unit(
-        conn, {"source": "csn", "item_id": "1", "ref": ""},
-        _ctx(voice_template="{text}", voice_prefix=">> ", voice_suffix=" <<", voice_transmitter=transmitter),
-    )
-
-    assert transmitter.calls == [">> Sismo de magnitud 4.2. <<"]
-
-
-def test_transmit_frame_unit_skips_when_no_callsign(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    kiss = _StubKissClient()
-
-    sent = main_module._transmit_frame_unit(
-        conn, {"source": "csn", "item_id": "1", "ref": "0"}, _ctx(callsign=None, kiss_client=kiss)
+    sent = main_module._transmit_voice_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": ""}, _ctx(wav_transmitter=tx),
     )
 
     assert sent is False
-    assert kiss.calls == []
+    assert tx.calls == []
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.voice.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "tts_failed"
 
 
-def test_transmit_frame_unit_sends_and_records_audit_event(tmp_path):
+def test_transmit_frame_unit_skips_when_no_callsign(tmp_path, _stub_frame_audio):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    kiss = _StubKissClient()
+    tx = _RecordingWavTransmitter()
 
-    main_module._transmit_frame_unit(
-        conn, {"source": "csn", "item_id": "1", "ref": "0"}, _ctx(kiss_client=kiss)
+    sent = main_module._transmit_frame_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": "0"}, _ctx(callsign=None, wav_transmitter=tx)
     )
 
-    assert kiss.calls == [("CD3DXZ-1", "WXALRT", b"chunk text")]
-    assert conn.execute(
-        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.frame.transmitted'"
-    ).fetchone() is not None
+    assert sent is False
+    assert _stub_frame_audio == []
+    assert tx.calls == []
 
 
-def test_transmit_frame_unit_records_dropped_too_long(tmp_path):
+def test_transmit_frame_unit_renders_and_records_audit_event(tmp_path, _stub_frame_audio):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk text")
+    tx = _RecordingWavTransmitter()
+
+    main_module._transmit_frame_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": "0"}, _ctx(wav_transmitter=tx)
+    )
+
+    assert _stub_frame_audio == ["CD3DXZ-1>WXALRT:chunk text"]
+    assert len(tx.calls) == 1
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.transmitted'"
+    ).fetchone()
+    assert json.loads(row[0])["tnc2"] == "CD3DXZ-1>WXALRT:chunk text"
+
+
+def test_transmit_frame_unit_records_dropped_too_long(tmp_path, _stub_frame_audio):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "x" * 300)
-    kiss = _StubKissClient()
 
     main_module._transmit_frame_unit(
-        conn, {"source": "csn", "item_id": "1", "ref": "0"}, _ctx(kiss_client=kiss)
+        conn, {"source": "csn", "item_id": "1", "ref": "0"}, _ctx()
     )
 
-    assert kiss.calls == []
+    assert _stub_frame_audio == []
     assert conn.execute(
         "SELECT 1 FROM audit_log WHERE event_type = 'beacon.frame.dropped_too_long'"
     ).fetchone() is not None
 
 
-def test_transmit_frame_unit_applies_prefix_and_suffix(tmp_path):
+def test_transmit_frame_unit_applies_prefix_and_suffix(tmp_path, _stub_frame_audio):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    kiss = _StubKissClient()
 
     main_module._transmit_frame_unit(
         conn, {"source": "csn", "item_id": "1", "ref": "0"},
-        _ctx(kiss_client=kiss, frame_prefix=">> ", frame_suffix=" [EXPERIMENTAL]"),
+        _ctx(frame_prefix=">> ", frame_suffix=" [EXPERIMENTAL]"),
     )
 
-    assert kiss.calls == [("CD3DXZ-1", "WXALRT", b">> chunk text [EXPERIMENTAL]")]
+    assert _stub_frame_audio == ["CD3DXZ-1>WXALRT:>> chunk text [EXPERIMENTAL]"]
 
 
-def test_transmit_frame_unit_records_transmit_failed_on_send_failure(tmp_path):
+def test_transmit_frame_unit_records_transmit_failed_when_render_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(main_module.frame_audio, "synthesize_frame_wav", lambda *a, **k: False)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk text")
+    tx = _RecordingWavTransmitter()
+
+    sent = main_module._transmit_frame_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": "0"}, _ctx(wav_transmitter=tx),
+    )
+
+    assert sent is False
+    assert tx.calls == []
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "gen_packets_failed"
+
+
+def test_transmit_frame_unit_records_transmit_failed_on_handoff_failure(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
 
     main_module._transmit_frame_unit(
         conn, {"source": "csn", "item_id": "1", "ref": "0"},
-        _ctx(kiss_client=_StubKissClient(result=False)),
+        _ctx(wav_transmitter=_RecordingWavTransmitter(result=False)),
     )
 
     assert conn.execute(
@@ -763,20 +681,17 @@ def test_transmit_frame_unit_records_transmit_failed_on_send_failure(tmp_path):
 # --- factories ---
 
 
-def test_build_voice_transmitter_defaults_to_logging(tmp_path):
+def test_build_wav_transmitter_defaults_to_logging(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
-    assert type(main_module._build_voice_transmitter(conn)).__name__ == "LoggingVoiceTransmitter"
+    assert type(main_module._build_wav_transmitter(conn)).__name__ == "LoggingWavTransmitter"
 
 
-def test_build_service_controller_defaults_to_logging(tmp_path):
+def test_build_wav_transmitter_spool_when_configured(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
-    assert type(main_module._build_service_controller(conn)).__name__ == "LoggingServiceController"
-
-
-def test_build_service_controller_systemctl_when_configured(tmp_path):
-    conn = get_connection(tmp_path / "radiobeacon.db")
-    set_setting(conn, "BEACON_SERVICE_CONTROLLER", "systemctl")
-    assert type(main_module._build_service_controller(conn)).__name__ == "SystemctlServiceController"
+    set_setting(conn, "BEACON_WAV_TRANSMITTER", "spool")
+    set_setting(conn, "BEACON_TXQUEUE_INCOMING_DIR", str(tmp_path / "incoming"))
+    tx = main_module._build_wav_transmitter(conn)
+    assert type(tx).__name__ == "SpoolWavTransmitter"
 
 
 def test_run_mqtt_client_uses_stable_client_id_and_clean_session_true(monkeypatch):

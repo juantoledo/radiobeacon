@@ -2,7 +2,7 @@ from adapters.storage import get_setting, set_beacon_status, set_setting
 
 from ui.beacon import is_beacon_configured
 from ui.config_catalog import specs_for_group
-from ui.routers.beacon import _format_duration, _queue_bar, _timeline_context
+from ui.routers.beacon import _queue_bar, _status_context
 
 ALL_VALUES = {
     "BEACON_CALLSIGN": "CD3DXZ-1",
@@ -205,62 +205,27 @@ def test_dashboard_shows_not_running_with_stale_heartbeat(client, conn):
     assert "not running" in response.text
 
 
-def test_dashboard_shows_queue_depths(client, conn):
+def test_dashboard_shows_pending_transmits_for_active_type(client, conn):
+    # BEACON_TYPE defaults to "voice".
     set_beacon_status(conn, "voice_queue_depth", "3")
     set_beacon_status(conn, "frame_queue_depth", "1")
 
     response = client.get("/")
 
-    # BEACON_QUEUE_MAX_SIZE defaults to 200 when unset.
+    # Only the active type's depth is shown; max defaults to 200 when unset.
     assert '3<span class="muted"> / 200</span>' in response.text
-    assert '1<span class="muted"> / 200</span>' in response.text
+    assert '1<span class="muted"> / 200</span>' not in response.text
 
 
-def test_dashboard_shows_current_beacon_slot(client, conn):
-    set_beacon_status(conn, "current_slot", "voice")
-
-    response = client.get("/")
-
-    assert "voice" in response.text
-
-
-def test_dashboard_shows_time_left_when_beacon_running(client, conn):
-    from datetime import datetime, timezone
-
-    set_beacon_status(conn, "process_heartbeat_at", datetime.now(timezone.utc).isoformat())
-    set_beacon_status(conn, "current_slot_remaining_seconds", "47.6")
+def test_dashboard_shows_beacon_type(client, conn):
+    set_setting(conn, "BEACON_TYPE", "frame")
+    set_beacon_status(conn, "beacon_type", "frame")
+    set_beacon_status(conn, "frame_queue_depth", "2")
 
     response = client.get("/")
 
-    assert "48s" in response.text
-
-
-def test_dashboard_hides_time_left_when_beacon_not_running(client, conn):
-    """A frozen countdown from a stale heartbeat would actively mislead —
-    unlike the last-known slot name, which stays informative even stale."""
-    set_beacon_status(conn, "current_slot_remaining_seconds", "47.6")
-
-    response = client.get("/")
-
-    assert "48s" not in response.text
-
-
-def test_dashboard_shows_cycle_timeline_segments(client, conn):
-    response = client.get("/")
-
-    # Defaults: total=90, voice=60, guard=0 (omitted since 0s), frame=30.
-    assert "voice · 60s" in response.text
-    assert "frame · 30s" in response.text
-    assert "slot-guard" not in response.text
-
-
-def test_dashboard_timeline_falls_back_when_window_misconfigured(client, conn):
-    set_setting(conn, "BEACON_WINDOW_VOICE_SECONDS", "9999")  # exceeds total
-
-    response = client.get("/")
-
-    assert response.status_code == 200
-    assert "Cycle timeline unavailable" in response.text
+    assert "frame" in response.text
+    assert '2<span class="muted"> / 200</span>' in response.text
 
 
 def test_beacon_enable_action_sets_flag_and_redirects(client, conn):
@@ -290,34 +255,41 @@ def test_dashboard_reflects_beacon_enabled_state(client, conn):
 def test_beacon_group_settings_appear_in_config(client):
     response = client.get("/config")
 
-    assert "Beacon — Schedule" in response.text
-    assert "BEACON_WINDOW_TOTAL_SECONDS" in response.text
+    assert "Beacon — Transmission" in response.text
+    assert "BEACON_TYPE" in response.text
 
 
-def test_beacon_schedule_group_editable_via_config(client, conn):
+def test_beacon_transmission_group_editable_via_config(client, conn):
     response = client.post(
-        "/config/beacon-schedule",
-        data={"BEACON_WINDOW_TOTAL_SECONDS": "120"},
+        "/config/beacon-transmission",
+        data={"BEACON_TYPE": "frame"},
         follow_redirects=False,
     )
 
     assert response.status_code == 303
-    assert get_setting("BEACON_WINDOW_TOTAL_SECONDS", conn=conn) == "120"
+    assert get_setting("BEACON_TYPE", conn=conn) == "frame"
 
 
-# --- _format_duration ---
+# --- _status_context ---
 
 
-def test_format_duration_under_a_minute():
-    assert _format_duration(47.6) == "48s"
+def test_status_context_defaults_to_voice_type(conn):
+    result = _status_context(conn)
+
+    assert result["beacon_type"] == "voice"
+    assert result["running"] is False
+    assert result["queue_depth"] == 0
 
 
-def test_format_duration_rounds_to_whole_seconds():
-    assert _format_duration(0.4) == "0s"
+def test_status_context_reports_active_type_queue_depth(conn):
+    set_setting(conn, "BEACON_TYPE", "frame")
+    set_beacon_status(conn, "frame_queue_depth", "4")
+    set_beacon_status(conn, "voice_queue_depth", "9")
 
+    result = _status_context(conn)
 
-def test_format_duration_over_a_minute():
-    assert _format_duration(125.0) == "2m 5s"
+    assert result["beacon_type"] == "frame"
+    assert result["queue_depth"] == 4
 
 
 # --- _queue_bar ---
@@ -352,53 +324,3 @@ def test_queue_bar_handles_zero_max_size():
     result = _queue_bar(depth=5, max_size=0)
 
     assert result["pct"] == 0.0
-
-
-# --- _timeline_context ---
-
-
-def test_timeline_context_default_window_segments_sum_to_total(conn):
-    result = _timeline_context(conn, {})
-
-    assert result["timeline_valid"] is True
-    total_pct = sum(seg["pct"] for seg in result["segments"])
-    assert round(total_pct, 5) == 100.0  # voice + frame + idle (guard=0s omitted)
-
-
-def test_timeline_context_omits_zero_length_guard_segment(conn):
-    # Defaults: total=90, voice=60, guard=0, frame=30 -- idle is also 0
-    # (60+0+30 == 90 exactly), so only voice/frame are non-zero-length.
-    result = _timeline_context(conn, {})
-
-    slots = [seg["slot"] for seg in result["segments"]]
-    assert "guard" not in slots
-    assert slots == ["voice", "frame"]
-
-
-def test_timeline_context_marker_position_from_elapsed_seconds(conn):
-    result = _timeline_context(conn, {"current_cycle_elapsed_seconds": "45"})
-
-    assert result["marker_pct"] == 50.0  # 45 / 90 total
-
-
-def test_timeline_context_marker_none_when_no_elapsed_status(conn):
-    result = _timeline_context(conn, {})
-
-    assert result["marker_pct"] is None
-
-
-def test_timeline_context_invalid_when_slots_exceed_total(conn):
-    set_setting(conn, "BEACON_WINDOW_VOICE_SECONDS", "9999")
-
-    result = _timeline_context(conn, {})
-
-    assert result["timeline_valid"] is False
-    assert result["segments"] == []
-
-
-def test_timeline_context_invalid_when_total_is_zero(conn):
-    set_setting(conn, "BEACON_WINDOW_TOTAL_SECONDS", "0")
-
-    result = _timeline_context(conn, {})
-
-    assert result["timeline_valid"] is False

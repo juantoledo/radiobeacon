@@ -38,46 +38,22 @@
   {% if not is_beacon_configured() %}<span class="meta-line">Set up <a href="/config/beacon-identity">beacon identity</a> first.</span>{% endif %}
 </form>
 
-{% if timeline_valid %}
-<div class="tdma-timeline{{ ' stale' if not running else '' }}">
-  {% for seg in segments %}
-  <div class="tdma-segment slot-{{ seg.slot }}" style="width: {{ seg.pct }}%;" title="{{ seg.slot }} · {{ seg.seconds }}s">{{ seg.slot }}</div>
-  {% endfor %}
-  {% if marker_pct is not none %}
-  <div class="tdma-marker" style="left: {{ marker_pct }}%;" title="now"></div>
-  {% endif %}
-</div>
-<div class="tdma-labels">
-  {% for seg in segments %}<span>{{ seg.slot }} · {{ seg.seconds }}s</span>{% endfor %}
-</div>
-{% else %}
-<p class="muted">Cycle timeline unavailable — check the window settings under <a href="/config/beacon-schedule">Beacon — Schedule</a>.</p>
-{% endif %}
-
 <div class="card-row">
   <div class="card">
     <div class="card-icon">{{ icon('beacon', 18) }}</div>
-    <div class="value {{ 'slot-label-' + current_slot if current_slot else '' }}">{{ current_slot or '—' }}</div>
-    <div class="label">Current slot</div>
-  </div>
-  <div class="card">
-    <div class="card-icon">{{ icon('audit', 18) }}</div>
-    <div class="value">{{ remaining_display or '—' }}</div>
-    <div class="label">Time left in slot</div>
+    <div class="value">{{ beacon_type }}</div>
+    <div class="label">Beacon type</div>
   </div>
   <div class="card">
     <div class="card-icon">{{ icon('activity', 18) }}</div>
-    <div class="value">{{ status.get('voice_queue_depth', '0') }}<span class="muted"> / {{ queue_max_size }}</span></div>
-    <div class="label">Voice queue</div>
-    <div class="queue-bar"><div class="queue-bar-fill {{ voice_queue.fill_class }}" style="width: {{ voice_queue.pct }}%;"></div></div>
-    <div class="meta-line">{{ status.get('voice_queue_dropped_total', '0') }} dropped total</div>
+    <div class="value">{{ queue_depth }}<span class="muted"> / {{ queue_max_size }}</span></div>
+    <div class="label">Pending transmits</div>
+    <div class="queue-bar"><div class="queue-bar-fill {{ queue_bar.fill_class }}" style="width: {{ queue_bar.pct }}%;"></div></div>
   </div>
   <div class="card">
-    <div class="card-icon">{{ icon('layers', 18) }}</div>
-    <div class="value">{{ status.get('frame_queue_depth', '0') }}<span class="muted"> / {{ queue_max_size }}</span></div>
-    <div class="label">Frame queue</div>
-    <div class="queue-bar"><div class="queue-bar-fill {{ frame_queue.fill_class }}" style="width: {{ frame_queue.pct }}%;"></div></div>
-    <div class="meta-line">{{ status.get('frame_queue_dropped_total', '0') }} dropped total</div>
+    <div class="card-icon">{{ icon('audit', 18) }}</div>
+    <div class="value">{{ last_transmit_at | display_dt if last_transmit_at else '—' }}</div>
+    <div class="label">Last transmit</div>
   </div>
 </div>
 

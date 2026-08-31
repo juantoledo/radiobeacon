@@ -35,6 +35,18 @@ capa de radio descrita más abajo.)
 
 ## Decisiones de arquitectura tomadas
 
+> **Nota (actualización posterior):** el diseño TDMA descrito en esta sección
+> (slots de voz/AX.25 intercalados, orquestador de *timing*, arbitraje de la
+> tarjeta de audio entre SvxLink y Direwolf) fue **reemplazado** en `beacon/`
+> por un modelo más simple: el operador elige **un** tipo de baliza
+> (`BEACON_TYPE` = `voice` o `frame`), cada ítem se renderiza a **un archivo
+> WAV** (TTS para voz; `gen_packets` de Direwolf para AX.25) y ese WAV se deja
+> en la carpeta *spool* de `svxlink-txqueue` para que SvxLink lo emita cuando el
+> canal esté libre. Ya no hay ventana TDMA, ni proceso Direwolf en ejecución, ni
+> contención de audio. Ver [beacon/README.md](beacon/README.md) y
+> [documentation/svxlink-txqueue-SETUP.md](documentation/svxlink-txqueue-SETUP.md).
+> El texto que sigue se conserva como registro del diseño original.
+
 ### Separación de responsabilidades (importante — no mezclar capas)
 
 1. **Data sources / adapters** — obtienen datos crudos, no saben nada de radio.

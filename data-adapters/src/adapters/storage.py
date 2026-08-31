@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS settings (
 """
 
 # beacon_status holds machine-written telemetry from the beacon/ package's
-# TDMA loop (current slot, queue depths, last NTP check, a heartbeat) — NOT
+# transmit loop (beacon type, queue depth, last NTP check, a heartbeat) — NOT
 # operator config (that's `settings`, above). beacon/ and ui/ are separate
 # OS processes with no shared memory, so this table is the only way the UI
 # can show "is beacon actually running / what's it doing right now"; plain
@@ -498,9 +498,10 @@ CREATE TABLE IF NOT EXISTS transmit_policies (
 # has to put on air and how many more times — it replaced beacon's
 # in-memory drop-oldest queues, so a beacon restart no longer loses pending
 # transmissions. One row per unit of transmittable content: `kind` is the
-# TDMA slot type it belongs to ("frame" | "voice" | future kinds), `ref`
-# distinguishes units within a kind for one item (frame = str(chunk_index),
-# voice = ""). `transmit_policy` is a NAME snapshot; the actual
+# beacon type it belongs to ("frame" | "voice"), matching BEACON_TYPE — only
+# one kind is ever scheduled/drained at a time. `ref` distinguishes units
+# within a kind for one item (frame = str(chunk_index), voice = "").
+# `transmit_policy` is a NAME snapshot; the actual
 # repeat_times/interval_seconds are resolved live every cycle via
 # adapters.transmit_policy.policy_for, so editing a tier stays reactive.
 # `sent_count` is stored progress; a row is deleted once
@@ -1068,7 +1069,7 @@ _BEACON_TX_SCHEDULE_COLUMNS = (
 def _tx_schedule_row_to_dict(row: tuple) -> dict[str, Any]:
     """adapters.storage's connections keep the default tuple row_factory
     (see _adapter_instance_row_to_dict) — build a plain dict so beacon's
-    TDMA loop gets row["kind"] access regardless of the connection."""
+    transmit loop gets row["kind"] access regardless of the connection."""
     return dict(zip(_BEACON_TX_SCHEDULE_COLUMNS, row))
 
 
@@ -1190,6 +1191,17 @@ def delete_tx_schedule_for_item(conn: sqlite3.Connection, source: str, item_id: 
         (source, item_id),
     )
     conn.commit()
+
+
+def delete_tx_schedule_other_kinds(conn: sqlite3.Connection, keep_kind: str) -> int:
+    """Drops every pending transmit row whose `kind` is not `keep_kind` — beacon
+    schedules and transmits a single kind (BEACON_TYPE) at a time, so rows left
+    over from a previous type would otherwise sit dormant forever. Returns the
+    number of rows removed."""
+    _ensure_beacon_tx_schedule_table(conn)
+    cur = conn.execute("DELETE FROM beacon_tx_schedule WHERE kind != ?", (keep_kind,))
+    conn.commit()
+    return cur.rowcount
 
 
 def _ensure_sources_table(conn: sqlite3.Connection) -> None:

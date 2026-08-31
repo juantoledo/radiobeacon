@@ -11,9 +11,9 @@ CloudEvents; this package is one possible subscriber, alongside anything
 else that wants to listen).
 
 (Not called "orchestrator": that name belongs to
-[beacon](../beacon/README.md) — the TDMA radio transmit-slot timing
-scheduler, a completely different responsibility from this event-driven
-action-chaining layer. `beacon` subscribes to `item.content_ready` — this
+[beacon](../beacon/README.md) — the radio transmit layer, a completely
+different responsibility from this event-driven action-chaining layer.
+`beacon` subscribes to `item.content_ready` — this
 package's `content_ready` correlator's own output, below — as one of its
 consumers, same as anything else on the broker.)
 
