@@ -7,9 +7,11 @@ from urllib.parse import urlencode
 
 from adapters.api_adapter import ApiAdapter, FieldMapping, preview_response
 from adapters.custom_adapter import CustomAdapter
+from adapters.actions_defaults import AI_PROMPT_DEFAULT
 from adapters.storage import (
     delete_adapter_instance,
     get_adapter_instance,
+    get_setting,
     get_source_fields,
     list_adapter_instances,
     set_adapter_instance,
@@ -245,6 +247,8 @@ def _form_context(
     adapter_type: str,
     enabled: bool,
     interval_seconds: str,
+    ai_prompt: str,
+    ai_prompt_default: str,
     api_fields: dict,
     custom_fields: dict,
     test_result: dict | None,
@@ -258,6 +262,11 @@ def _form_context(
         "adapter_type": adapter_type,
         "enabled": enabled,
         "interval_seconds": interval_seconds,
+        "ai_prompt": ai_prompt,
+        # Shown (read-only) as the textarea's placeholder so an operator can
+        # see what the summarizer will use when this box is left blank — the
+        # global ACTIONS_AI_PROMPT override if set, else the built-in default.
+        "ai_prompt_default": ai_prompt_default,
         "mapped_fields": MAPPED_FIELDS,
         "api_fields": api_fields,
         "custom_fields": custom_fields,
@@ -282,8 +291,19 @@ def adapters_list_page(request: Request, conn: sqlite3.Connection = Depends(get_
     return templates.TemplateResponse(request, "adapters_list.html", {"rows": rows})
 
 
+def _default_prompt_placeholder(conn: sqlite3.Connection | None) -> str:
+    """What the AI summarizer falls back to when an adapter's "AI prompt
+    override" box is left blank — the global ACTIONS_AI_PROMPT setting if
+    one is stored, otherwise the built-in default. Shown read-only as the
+    textarea placeholder. conn=None (a re-render path with no DB handle)
+    just uses the built-in default."""
+    if conn is None:
+        return AI_PROMPT_DEFAULT
+    return get_setting("ACTIONS_AI_PROMPT", AI_PROMPT_DEFAULT, conn=conn)
+
+
 @router.get("/adapters/new")
-def adapter_new_page(request: Request):
+def adapter_new_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return templates.TemplateResponse(
         request,
         "adapter_form.html",
@@ -295,6 +315,8 @@ def adapter_new_page(request: Request):
             adapter_type="api",
             enabled=True,
             interval_seconds="",
+            ai_prompt="",
+            ai_prompt_default=_default_prompt_placeholder(conn),
             api_fields=_config_to_fields("api", {}),
             custom_fields=_config_to_fields("custom", {}),
             test_result=None,
@@ -321,6 +343,8 @@ def adapter_edit_page(request: Request, source: str, conn: sqlite3.Connection = 
             adapter_type=row["adapter_type"],
             enabled=bool(row["enabled"]),
             interval_seconds=str(row["interval_seconds"]) if row["interval_seconds"] else "",
+            ai_prompt=config.get("ai_prompt", ""),
+            ai_prompt_default=_default_prompt_placeholder(conn),
             api_fields=_config_to_fields("api", config if row["adapter_type"] == "api" else {}),
             custom_fields=_config_to_fields(
                 "custom", config if row["adapter_type"] == "custom" else {}
@@ -341,11 +365,14 @@ async def _read_common_form(request: Request) -> tuple[FormData, dict]:
         "adapter_type": (form.get("adapter_type") or "api").strip(),
         "enabled": form.get("enabled") == "on",
         "interval_seconds": (form.get("interval_seconds") or "").strip(),
+        "ai_prompt": (form.get("ai_prompt") or "").strip(),
     }
     return form, common
 
 
-def _error_context(common: dict, form: FormData, message: str | None) -> dict:
+def _error_context(
+    common: dict, form: FormData, message: str | None, *, conn: sqlite3.Connection | None = None
+) -> dict:
     return _form_context(
         mode=common["mode"],
         source=common["source"],
@@ -354,6 +381,8 @@ def _error_context(common: dict, form: FormData, message: str | None) -> dict:
         adapter_type=common["adapter_type"],
         enabled=common["enabled"],
         interval_seconds=common["interval_seconds"],
+        ai_prompt=common["ai_prompt"],
+        ai_prompt_default=_default_prompt_placeholder(conn),
         api_fields=_form_to_fields("api", form),
         custom_fields=_form_to_fields("custom", form),
         test_result=None,
@@ -453,17 +482,25 @@ async def adapter_save_action(
     common["source"] = source
 
     if not source:
-        context = _error_context(common, form, "Source is required.")
+        context = _error_context(common, form, "Source is required.", conn=conn)
         return templates.TemplateResponse(request, "adapter_form.html", context, status_code=400)
     if common["adapter_type"] not in _ADAPTER_CLASSES:
-        context = _error_context(common, form, f"Unknown adapter type {common['adapter_type']!r}.")
+        context = _error_context(
+            common, form, f"Unknown adapter type {common['adapter_type']!r}.", conn=conn
+        )
         return templates.TemplateResponse(request, "adapter_form.html", context, status_code=400)
 
     try:
         config = _form_to_config(common["adapter_type"], form)
     except ValueError as e:
-        context = _error_context(common, form, str(e))
+        context = _error_context(common, form, str(e), conn=conn)
         return templates.TemplateResponse(request, "adapter_form.html", context, status_code=400)
+
+    # Optional per-adapter summarization prompt override, read by actions.ai
+    # (see _resolve_prompt_template). Stored alongside the fetch config; left
+    # out of the blob entirely when blank so an unused override never shows.
+    if common["ai_prompt"]:
+        config["ai_prompt"] = common["ai_prompt"]
 
     interval_seconds = int(common["interval_seconds"]) if common["interval_seconds"] else None
 

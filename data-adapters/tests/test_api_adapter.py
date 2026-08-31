@@ -2,6 +2,7 @@ import json
 from unittest.mock import patch
 
 from adapters.api_adapter import ApiAdapter, preview_response
+from adapters.storage import get_connection, set_source
 
 CSN_CONFIG = {
     "url": "https://api.gael.cloud/general/public/sismos",
@@ -115,6 +116,52 @@ def test_fetch_skips_malformed_item_without_failing_whole_batch():
 
     assert reading.ok
     assert len(reading.data) == 1
+
+
+def test_fetch_mapping_template_can_reference_source_display_name(tmp_path):
+    db_path = tmp_path / "radiobeacon.db"
+    conn = get_connection(db_path)
+    set_source(conn, "quakes", "ACME Quake Feed", "https://acme.example")
+    conn.close()
+
+    config = dict(
+        CSN_CONFIG,
+        mapping=dict(
+            CSN_CONFIG["mapping"],
+            title={"template": "{source_name}: Sismo M{Magnitud} - {RefGeografica}"},
+            url={"template": "{source_url}"},
+        ),
+    )
+    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE[:1])):
+        reading = ApiAdapter("quakes", config, db_path=db_path).fetch()
+
+    assert reading.data[0].title == "ACME Quake Feed: Sismo M5.0 - Test Zone"
+    assert reading.data[0].url == "https://acme.example"
+
+
+def test_fetch_mapping_source_name_falls_back_to_raw_key_when_unmanaged(tmp_path):
+    db_path = tmp_path / "radiobeacon.db"
+    get_connection(db_path).close()  # schema only, no `sources` row for "quakes"
+
+    config = dict(
+        CSN_CONFIG,
+        mapping=dict(CSN_CONFIG["mapping"], title={"template": "[{source_name}] {RefGeografica}"}),
+    )
+    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE[:1])):
+        reading = ApiAdapter("quakes", config, db_path=db_path).fetch()
+
+    assert reading.data[0].title == "[quakes] Test Zone"
+
+
+def test_fetch_does_not_touch_db_when_no_template_uses_source_placeholders(tmp_path):
+    """The common case — no mapping references {source_name}/{source_url} —
+    keeps the fetch path DB-free."""
+    with patch("adapters.api_adapter.get_connection", side_effect=AssertionError("db opened")):
+        with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE[:1])):
+            reading = ApiAdapter("csn", CSN_CONFIG).fetch()
+
+    assert reading.ok
+    assert reading.data[0].title == "Sismo M5.0 - Test Zone"
 
 
 def test_preview_response_needs_no_mapping_configured():

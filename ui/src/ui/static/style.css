@@ -561,6 +561,10 @@ label { display: block; font-size: var(--text-xs); font-weight: 600; color: var(
 .form-table { margin-bottom: var(--space-5); }
 .form-table th { background: none; position: static; text-transform: none; letter-spacing: normal; font-size: var(--text-sm); width: 12rem; }
 .form-table td, .form-table th { border-bottom: 1px solid var(--border); padding: 0.7rem 0.5rem; }
+/* Layout table (label / control + description), not a data grid — the
+   global `th, td { white-space: nowrap }` would stop long field
+   descriptions from wrapping and blow the table past the page width. */
+.form-table td, .form-table th { white-space: normal; overflow-wrap: anywhere; }
 .form-table tr:last-child td, .form-table tr:last-child th { border-bottom: none; }
 .form-table input[type="text"], .form-table input[type="number"], .form-table textarea {
   width: 100%;
@@ -722,6 +726,10 @@ pre.contents {
   color: var(--fg-muted);
   font-size: var(--text-sm);
   margin-bottom: var(--space-4);
+  /* meta-lines carry unbroken tokens (item_id, event_key, source slugs,
+     str.format placeholders) that would otherwise push the page wider
+     than the viewport — let them wrap mid-token instead. */
+  overflow-wrap: anywhere;
 }
 .meta-line .sep { margin: 0 0.4rem; opacity: 0.5; }
 

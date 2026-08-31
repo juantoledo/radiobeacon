@@ -178,6 +178,54 @@ def test_on_message_records_audit_event_on_success(tmp_path, monkeypatch):
     assert row == ("action.fakeaction.executed", "actions.fakeaction", "senapred", "1")
 
 
+def test_on_message_copies_single_output_diagnostics_into_audit_details(tmp_path, monkeypatch):
+    """A single-output action can attach diagnostic detail (ai's skip
+    `reason`, the `provider`/`model` used, the rendered `prompt`) —
+    __main__ mirrors it into the audit row so it shows up on /audit
+    without cross-referencing logs. `summary` is NOT copied."""
+    monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
+    FakeAction.outputs = [
+        {
+            "source": "senapred",
+            "item_id": "1",
+            "summarized": True,
+            "summary": "the stored summary",
+            "provider": "ollama",
+            "model": "llama3.2:1b",
+            "prompt": "Resume esto: ...",
+        }
+    ]
+    FakeAction.raises = False
+
+    handler = main_module._make_on_message(FakeAction, None, "fakeaction")
+    handler(FakeClient(), None, FakeMessage("radiobeacon/events/item.dispatched", _dispatched_payload()))
+
+    conn = sqlite3.connect(tmp_path / "radiobeacon.db")
+    details = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'action.fakeaction.executed'"
+    ).fetchone()[0]
+    parsed = json.loads(details)
+    assert parsed["provider"] == "ollama"
+    assert parsed["model"] == "llama3.2:1b"
+    assert parsed["prompt"] == "Resume esto: ..."
+    assert "summary" not in parsed
+
+
+def test_on_message_copies_single_output_reason_into_audit_details(tmp_path, monkeypatch):
+    monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
+    FakeAction.outputs = [{"source": "senapred", "item_id": "1", "reason": "AI disabled"}]
+    FakeAction.raises = False
+
+    handler = main_module._make_on_message(FakeAction, None, "fakeaction")
+    handler(FakeClient(), None, FakeMessage("radiobeacon/events/item.dispatched", _dispatched_payload()))
+
+    conn = sqlite3.connect(tmp_path / "radiobeacon.db")
+    details = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'action.fakeaction.executed'"
+    ).fetchone()[0]
+    assert json.loads(details)["reason"] == "AI disabled"
+
+
 def test_on_message_swallows_exceptions_and_logs(tmp_path, monkeypatch):
     monkeypatch.setattr(main_module, "DEFAULT_DB_PATH", tmp_path / "radiobeacon.db")
     FakeAction.outputs = []

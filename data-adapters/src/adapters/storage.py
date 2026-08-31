@@ -209,8 +209,12 @@ CREATE TABLE IF NOT EXISTS adapter_instances (
 # row's JSON config instead of silently reverting to the old hardcoded
 # default.
 #
-# A CUSTOM-type adapter_instances.config holds *only* {"code": ...} — no
-# sibling keys (see CustomAdapter). So unlike the old senapred module,
+# A CUSTOM-type adapter_instances.config holds *only* {"code": ...} as far
+# as fetch logic is concerned — no sibling keys the adapter itself reads
+# (see CustomAdapter). It may additionally carry an optional action-layer
+# override, `ai_prompt` (a per-source summarization prompt template, set on
+# the /adapters form and read by actions.ai — CustomAdapter ignores it).
+# So unlike the old senapred module,
 # which read its AWS/Cognito plumbing from env vars/config at call time,
 # the generated snippet below has those values baked in as plain literals
 # at seed time — _build_senapred_code() renders this template with each
@@ -232,6 +236,7 @@ senapred.cl's own /eventos/ page merges both. None of this is secret (it's
 public in senapred.cl's own JS bundle)."""
 
 import json
+from html.parser import HTMLParser
 
 IDENTITY_POOL_ID = $identity_pool_id
 COGNITO_REGION = $cognito_region
@@ -320,14 +325,62 @@ query EventosByDate($type: String!, $sortDirection: ModelSortDirection, $limit: 
 }
 """
 
-_TAG_RE = re.compile(r"<[^>]+>")
-_WHITESPACE_RE = re.compile(r"\\s+")
+_HTML_SKIP_TAGS = {"script", "style", "noscript", "template", "head", "title"}
+_HTML_BLOCK_TAGS = {
+    "address", "article", "aside", "blockquote", "br", "dd", "div", "dl", "dt",
+    "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6",
+    "header", "hr", "li", "main", "nav", "ol", "p", "pre", "section", "table",
+    "td", "th", "tr", "ul",
+}
+
+
+class _HtmlTextExtractor(HTMLParser):
+    """Pulls human-readable text out of an HTML fragment.
+
+    Improvement over the old `<[^>]+>` -> space regex: <script>/<style>/etc.
+    bodies are dropped entirely (the regex left their JS/CSS sitting in the
+    text), entity and char references are decoded by the stdlib parser
+    (convert_charrefs), inline tags like <b>/<a>/<span> inject nothing so
+    `<b>wor</b>d` stays "word", and only block-level tags introduce a
+    boundary so `<li>a</li><li>b</li>` becomes "a b", not "ab". Malformed
+    or unclosed markup is tolerated rather than mangled."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self._parts = []
+        self._skip_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in _HTML_SKIP_TAGS:
+            self._skip_depth += 1
+        elif tag in _HTML_BLOCK_TAGS:
+            self._parts.append(" ")
+
+    def handle_startendtag(self, tag, attrs):
+        if tag in _HTML_BLOCK_TAGS:
+            self._parts.append(" ")
+
+    def handle_endtag(self, tag):
+        if tag in _HTML_SKIP_TAGS:
+            self._skip_depth = max(0, self._skip_depth - 1)
+        elif tag in _HTML_BLOCK_TAGS:
+            self._parts.append(" ")
+
+    def handle_data(self, data):
+        if self._skip_depth == 0:
+            self._parts.append(data)
+
+    def text(self):
+        return "".join(self._parts)
 
 
 def _strip_html(raw):
-    text = _TAG_RE.sub(" ", raw)
-    text = html.unescape(text)
-    return _WHITESPACE_RE.sub(" ", text).strip()
+    if not raw:
+        return ""
+    extractor = _HtmlTextExtractor()
+    extractor.feed(raw)
+    extractor.close()
+    return " ".join(extractor.text().split())
 
 
 def _query(credentials, endpoint, host, region, query, field_name, type_value, limit):

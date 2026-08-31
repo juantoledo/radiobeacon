@@ -24,7 +24,10 @@ that interprets `config`:
   `_content_uuid` in `api_adapter.py`: a uuid5 derived from the item's own
   content, not `uuid.uuid4()` — the same item always produces the same
   value, so a source with no natural id can still get a stable one instead
-  of a new random id flooding storage every poll). One template covers
+  of a new random id flooding storage every poll) and `{source_name}` /
+  `{source_url}` (this source's display name and site URL from the
+  `sources` table — the same placeholders `beacon`/`actions` expose;
+  fail-soft to the raw source key when unmanaged). One template covers
   every case: `{Fecha}` alone is a raw passthrough, plain text with no
   `{...}` is a constant, and `Sismo M{Magnitud} - {RefGeografica}` is a
   real construction — there's no separate "raw field"/"constant" mode,

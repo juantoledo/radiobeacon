@@ -453,3 +453,73 @@ def test_adapter_sample_action_does_not_persist_anything(client, conn):
         )
 
     assert get_adapter_instance(conn, "not-saved") is None
+
+
+def test_adapter_create_persists_ai_prompt_override(client, conn):
+    response = client.post(
+        "/adapters",
+        data={
+            "mode": "create",
+            "source": "new-custom",
+            "adapter_type": "custom",
+            "code": "def fetch(config):\n    return []\n",
+            "ai_prompt": "Resume distinto {extracted_contents}",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    config = json.loads(get_adapter_instance(conn, "new-custom")["config"])
+    assert config["ai_prompt"] == "Resume distinto {extracted_contents}"
+
+
+def test_adapter_create_omits_blank_ai_prompt(client, conn):
+    client.post(
+        "/adapters",
+        data={
+            "mode": "create",
+            "source": "new-custom",
+            "adapter_type": "custom",
+            "code": "def fetch(config):\n    return []\n",
+            "ai_prompt": "   ",
+        },
+        follow_redirects=False,
+    )
+
+    config = json.loads(get_adapter_instance(conn, "new-custom")["config"])
+    assert "ai_prompt" not in config
+
+
+def test_adapter_form_shows_default_prompt_as_placeholder_when_not_overridden(client, conn):
+    from adapters.actions_defaults import AI_PROMPT_DEFAULT
+
+    response = client.get("/adapters/csn/edit")
+
+    assert response.status_code == 200
+    # built-in default shown greyed (placeholder), not as the field value
+    assert 'placeholder="Resume el siguiente aviso' in response.text
+    assert "{extracted_contents}" in AI_PROMPT_DEFAULT
+
+
+def test_adapter_form_placeholder_reflects_global_override(client, conn):
+    from adapters.storage import set_setting
+
+    set_setting(conn, "ACTIONS_AI_PROMPT", "GLOBAL DEFAULT {extracted_contents}")
+
+    response = client.get("/adapters/csn/edit")
+
+    assert 'placeholder="GLOBAL DEFAULT {extracted_contents}"' in response.text
+
+
+def test_adapter_edit_page_prefills_ai_prompt(client, conn):
+    set_adapter_instance(
+        conn,
+        "csn",
+        "custom",
+        {"code": "def fetch(config): return []", "ai_prompt": "MARKER-PREFILL {url}"},
+    )
+
+    response = client.get("/adapters/csn/edit")
+
+    assert response.status_code == 200
+    assert "MARKER-PREFILL {url}" in response.text

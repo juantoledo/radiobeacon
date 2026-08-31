@@ -199,13 +199,35 @@ configured; see `data-adapters/src/adapters/ax25.py`).
 
 AI-specific: `ACTIONS_AI_ENABLED` (default `false`), `ACTIONS_AI_PROVIDER`
 (`openai`/`claude`/`ollama`, required once enabled), `ACTIONS_AI_PROMPT`
-(optional template override), `ACTIONS_AI_MAX_CHARS` (default `200` —
+(optional global template override — a single adapter can override it
+further via `config.ai_prompt`, set on the UI's /adapters form; resolution
+order is adapter `config.ai_prompt` → `ACTIONS_AI_PROMPT` → built-in
+default. The template may reference any of an item's mapped adapter
+attributes as a `{placeholder}` — `{source}`, `{item_id}`,
+`{extracted_title}`, `{extracted_contents}`, `{summary}`, `{url}`,
+`{event_key}`, `{type}`, `{subtype}`, `{transmit_policy}`,
+`{source_date_time}`, `{fetched_at}`, `{captured_at}`, `{rawdata}` (see
+`actions.ai.PROMPT_ITEM_FIELDS`), plus the source's display name / site
+URL as `{source_name}` / `{source_url}` (the same placeholders the beacon
+& chunk templates use); an unknown placeholder renders blank),
+`ACTIONS_AI_MAX_CHARS` (default `200` —
 matches `ACTIONS_CHUNK_MAX_CHARS` exactly, so both share one skip/chunk
 length budget; not used for voice length — see `BEACON_VOICE_MAX_CHARS` in
 [beacon](../beacon/README.md)), `ACTIONS_AI_<PROVIDER>_MODEL`,
-`ACTIONS_AI_OLLAMA_HOST`, plus the unprefixed
+`ACTIONS_AI_OLLAMA_HOST`, `ACTIONS_AI_EVENT_INCLUDE_PROMPT` (default
+`false`; when `true`, the fully rendered prompt is attached to each
+`item.ai_settled` event), plus the unprefixed
 `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` read directly by each SDK — see
 `.env.example`.
+
+Every `item.ai_settled` event carries diagnostic detail beyond the
+load-bearing `source`/`item_id`/`summarized` fields: a `reason` phrase on
+every `summarized: false` path (item missing, AI disabled, content
+already short, bad provider config, ...), `provider`/`model` on success,
+and the rendered `prompt` when `ACTIONS_AI_EVENT_INCLUDE_PROMPT=true`. All
+of these are also mirrored into the `action.ai.executed` audit row, so
+they show up on the UI's `/audit` page — `prompt` included, on the same
+`ACTIONS_AI_EVENT_INCLUDE_PROMPT` opt-in.
 
 content_ready-specific: `ACTIONS_CONTENT_READY_POLL_INTERVAL_SECONDS`
 (default `2`), `ACTIONS_CONTENT_READY_OUTPUT_TOPIC` (default

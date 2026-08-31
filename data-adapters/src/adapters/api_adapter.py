@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .base import AdapterItem, DataSourceAdapter, SourceReading
+from .storage import DEFAULT_DB_PATH, get_connection, get_source_fields
 from .templating import safe_format
 from .timeutil import to_utc, utc_now
 
@@ -93,7 +94,12 @@ class FieldMapping:
     template: str | None = None
     field_date_format: str | None = None
 
-    def resolve(self, item: dict[str, Any], name: str) -> str | None:
+    def resolve(
+        self,
+        item: dict[str, Any],
+        name: str,
+        extra_context: dict[str, Any] | None = None,
+    ) -> str | None:
         if self.template is None:
             return None
         if self.field_date_format:
@@ -105,8 +111,10 @@ class FieldMapping:
                 return datetime.strptime(raw, self.field_date_format).isoformat()
         # {uuid} is a fallback placeholder, not a reserved word — if the
         # raw item genuinely has its own "uuid" field, that real value
-        # wins (item unpacked last/on top).
-        context = {"uuid": _content_uuid(item), **item}
+        # wins (item unpacked last/on top). `extra_context` carries the
+        # source's {source_name}/{source_url} (see ApiAdapter.fetch); the
+        # raw item still wins if it happens to have a same-named field.
+        context = {"uuid": _content_uuid(item), **(extra_context or {}), **item}
         return safe_format(self.template, f"api_adapter.{name}", **context)
 
     @classmethod
@@ -227,8 +235,14 @@ def _lookup_path(data: Any, dotted_path: str) -> Any:
     return value
 
 
-def _map_item(item: dict[str, Any], cfg: ApiAdapterConfig) -> AdapterItem:
-    fields = {name: cfg.mapping_for(name).resolve(item, name) for name in _MAPPED_FIELDS}
+def _map_item(
+    item: dict[str, Any],
+    cfg: ApiAdapterConfig,
+    extra_context: dict[str, Any] | None = None,
+) -> AdapterItem:
+    fields = {
+        name: cfg.mapping_for(name).resolve(item, name, extra_context) for name in _MAPPED_FIELDS
+    }
     if fields["id"] is None:
         raise ValueError("mapped id is None")
     return AdapterItem(
@@ -345,9 +359,39 @@ class ApiAdapter(DataSourceAdapter):
     construction/import time), so editing an instance's config via the UI
     takes effect on the very next poll, with no process restart required."""
 
-    def __init__(self, source: str, config: dict[str, Any]):
+    def __init__(self, source: str, config: dict[str, Any], *, db_path=DEFAULT_DB_PATH):
         self.source = source
         self.config = config
+        self.db_path = db_path
+
+    def _source_template_context(self, cfg: ApiAdapterConfig) -> dict[str, str]:
+        """{source_name}/{source_url} for the field-mapping templates — the
+        source's display name / site URL from the `sources` table, the same
+        placeholders beacon & actions expose. Only hits the DB when a
+        mapping template actually references one of them (the common case
+        doesn't), so a source that doesn't use these placeholders keeps its
+        fetch path DB-free. Fail-soft: any DB trouble just yields the raw
+        source key as {source_name} and "" as {source_url}, matching
+        adapters.storage.get_source_fields' own unmanaged-source fallback,
+        so a mapping is never crashed by it."""
+        templates = " ".join(
+            fm.template for fm in cfg.mapping.values() if fm.template is not None
+        )
+        if "{source_name}" not in templates and "{source_url}" not in templates:
+            return {}
+        try:
+            conn = get_connection(self.db_path)
+            try:
+                return get_source_fields(conn, self.source)
+            finally:
+                conn.close()
+        except Exception:
+            logger.warning(
+                "source=%s: could not resolve source display metadata for templating",
+                self.source,
+                exc_info=True,
+            )
+            return {"source_name": self.source, "source_url": ""}
 
     def fetch(self) -> SourceReading:
         now = utc_now()
@@ -355,10 +399,11 @@ class ApiAdapter(DataSourceAdapter):
             cfg = ApiAdapterConfig.from_dict(self.config)
             raw_response = _fetch_json(cfg)
             raw_items = _lookup_path(raw_response, cfg.items_path)
+            source_context = self._source_template_context(cfg)
             items = []
             for raw_item in raw_items:
                 try:
-                    items.append(_map_item(raw_item, cfg))
+                    items.append(_map_item(raw_item, cfg, source_context))
                 except (KeyError, ValueError, TypeError) as e:
                     logger.error(
                         "source=%s: failed to map item, skipping: %s", self.source, e
