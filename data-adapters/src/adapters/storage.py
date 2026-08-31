@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 # settings holds DB-stored overrides for the ADAPTERS_*/ACTIONS_*/DISPATCHER_*
 # env vars every package otherwise reads via os.environ.get — see get_setting
 # below. `key` is the exact env var name (e.g.
-# "ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD"), reusing this repo's existing
+# "ADAPTERS_CSN_API_URL"), reusing this repo's existing
 # naming convention as the row identifier instead of a separate id, same idea
 # as transmit_policies' `name` PK. `is_secret` drives UI masking and stops
 # set_setting from ever writing a secret's plaintext into audit_log.details.
@@ -379,7 +379,7 @@ def fetch(config):
                 "event_key": url_access,
                 "type": item_type,
                 "subtype": variable_riesgo.get("nombre"),
-                "transmit_policy": "urgent" if item_type == "Alerta" else "informational",
+                "transmit_policy": "informational",
                 "source_date_time": to_utc(datetime.fromisoformat(item["fechaHora"])),
                 "raw": item,
             }
@@ -437,15 +437,6 @@ _SEED_ADAPTER_INSTANCES = (
             "date_field": "Fecha",
             "date_format": "%Y-%m-%d %H:%M:%S",
             "source_timezone": get("ADAPTERS_CSN_SOURCE_TZ", "America/Santiago"),
-            "transmit_policy_rule": {
-                "field": "Magnitud",
-                "operator": ">=",
-                "threshold": float(
-                    get("ADAPTERS_CSN_URGENT_MAGNITUDE_THRESHOLD", "4.5")
-                ),
-                "if_true": "urgent",
-                "if_false": "informational",
-            },
         },
         lambda get: int(get("ADAPTERS_CSN_INTERVAL_SECONDS", "0") or 0) or None,
     ),

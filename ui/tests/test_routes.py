@@ -143,8 +143,7 @@ def test_rearm_action_blocked_when_beacon_not_configured(client, conn):
 def test_policies_list_returns_200(client):
     response = client.get("/policies")
     assert response.status_code == 200
-    # seeded by _ensure_tables
-    assert "urgent" in response.text
+    # a fresh install seeds only informational (see adapters.transmit_policy)
     assert "informational" in response.text
 
 

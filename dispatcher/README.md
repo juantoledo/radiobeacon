@@ -78,12 +78,13 @@ CREATE TABLE transmit_policies (
 );
 ```
 
-Seeded on first run with:
+Seeded on first run with a single tier:
 
 | name | repeat_times | interval_seconds |
 |---|---|---|
-| `urgent` | 5 | 60 |
 | `informational` | 1 | 0 |
+
+Any further tier is added by an operator (see below), not seeded.
 
 **The dispatcher doesn't act on `repeat_times`/`interval_seconds` at all** —
 it delivers each item once. Those numbers are read by
@@ -103,14 +104,14 @@ falls back to `informational`; if even that row is gone, a hardcoded
 ```
 
 (also editable at the ui's `/policies` page). Adding a new named tier
-(e.g. `critical` at 10x/30s) is a `set` call, not a code change — any
-adapter can then point items at it, or an operator can point an existing
-item at it via `override_item.sh` (below). CSN is the current example of
-per-item nuance: earthquakes at/above a configured magnitude threshold get
-`transmit_policy = "urgent"`, below it `"informational"` — driven by the
-`transmit_policy_rule` in the csn adapter instance's config (see
-[data-adapters/README.md](../data-adapters/README.md#adapter-plugin-types)),
-editable at `/adapters`.
+(e.g. `urgent` at 5x/60s, or `critical` at 10x/30s) is a `set` call, not a
+code change — any adapter can then point items at it, or an operator can
+point an existing item at it via `override_item.sh` (below). An API adapter
+can also assign a tier per item from a numeric threshold via the
+`transmit_policy_rule` in its config (e.g. earthquakes at/above a magnitude
+threshold → `urgent`) — see
+[data-adapters/README.md](../data-adapters/README.md#adapter-plugin-types),
+editable at `/adapters`. No seeded adapter sets one by default.
 
 ### Manual overrides / rearm
 
@@ -197,7 +198,7 @@ envelope, e.g.:
     "actor": "log_handler",
     "details": {
       "consumer": "log",
-      "transmit_policy": "urgent"
+      "transmit_policy": "informational"
     }
   }
 }

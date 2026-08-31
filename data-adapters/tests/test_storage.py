@@ -566,7 +566,7 @@ def test_get_connection_seeds_transmit_policies_and_creates_beacon_tx_schedule(t
     conn = get_connection(tmp_path / "radiobeacon.db")
 
     seeded = {row[0] for row in conn.execute("SELECT name FROM transmit_policies")}
-    assert seeded == {"urgent", "informational"}
+    assert seeded == {"informational"}
 
     cols = {row[1] for row in conn.execute("PRAGMA table_info(beacon_tx_schedule)")}
     assert {"source", "item_id", "kind", "ref", "transmit_policy", "sent_count"} <= cols
