@@ -65,6 +65,9 @@ from adapters.beacon_defaults import (  # noqa: E402
     BEACON_ENABLED_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
+    BEACON_VOICE_PREFIX_DEFAULT,
+    BEACON_VOICE_SUFFIX_DEFAULT,
+    BEACON_VOICE_TEMPLATE_DEFAULT,
 )
 from adapters.storage import (  # noqa: E402
     DEFAULT_DB_PATH,
@@ -566,14 +569,14 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
             inter_tx_delay = float(get_setting("BEACON_INTER_TX_DELAY_SECONDS", "2", conn=conn))
             ctx = {
                 "callsign": get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False),
-                "voice_template": get_setting("BEACON_VOICE_TEMPLATE", "{callsign}. {text}. {date}", conn=conn),
+                "voice_template": get_setting("BEACON_VOICE_TEMPLATE", BEACON_VOICE_TEMPLATE_DEFAULT, conn=conn),
                 "voice_max_chars": int(get_setting("BEACON_VOICE_MAX_CHARS", "500", conn=conn)),
                 "date_format": get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn),
                 "destination": get_setting("BEACON_FRAME_DESTINATION", "NFO", conn=conn),
                 "frame_prefix": get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or "",
                 "frame_suffix": get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or "",
-                "voice_prefix": get_setting("BEACON_VOICE_PREFIX", "", conn=conn) or "",
-                "voice_suffix": get_setting("BEACON_VOICE_SUFFIX", "", conn=conn) or "",
+                "voice_prefix": get_setting("BEACON_VOICE_PREFIX", BEACON_VOICE_PREFIX_DEFAULT, conn=conn) or "",
+                "voice_suffix": get_setting("BEACON_VOICE_SUFFIX", BEACON_VOICE_SUFFIX_DEFAULT, conn=conn) or "",
                 "wav_dir": get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn),
                 "tts_voice": get_setting("BEACON_TTS_VOICE", "es", conn=conn),
                 "tts_engine": get_setting("BEACON_TTS_ENGINE", "piper", conn=conn),

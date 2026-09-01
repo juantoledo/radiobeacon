@@ -163,7 +163,11 @@ SvxLink keys the transmitter.
 transmitted payload — distinct from `BEACON_FRAME_DESTINATION`, which only
 labels the AX.25 tocall. `BEACON_VOICE_PREFIX`/`BEACON_VOICE_SUFFIX` are the
 equivalent for voice, wrapping the spoken text before it's substituted into
-`BEACON_VOICE_TEMPLATE`'s `{text}`.
+`BEACON_VOICE_TEMPLATE`'s `{text}`. Their defaults wrap the summary in a
+spoken-Spanish informational-bulletin envelope (`Información de {source_name},
+{date}. … Fin del comunicado.`), with `BEACON_VOICE_TEMPLATE` left as a bare
+`{text}` passthrough; the prefix/suffix sit outside `BEACON_VOICE_MAX_CHARS`,
+so the envelope is always spoken in full even when the summary is truncated.
 
 All of these (plus `BEACON_VOICE_TEMPLATE`) are `str.format` templates. Beyond
 `{date}` (`items.source_date_time`, converted to `DISPLAY_TIMEZONE`, formatted
@@ -220,8 +224,9 @@ Env vars in `.env` at the repo root — also all editable live via `/config` →
 | `BEACON_INTER_TX_DELAY_SECONDS` | `2` |
 | `BEACON_WAV_TRANSMITTER` | `logging` (`logging` \| `spool`) |
 | `BEACON_TXQUEUE_INCOMING_DIR` | `/var/spool/svxlink-tx/incoming` |
-| `BEACON_VOICE_TEMPLATE` | `{callsign}. {text}. {date}` |
-| `BEACON_VOICE_PREFIX` / `BEACON_VOICE_SUFFIX` | `""` / `""` |
+| `BEACON_VOICE_TEMPLATE` | `{text}` |
+| `BEACON_VOICE_PREFIX` | `Información de {source_name}, {date}. ` |
+| `BEACON_VOICE_SUFFIX` | `. Para más información consulte fuentes oficiales de {source_name}. Fin del comunicado. ` |
 | `BEACON_VOICE_MAX_CHARS` | `500` |
 | `BEACON_DATE_FORMAT` | `%d-%m-%Y %H:%M` |
 | `BEACON_FRAME_DESTINATION` | `NFO` |
