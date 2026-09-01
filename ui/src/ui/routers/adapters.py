@@ -510,10 +510,11 @@ async def adapter_save_action(
     if common["ai_prompt"]:
         config["ai_prompt"] = common["ai_prompt"]
 
-    # Optional per-adapter opt-in, also read by actions.ai: on a failed provider
-    # call, store the item's title as the summary and keep the pipeline flowing
-    # rather than letting the item hard-stop. Omitted when off, same as
-    # ai_prompt — a plain CUSTOM config stays just {"code": ...}.
+    # Optional per-adapter opt-in, also read by actions.ai: store the item's
+    # title as the summary (instead of the full extracted contents) whenever AI
+    # can't run — on a failed provider call, keeping the pipeline flowing rather
+    # than letting the item hard-stop, and on the AI-disabled skip. Omitted when
+    # off, same as ai_prompt — a plain CUSTOM config stays just {"code": ...}.
     if common["ai_fallback_to_title"]:
         config["ai_fallback_to_title"] = True
 

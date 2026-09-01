@@ -42,7 +42,10 @@ consumers, same as anything else on the broker.)
   per-adapter with `config.ai_fallback_to_title` (set on the `/adapters`
   form; seeded `true` for `senapred`): when it's on, a failed provider call
   is caught, the item's `title` is stored as the summary, and an ordinary
-  `summarized: false` skip is published so `chunk` still runs.
+  `summarized: false` skip is published so `chunk` still runs. That flag also
+  changes the AI-disabled skip: instead of copying the full extracted contents
+  into `summary` verbatim, the item's `title` is stored. The
+  content-already-short and bad-provider skips still copy extracted contents.
 
 - **chunk** (`src/actions/chunk.py`) — subscribes to `ai`'s own output
   (`item.ai_settled` by default), not `item.dispatched` directly, so it
@@ -227,8 +230,10 @@ length budget; not used for voice length — see `BEACON_VOICE_MAX_CHARS` in
 Per-adapter (not env vars — `adapter_instances.config`, set on the
 `/adapters` form): `ai_prompt` (above) and `ai_fallback_to_title`. The
 latter defaults off — a failed provider call propagates and the item stops
-(no publish, no `action.ai.executed` row). When on (seeded `true` for
-`senapred`), a failed provider call is caught, the item's `extracted_title`
+(no publish, no `action.ai.executed` row), and the AI-disabled skip copies
+`extracted_contents` into `items.summary`. When on (seeded `true` for
+`senapred`), a failed provider call is caught, and when AI is disabled the
+skip stores the title too: in both cases the item's `extracted_title`
 (falling back to `extracted_contents`) is stored as `items.summary`, and a
 normal `summarized: false` event is published so `chunk` still runs.
 

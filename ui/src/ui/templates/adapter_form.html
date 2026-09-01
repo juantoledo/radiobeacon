@@ -70,13 +70,16 @@
       <td>
         <label><input id="ai_fallback_to_title" name="ai_fallback_to_title" type="checkbox"
                       {% if ai_fallback_to_title %}checked{% endif %}>
-          Use the item title when AI summarization fails</label>
-        <div class="meta-line">When the AI summarizer's provider call fails (network error, bad
-          API key, rate limit…): if checked, the item's <code>title</code> is stored as the
-          summary and the pipeline continues; if unchecked (the default), the failure stops the
-          item — nothing is published for it and no <code>action.ai.executed</code> audit row is
-          written. Only affects a genuine provider call failure, not the ordinary
-          AI-disabled / content-already-short skips.</div>
+          Use the item title when AI summarization fails or is disabled</label>
+        <div class="meta-line">When the AI summarizer can't run: <strong>(a)</strong> the provider
+          call fails (network error, bad API key, rate limit…) — if checked, the item's
+          <code>title</code> is stored as the summary and the pipeline continues; if unchecked
+          (the default), the failure stops the item, nothing is published for it and no
+          <code>action.ai.executed</code> audit row is written. <strong>(b)</strong> AI is
+          disabled globally (<code>ACTIONS_AI_ENABLED</code> not <code>true</code>) — if checked,
+          the item's <code>title</code> is stored as the summary instead of the full extracted
+          contents. Does not affect the content-already-short or bad-provider skips, which always
+          copy the extracted contents verbatim.</div>
       </td>
     </tr>
   </table>

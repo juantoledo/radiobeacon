@@ -128,11 +128,14 @@ def _resolve_prompt_template(conn: sqlite3.Connection, source: str) -> str:
 
 def _resolve_fallback_to_title(conn: sqlite3.Connection, source: str) -> bool:
     """Per-adapter opt-in (adapter_instances.config `ai_fallback_to_title`, set
-    on the /adapters form): when true, a provider call that raises is caught and
-    the item's title is stored as the summary so the pipeline keeps flowing;
-    when false (the default, and any source with no adapter_instances row) the
-    exception propagates as before and the item stops. There is deliberately no
-    global setting — it's an adapter-by-adapter call."""
+    on the /adapters form): when true, the item's title is stored as the summary
+    instead of the full extracted_contents whenever the AI summarizer can't run
+    — a provider call that raises is caught so the pipeline keeps flowing, and
+    the AI-disabled skip stores the title rather than copying extracted_contents
+    verbatim. When false (the default, and any source with no adapter_instances
+    row) a provider failure propagates as before and the item stops, and the
+    disabled skip copies extracted_contents. There is deliberately no global
+    setting — it's an adapter-by-adapter call."""
     instance = get_adapter_instance(conn, source)
     if not instance:
         return False
@@ -205,7 +208,9 @@ class AiAction(Action):
     extracted_contents — even when there's nothing to actually condense
     (AI disabled, content already short, bad provider config): in those
     cases extracted_contents is copied into summary verbatim rather than
-    left NULL. This makes summary a reliable single source of truth for
+    left NULL (a source with config.ai_fallback_to_title stores the item's
+    title instead on the AI-disabled and provider-failure paths — see
+    _resolve_fallback_to_title). This makes summary a reliable single source of truth for
     downstream consumers — most importantly beacon.content.
     resolve_voice_text, which reads items.summary unconditionally with no
     fallback to extracted_contents (see content.py). `summarized` keeps
@@ -329,7 +334,8 @@ class AiAction(Action):
         provider = get_setting("ACTIONS_AI_PROVIDER", conn=conn)
 
         skip_reason = None
-        if get_setting("ACTIONS_AI_ENABLED", "false", conn=conn).lower() != "true":
+        ai_disabled = get_setting("ACTIONS_AI_ENABLED", "false", conn=conn).lower() != "true"
+        if ai_disabled:
             skip_reason = "ACTIONS_AI_ENABLED is not true"
         elif len(extracted_contents) <= max_chars:
             skip_reason = f"extracted_contents already <= {max_chars} chars, nothing to summarize"
@@ -339,13 +345,28 @@ class AiAction(Action):
             )
 
         if skip_reason is not None:
-            logger.info(
-                "ai: source=%s item_id=%s %s, storing extracted_contents as summary verbatim",
-                source,
-                item_id,
-                skip_reason,
-            )
-            _store_summary_or_log(conn, source, item_id, extracted_contents)
+            # A source that opts in via config.ai_fallback_to_title stores the
+            # item's title (not the full extracted_contents) as the summary when
+            # AI is disabled -- the same substitution it makes on a provider
+            # failure, see _resolve_fallback_to_title. The content-already-short
+            # and bad-provider skips keep copying extracted_contents verbatim.
+            fallback_body = extracted_contents
+            if ai_disabled and _resolve_fallback_to_title(conn, source):
+                fallback_body = item_fields["extracted_title"] or extracted_contents
+                logger.info(
+                    "ai: source=%s item_id=%s AI disabled and ai_fallback_to_title set, "
+                    "storing title as summary",
+                    source,
+                    item_id,
+                )
+            else:
+                logger.info(
+                    "ai: source=%s item_id=%s %s, storing extracted_contents as summary verbatim",
+                    source,
+                    item_id,
+                    skip_reason,
+                )
+            _store_summary_or_log(conn, source, item_id, fallback_body)
             return _settled(source, item_id, summarized=False, reason=skip_reason)
 
         prompt_template = _resolve_prompt_template(conn, source)

@@ -125,11 +125,14 @@ consumed by [`actions.ai`](../actions/README.md) (never by the adapter):
 - **`ai_prompt`** — a per-source `str.format` override of the summarization
   prompt template. Resolution order `config.ai_prompt` → `ACTIONS_AI_PROMPT`
   → built-in default.
-- **`ai_fallback_to_title`** — when `true`, a failed AI provider call stores
-  the item's title as `items.summary` and the pipeline continues; when
-  absent/`false` (the default), the failure stops the item. Seeded `true`
-  for **senapred** (emergency alerts — something beats nothing), absent for
-  **csn**. Existing databases are backfilled once for senapred
+- **`ai_fallback_to_title`** — when `true`, the item's title is stored as
+  `items.summary` (instead of the full extracted contents) whenever the AI
+  summarizer can't run: a failed AI provider call is caught and the pipeline
+  continues, and the AI-disabled skip stores the title rather than copying the
+  extracted contents verbatim. When absent/`false` (the default), a provider
+  failure stops the item and the disabled skip copies the extracted contents.
+  Seeded `true` for **senapred** (emergency alerts — something beats nothing),
+  absent for **csn**. Existing databases are backfilled once for senapred
   (`_backfill_senapred_ai_fallback_to_title`).
 
 Both are edited on the `/adapters` form and omitted from the blob when

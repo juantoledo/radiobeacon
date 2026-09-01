@@ -305,6 +305,56 @@ def test_ai_fallback_to_title_uses_contents_when_title_empty(tmp_path, monkeypat
     assert _stored_summary(conn, "alerts", "1") == "Some contents."
 
 
+def test_ai_disabled_stores_title_when_flag_set(tmp_path, monkeypatch):
+    """With ai_fallback_to_title on, the AI-disabled skip stores the item's
+    title instead of copying the full extracted_contents verbatim."""
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "false")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_adapter_instance(
+        conn, "alerts", "custom", {"code": "def fetch(config): return []", "ai_fallback_to_title": True}
+    )
+    _insert_item(conn, "alerts", "1", "Some long contents.", extracted_title="A short title")
+
+    outputs = AiAction().run(_dispatched_event("alerts", "1"), conn=conn)
+
+    assert outputs[0]["summarized"] is False
+    assert outputs[0]["reason"] == "ACTIONS_AI_ENABLED is not true"
+    assert _stored_summary(conn, "alerts", "1") == "A short title"
+
+
+def test_ai_disabled_stores_contents_verbatim_without_flag(tmp_path, monkeypatch):
+    """Default (no flag): the AI-disabled skip still copies extracted_contents."""
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "false")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_adapter_instance(conn, "alerts", "custom", {"code": "def fetch(config): return []"})
+    _insert_item(conn, "alerts", "1", "Some long contents.", extracted_title="A short title")
+
+    outputs = AiAction().run(_dispatched_event("alerts", "1"), conn=conn)
+
+    assert outputs[0]["summarized"] is False
+    assert _stored_summary(conn, "alerts", "1") == "Some long contents."
+
+
+def test_ai_content_already_short_ignores_fallback_to_title_flag(tmp_path, monkeypatch):
+    """The flag only covers provider-failure and AI-disabled -- a
+    content-already-short skip still copies extracted_contents even with it on."""
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
+    monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "9999")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_adapter_instance(
+        conn, "alerts", "custom", {"code": "def fetch(config): return []", "ai_fallback_to_title": True}
+    )
+    _insert_item(conn, "alerts", "1", "Some contents.", extracted_title="A short title")
+
+    outputs = AiAction().run(_dispatched_event("alerts", "1"), conn=conn)
+
+    assert outputs[0]["summarized"] is False
+    assert _stored_summary(conn, "alerts", "1") == "Some contents."
+
+
 def test_ai_publishes_summarized_false_when_store_summary_finds_no_matching_row(
     tmp_path, monkeypatch
 ):

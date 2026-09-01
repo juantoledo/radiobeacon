@@ -214,10 +214,12 @@ CREATE TABLE IF NOT EXISTS adapter_instances (
 # (see CustomAdapter). It may additionally carry optional action-layer
 # overrides, both set on the /adapters form and read by actions.ai (never by
 # the adapter itself): `ai_prompt` (a per-source summarization prompt
-# template) and `ai_fallback_to_title` (when true, a failed provider call
-# stores the item's title as the summary and the pipeline continues instead
-# of the item hard-stopping — seeded true for senapred, absent/false
-# elsewhere). So unlike the old senapred module,
+# template) and `ai_fallback_to_title` (when true, the item's title is
+# stored as the summary instead of the full extracted contents whenever AI
+# can't run — a failed provider call is caught so the pipeline continues
+# instead of the item hard-stopping, and the AI-disabled skip stores the
+# title rather than copying extracted contents verbatim — seeded true for
+# senapred, absent/false elsewhere). So unlike the old senapred module,
 # which read its AWS/Cognito plumbing from env vars/config at call time,
 # the generated snippet below has those values baked in as plain literals
 # at seed time — _build_senapred_code() renders this template with each
