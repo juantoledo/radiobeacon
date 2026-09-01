@@ -51,7 +51,10 @@ that interprets `config`:
   read, so an already-saved instance never breaks across this change.
 
 - **`custom`** (`src/adapters/custom_adapter.py`, `CustomAdapter`) —
-  `config` is *exactly* `{"code": "..."}`, nothing else. The code is a full
+  the *fetch* config is *exactly* `{"code": "..."}`, nothing the adapter
+  itself reads beyond that (it may also carry the optional action-layer keys
+  `ai_prompt` / `ai_fallback_to_title` — see below — which `CustomAdapter`
+  ignores). The code is a full
   Python source string, trusted-admin-authored (this is a self-hosted,
   single-operator box — the snippet is `exec()`'d with no sandboxing), that
   must define `def fetch(config: dict) -> list[dict]`. Each returned dict's
@@ -113,6 +116,24 @@ the hardcoded defaults — for csn, into the seeded config's fields; for
 senapred, baked as literals into the generated snippet's source (there's
 no config left to put them in) — see `_SEED_ADAPTER_INSTANCES` in
 `storage.py`.
+
+### Action-layer config keys
+
+Independent of fetch logic, an adapter instance's `config` may carry keys
+consumed by [`actions.ai`](../actions/README.md) (never by the adapter):
+
+- **`ai_prompt`** — a per-source `str.format` override of the summarization
+  prompt template. Resolution order `config.ai_prompt` → `ACTIONS_AI_PROMPT`
+  → built-in default.
+- **`ai_fallback_to_title`** — when `true`, a failed AI provider call stores
+  the item's title as `items.summary` and the pipeline continues; when
+  absent/`false` (the default), the failure stops the item. Seeded `true`
+  for **senapred** (emergency alerts — something beats nothing), absent for
+  **csn**. Existing databases are backfilled once for senapred
+  (`_backfill_senapred_ai_fallback_to_title`).
+
+Both are edited on the `/adapters` form and omitted from the blob when
+unset, so a plain CUSTOM `config` stays just `{"code": ...}`.
 
 ## Sources table
 

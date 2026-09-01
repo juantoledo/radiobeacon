@@ -126,6 +126,20 @@ def _resolve_prompt_template(conn: sqlite3.Connection, source: str) -> str:
     return get_setting("ACTIONS_AI_PROMPT", _DEFAULT_PROMPT, conn=conn)
 
 
+def _resolve_fallback_to_title(conn: sqlite3.Connection, source: str) -> bool:
+    """Per-adapter opt-in (adapter_instances.config `ai_fallback_to_title`, set
+    on the /adapters form): when true, a provider call that raises is caught and
+    the item's title is stored as the summary so the pipeline keeps flowing;
+    when false (the default, and any source with no adapter_instances row) the
+    exception propagates as before and the item stops. There is deliberately no
+    global setting — it's an adapter-by-adapter call."""
+    instance = get_adapter_instance(conn, source)
+    if not instance:
+        return False
+    config = json.loads(instance["config"]) or {}
+    return bool(config.get("ai_fallback_to_title", False))
+
+
 def _settled(
     source: str,
     item_id: str,
@@ -255,14 +269,22 @@ class AiAction(Action):
     templates use). An unknown placeholder renders blank rather than
     crashing the summarizer.
 
-    A provider call failure (network error, bad API key, ...) is
+    A provider call failure (network error, bad API key, ...) is by default
     deliberately NOT caught here and propagates out of run(). __main__.py
     already logs+swallows any exception from run(), but critically does
     NOT record an action.ai.executed audit event (nor publish anything)
     when run() raises — which is the correct signal for a real failure:
     "nothing happened, see the error log," not a misleadingly successful
     audit entry. Every skip below is a legitimate no-op, not a failure,
-    so those still publish (with summarized: False) rather than raising."""
+    so those still publish (with summarized: False) rather than raising.
+
+    A source can opt out of that hard stop with the per-adapter
+    adapter_instances.config `ai_fallback_to_title` flag (see
+    _resolve_fallback_to_title): when it is true, a provider failure is
+    caught, the item's title (falling back to extracted_contents) is stored
+    as items.summary, and an ordinary summarized: False skip is published so
+    chunk still runs and the item stays on air — the right trade-off for a
+    time-critical source where something beats nothing."""
 
     default_subscribe_topic = "radiobeacon/events/item.dispatched"
     default_output_topic = "radiobeacon/events/item.ai_settled"
@@ -331,16 +353,46 @@ class AiAction(Action):
 
         if provider == "openai":
             model = get_setting("ACTIONS_AI_OPENAI_MODEL", "gpt-4o-mini", conn=conn)
-            api_key = get_setting("OPENAI_API_KEY", conn=conn)
-            summary = _call_openai(prompt, model, api_key)
         elif provider == "claude":
             model = get_setting("ACTIONS_AI_CLAUDE_MODEL", "claude-haiku-4-5", conn=conn)
-            api_key = get_setting("ANTHROPIC_API_KEY", conn=conn)
-            summary = _call_claude(prompt, model, api_key)
         else:
             model = get_setting("ACTIONS_AI_OLLAMA_MODEL", "llama3.2:1b", conn=conn)
-            host = get_setting("ACTIONS_AI_OLLAMA_HOST", "http://localhost:11434", conn=conn)
-            summary = _call_ollama(prompt, model, host)
+
+        try:
+            if provider == "openai":
+                summary = _call_openai(prompt, model, get_setting("OPENAI_API_KEY", conn=conn))
+            elif provider == "claude":
+                summary = _call_claude(prompt, model, get_setting("ANTHROPIC_API_KEY", conn=conn))
+            else:
+                host = get_setting("ACTIONS_AI_OLLAMA_HOST", "http://localhost:11434", conn=conn)
+                summary = _call_ollama(prompt, model, host)
+        except Exception as exc:
+            # A provider failure (network, bad key, rate limit, ...) stops the
+            # item by default -- the exception propagates, __main__.py records
+            # no audit row and publishes nothing, so chunk never fires. A
+            # source that opts in via config.ai_fallback_to_title instead keeps
+            # flowing: the item's title is stored as the summary and a normal
+            # summarized:False skip is published (see _resolve_fallback_to_title).
+            if not _resolve_fallback_to_title(conn, source):
+                raise
+            fallback = item_fields["extracted_title"] or extracted_contents
+            logger.warning(
+                "ai: source=%s item_id=%s provider %s call failed (%s); "
+                "storing title as summary and continuing",
+                source,
+                item_id,
+                provider,
+                exc,
+            )
+            _store_summary_or_log(conn, source, item_id, fallback)
+            return _settled(
+                source,
+                item_id,
+                summarized=False,
+                reason=f"provider call failed ({exc}); stored title as summary",
+                provider=provider,
+                model=model,
+            )
 
         summary = summary.strip()
 

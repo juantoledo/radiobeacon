@@ -523,3 +523,53 @@ def test_adapter_edit_page_prefills_ai_prompt(client, conn):
 
     assert response.status_code == 200
     assert "MARKER-PREFILL {url}" in response.text
+
+
+def test_adapter_create_persists_ai_fallback_to_title(client, conn):
+    response = client.post(
+        "/adapters",
+        data={
+            "mode": "create",
+            "source": "new-custom",
+            "adapter_type": "custom",
+            "code": "def fetch(config):\n    return []\n",
+            "ai_fallback_to_title": "on",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    config = json.loads(get_adapter_instance(conn, "new-custom")["config"])
+    assert config["ai_fallback_to_title"] is True
+
+
+def test_adapter_create_omits_ai_fallback_to_title_when_unchecked(client, conn):
+    client.post(
+        "/adapters",
+        data={
+            "mode": "create",
+            "source": "new-custom",
+            "adapter_type": "custom",
+            "code": "def fetch(config):\n    return []\n",
+        },
+        follow_redirects=False,
+    )
+
+    config = json.loads(get_adapter_instance(conn, "new-custom")["config"])
+    assert "ai_fallback_to_title" not in config
+
+
+def test_adapter_edit_page_checks_ai_fallback_to_title_box_when_set(client, conn):
+    set_adapter_instance(
+        conn,
+        "csn",
+        "custom",
+        {"code": "def fetch(config): return []", "ai_fallback_to_title": True},
+    )
+
+    response = client.get("/adapters/csn/edit")
+
+    assert response.status_code == 200
+    assert 'id="ai_fallback_to_title"' in response.text
+    checkbox = response.text.split('id="ai_fallback_to_title"', 1)[1].split(">", 1)[0]
+    assert "checked" in checkbox
