@@ -280,7 +280,13 @@ def _form_context(
     }
 
 
-@router.get("/adapters")
+@router.get("/adapters", include_in_schema=False)
+def adapters_legacy_redirect():
+    """The Adapters page moved under /config — keep old bookmarks working."""
+    return RedirectResponse(url="/config/adapters", status_code=307)
+
+
+@router.get("/config/adapters")
 def adapters_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     instances = list_adapter_instances(conn)
     last_events = queries.last_adapter_fetch_events(conn)
@@ -306,7 +312,7 @@ def _default_prompt_placeholder(conn: sqlite3.Connection | None) -> str:
     return get_setting("ACTIONS_AI_PROMPT", AI_PROMPT_DEFAULT, conn=conn)
 
 
-@router.get("/adapters/new")
+@router.get("/config/adapters/new")
 def adapter_new_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return templates.TemplateResponse(
         request,
@@ -330,7 +336,7 @@ def adapter_new_page(request: Request, conn: sqlite3.Connection = Depends(get_db
     )
 
 
-@router.get("/adapters/{source}/edit")
+@router.get("/config/adapters/{source}/edit")
 def adapter_edit_page(request: Request, source: str, conn: sqlite3.Connection = Depends(get_db)):
     row = get_adapter_instance(conn, source)
     if row is None:
@@ -398,7 +404,7 @@ def _error_context(
     )
 
 
-@router.post("/adapters/test")
+@router.post("/config/adapters/test")
 async def adapter_test_action(request: Request):
     form, common = await _read_common_form(request)
 
@@ -428,7 +434,7 @@ async def adapter_test_action(request: Request):
     return templates.TemplateResponse(request, "adapter_form.html", context)
 
 
-@router.post("/adapters/sample")
+@router.post("/config/adapters/sample")
 async def adapter_sample_action(request: Request):
     """Calls the endpoint with whatever connection fields (url/method/
     headers/query_params/body/items_path) are currently in the form and
@@ -472,13 +478,13 @@ async def adapter_sample_action(request: Request):
     return templates.TemplateResponse(request, "adapter_form.html", context)
 
 
-# Registered before the dynamic /adapters/{existing_source} route below —
-# FastAPI/Starlette matches path routes in registration order, so a static
-# path (a literal "test" here would otherwise be captured as
-# existing_source) must come first, same reasoning as /adapters/new above
-# needing to be a distinct GET path from /adapters/{source}/edit.
-@router.post("/adapters")
-@router.post("/adapters/{existing_source}")
+# Registered before the dynamic /config/adapters/{existing_source} route
+# below — FastAPI/Starlette matches path routes in registration order, so a
+# static path (a literal "test" here would otherwise be captured as
+# existing_source) must come first, same reasoning as /config/adapters/new
+# above needing to be a distinct GET path from /config/adapters/{source}/edit.
+@router.post("/config/adapters")
+@router.post("/config/adapters/{existing_source}")
 async def adapter_save_action(
     request: Request,
     existing_source: str | None = None,
@@ -532,11 +538,11 @@ async def adapter_save_action(
         set_source(conn, source, common["display_name"], common["site_url"] or None)
 
     msg = urlencode({"msg": f"adapter '{source}' saved"})
-    return RedirectResponse(url=f"/adapters?{msg}", status_code=303)
+    return RedirectResponse(url=f"/config/adapters?{msg}", status_code=303)
 
 
-@router.post("/adapters/{source}/delete")
+@router.post("/config/adapters/{source}/delete")
 def adapter_delete_action(source: str, conn: sqlite3.Connection = Depends(get_db)):
     deleted = delete_adapter_instance(conn, source)
     msg = f"adapter '{source}' deleted" if deleted else f"adapter '{source}' not found"
-    return RedirectResponse(url=f"/adapters?{urlencode({'msg': msg})}", status_code=303)
+    return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)

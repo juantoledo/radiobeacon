@@ -180,7 +180,7 @@ def distinct_types(conn: sqlite3.Connection) -> list[str]:
 
 def last_adapter_fetch_events(conn: sqlite3.Connection) -> dict[str, sqlite3.Row]:
     """The most recent "adapter.fetch" audit_log row per source — a quick
-    health signal for the /adapters list page (ok/error, when it last ran)
+    health signal for the /config/adapters list page (ok/error, when it last ran)
     without needing a dedicated status table. audit_log.id is
     AUTOINCREMENT, so MAX(id) per source is also the most recent row."""
     rows = conn.execute(

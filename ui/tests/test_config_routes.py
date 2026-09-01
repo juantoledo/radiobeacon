@@ -13,6 +13,32 @@ def test_config_list_page_returns_200_and_lists_every_group(client):
     assert "DISPATCHER_INTERVAL_SECONDS" in response.text
 
 
+def test_settings_tab_shows_friendly_keys_and_hides_advanced(client):
+    response = client.get("/config")
+
+    assert response.status_code == 200
+    assert "BEACON_CALLSIGN" in response.text  # basic
+    assert "ACTIONS_AI_PROVIDER" in response.text  # basic
+    assert "BEACON_MQ_HOST" not in response.text  # advanced
+    assert "ACTIONS_AI_OUTPUT_TOPIC" not in response.text  # wiring
+
+
+def test_advanced_tab_shows_internal_keys_and_hides_friendly(client):
+    response = client.get("/config/advanced")
+
+    assert response.status_code == 200
+    assert "BEACON_MQ_HOST" in response.text  # advanced
+    assert "ACTIONS_AI_OUTPUT_TOPIC" in response.text  # wiring
+    assert "BEACON_CALLSIGN" not in response.text  # basic
+
+
+def test_config_subnav_links_to_every_tab(client):
+    response = client.get("/config")
+
+    for href in ("/config", "/config/advanced", "/config/adapters", "/config/policies"):
+        assert f'href="{href}"' in response.text
+
+
 def test_config_group_edit_page_returns_200_and_prefills_known_values(client):
     response = client.get("/config/dispatcher")
 

@@ -11,7 +11,7 @@ SettingSpec.env_fallback/required below), and the "Display"/"UI" groups
 (display timezone, page size, dev tools, refresh intervals, default
 consumer name). Per-source adapter config (CSN, SENAPRED, and any
 operator-added instance) lives in the adapter_instances table instead,
-managed at /adapters — see ui.routers.adapters.
+managed at /config/adapters — see ui.routers.adapters.
 UI_HOST/UI_PORT/UI_DB_PATH are the only settings that stay env-only — they're
 needed before the app can even reach its own database, so they can never be
 DB-backed like everything else here (see ui.config)."""
@@ -38,10 +38,18 @@ class SettingSpec:
     default: str | None
     is_secret: bool = False
     choices: tuple[str, ...] = field(default_factory=tuple)
-    # advanced=True: changes pub/sub topology (topic/event-type wiring) —
+    # wiring=True: changes pub/sub topology (topic/event-type wiring) —
     # a typo here silently breaks a pipeline with no visible error, unlike
     # a numeric threshold. Rendered with extra warning styling and a
-    # confirm-before-save prompt in config_group_form.html.
+    # confirm-before-save prompt in config_group_form.html. Always also
+    # counts as advanced (see is_advanced) — wiring keys never belong on
+    # the friendly Settings tab.
+    wiring: bool = False
+    # advanced=True: internal / rarely-changed plumbing (MQ host/port/QoS,
+    # binary paths, poll & reconcile intervals, NTP) — shown on the
+    # "Advanced" sub-tab of /config instead of the default "Settings" tab.
+    # Presentation only; nothing about how the value is stored or read
+    # changes. is_advanced(spec) is the effective test (advanced or wiring).
     advanced: bool = False
     # env_fallback=False: DB-only, never reads an identically-named env
     # var — used by beacon identity so a stray BEACON_CALLSIGN in the
@@ -68,7 +76,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
     ),
     # Per-source adapter config (CSN, SENAPRED, and any operator-added
     # instance) no longer lives here — each is a row in the adapter_instances
-    # table, managed at /adapters instead of /config. See ui.routers.adapters.
+    # table, managed at /config/adapters. See ui.routers.adapters.
     # --- Dispatcher ---
     SettingSpec(
         "DISPATCHER_INTERVAL_SECONDS",
@@ -85,6 +93,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Logical consumer name — its own row in dispatcher_state tracks its progress.",
         "text",
         "log",
+        advanced=True,
     ),
     # --- MQ — Dispatcher ---
     SettingSpec(
@@ -95,6 +104,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "localhost; set to an empty string to disable publishing entirely.",
         "text",
         "localhost",
+        advanced=True,
     ),
     SettingSpec(
         "DISPATCHER_MQ_PORT",
@@ -103,6 +113,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Broker port for dispatcher's audit-event publishing.",
         "int",
         "1883",
+        advanced=True,
     ),
     SettingSpec(
         "DISPATCHER_MQ_QOS",
@@ -111,6 +122,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "QoS level for dispatcher's published events.",
         "int",
         "1",
+        advanced=True,
     ),
     SettingSpec(
         "DISPATCHER_MQ_CONNECT_TIMEOUT_SECONDS",
@@ -119,6 +131,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Timeout for dispatcher's MQTT connect/publish.",
         "int",
         "5",
+        advanced=True,
     ),
     # --- MQ — Actions ---
     SettingSpec(
@@ -128,6 +141,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Broker host actions subscribe to and publish on.",
         "text",
         "localhost",
+        advanced=True,
     ),
     SettingSpec(
         "ACTIONS_MQ_PORT",
@@ -136,6 +150,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Broker port for actions.",
         "int",
         "1883",
+        advanced=True,
     ),
     SettingSpec(
         "ACTIONS_MQ_QOS",
@@ -144,6 +159,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "QoS level for actions' subscribe/publish.",
         "int",
         "1",
+        advanced=True,
     ),
     SettingSpec(
         "ACTIONS_MQ_RECONNECT_BACKOFF_SECONDS",
@@ -152,6 +168,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Seconds between actions' MQTT reconnect attempts.",
         "int",
         "5",
+        advanced=True,
     ),
     # --- Actions — Chunk ---
     SettingSpec(
@@ -165,7 +182,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "pipeline, or set empty to disable the action.",
         "text",
         "radiobeacon/events/item.ai_settled",
-        advanced=True,
+        wiring=True,
     ),
     SettingSpec(
         "ACTIONS_CHUNK_OUTPUT_TOPIC",
@@ -174,7 +191,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "MQTT topic ChunkAction publishes item.chunked events to.",
         "text",
         "radiobeacon/events/item.chunked",
-        advanced=True,
+        wiring=True,
     ),
     SettingSpec(
         "ACTIONS_CHUNK_OUTPUT_EVENT_TYPE",
@@ -183,7 +200,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "CloudEvent `type` string for ChunkAction's output.",
         "text",
         "item.chunked",
-        advanced=True,
+        wiring=True,
     ),
     SettingSpec(
         "ACTIONS_CHUNK_MAX_CHARS",
@@ -215,7 +232,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "override only to re-wire it, or set empty to disable the action.",
         "text",
         "radiobeacon/events/item.dispatched",
-        advanced=True,
+        wiring=True,
     ),
     SettingSpec(
         "ACTIONS_AI_OUTPUT_TOPIC",
@@ -227,7 +244,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "subscribes here so it always runs after ai has settled.",
         "text",
         "radiobeacon/events/item.ai_settled",
-        advanced=True,
+        wiring=True,
     ),
     SettingSpec(
         "ACTIONS_AI_OUTPUT_EVENT_TYPE",
@@ -236,7 +253,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "CloudEvent `type` string for AiAction's output.",
         "text",
         "item.ai_settled",
-        advanced=True,
+        wiring=True,
     ),
     SettingSpec(
         "ACTIONS_AI_PROVIDER",
@@ -301,7 +318,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "{fetched_at}, {captured_at}, {rawdata}, plus the source's display name and "
         "site URL as {source_name} / {source_url} — an unknown placeholder just renders "
         "blank. A single adapter can override this further via its own 'AI prompt "
-        "override' field on the /adapters form.",
+        "override' field on the /config/adapters form.",
         "text",
         None,
     ),
@@ -338,7 +355,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "single trigger beacon subscribes to for both voice and frame.",
         "text",
         "radiobeacon/events/item.content_ready",
-        advanced=True,
+        wiring=True,
     ),
     # --- Secrets ---
     SettingSpec(
@@ -408,6 +425,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "unset, falls back to the current effective DISPATCHER_CONSUMER_NAME.",
         "text",
         "log",
+        advanced=True,
     ),
     # --- Beacon — Identity ---
     # The operator profile a listener actually hears/reads — required,
@@ -537,7 +555,6 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "select",
         "logging",
         choices=("logging", "spool"),
-        advanced=True,
     ),
     SettingSpec(
         "BEACON_TXQUEUE_INCOMING_DIR",
@@ -717,6 +734,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "BEACON_TTS_ENGINE=piper.",
         "text",
         "piper",
+        advanced=True,
     ),
     SettingSpec(
         "BEACON_TTS_WAV_DIR",
@@ -725,6 +743,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Where synthesized WAV files are written before playback.",
         "text",
         "storage/beacon_tts",
+        advanced=True,
     ),
     # --- Beacon — Queue ---
     SettingSpec(
@@ -760,6 +779,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Broker host beacon subscribes to for incoming content.",
         "text",
         "localhost",
+        advanced=True,
     ),
     SettingSpec(
         "BEACON_MQ_PORT",
@@ -768,6 +788,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Broker port for beacon.",
         "int",
         "1883",
+        advanced=True,
     ),
     SettingSpec(
         "BEACON_MQ_QOS",
@@ -776,6 +797,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "QoS level for beacon's subscriptions.",
         "int",
         "1",
+        advanced=True,
     ),
     SettingSpec(
         "BEACON_MQ_RECONNECT_BACKOFF_SECONDS",
@@ -784,6 +806,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Seconds between beacon's MQTT reconnect attempts.",
         "int",
         "5",
+        advanced=True,
     ),
     SettingSpec(
         "BEACON_CONTENT_READY_SUBSCRIBE_TOPIC",
@@ -795,7 +818,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "raw chunked text before an AI summary was ready.",
         "text",
         "radiobeacon/events/item.content_ready",
-        advanced=True,
+        wiring=True,
     ),
     # --- Beacon — NTP ---
     SettingSpec(
@@ -806,6 +829,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "the clock, which stays the OS's own NTP daemon's job.",
         "text",
         "pool.ntp.org",
+        advanced=True,
     ),
     SettingSpec(
         "BEACON_NTP_CHECK_INTERVAL_SECONDS",
@@ -814,6 +838,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "How often to query the NTP server for the current offset.",
         "int",
         "3600",
+        advanced=True,
     ),
     SettingSpec(
         "BEACON_NTP_MAX_OFFSET_SECONDS",
@@ -823,6 +848,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "offset exceeds this.",
         "float",
         "2.0",
+        advanced=True,
     ),
 ]
 
@@ -867,3 +893,18 @@ def specs_for_group(slug: str) -> list[SettingSpec]:
     if group is None:
         return []
     return [spec for spec in SETTINGS_CATALOG if spec.group == group]
+
+
+def is_advanced(spec: SettingSpec) -> bool:
+    """Whether a setting belongs on the /config "Advanced" sub-tab rather than
+    the default "Settings" tab — its own advanced flag, or wiring (which is
+    always advanced too). The per-group edit form still shows the whole group
+    regardless; this only splits the browse/list view."""
+    return spec.advanced or spec.wiring
+
+
+def group_is_advanced(slug: str) -> bool:
+    """True when every spec in the group is advanced — used to point a group
+    edit form's back-crumb at the tab that actually lists it."""
+    specs = specs_for_group(slug)
+    return bool(specs) and all(is_advanced(spec) for spec in specs)

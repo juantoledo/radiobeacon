@@ -9,8 +9,10 @@ from ..config_catalog import (
     CATEGORIES,
     SETTINGS_CATALOG,
     category_slug,
+    group_is_advanced,
     group_slug,
     groups_for_category,
+    is_advanced,
     specs_for_group,
 )
 from ..db import get_db
@@ -26,8 +28,11 @@ router = APIRouter()
 SECRET_SENTINEL = "•" * 8
 
 
-@router.get("/config")
-def config_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
+def _catalog_view(conn: sqlite3.Connection, *, advanced: bool) -> list[dict]:
+    """Category -> group -> row tree for the /config list, filtered to one
+    tier: the friendly "Settings" tab (advanced=False) or the "Advanced" tab
+    (advanced=True). Groups and categories with no spec in the tier are
+    dropped so neither tab shows an empty section."""
     overrides = {row["key"]: row for row in list_settings(conn)}
     categories = []
     for category in CATEGORIES:
@@ -35,7 +40,7 @@ def config_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db
         for group in groups_for_category(category):
             rows = []
             for spec in SETTINGS_CATALOG:
-                if spec.group != group:
+                if spec.group != group or is_advanced(spec) != advanced:
                     continue
                 row = overrides.get(spec.key)
                 # Effective value (DB override -> env var -> catalog
@@ -50,10 +55,41 @@ def config_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db
                     )
                 )
                 rows.append({"spec": spec, "row": row, "effective": effective})
+            if not rows:
+                continue
             cat_groups.append({"name": group, "slug": group_slug(group), "rows": rows})
-        categories.append({"name": category, "slug": category_slug(category), "groups": cat_groups})
+        if cat_groups:
+            categories.append(
+                {"name": category, "slug": category_slug(category), "groups": cat_groups}
+            )
+    return categories
+
+
+@router.get("/config")
+def config_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return templates.TemplateResponse(
-        request, "config_list.html", {"categories": categories, "sentinel": SECRET_SENTINEL}
+        request,
+        "config_list.html",
+        {
+            "tier": "settings",
+            "categories": _catalog_view(conn, advanced=False),
+            "sentinel": SECRET_SENTINEL,
+        },
+    )
+
+
+# Declared before /config/{group} so "advanced" is never captured as a group
+# slug (Starlette matches routes in registration order).
+@router.get("/config/advanced")
+def config_advanced_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
+    return templates.TemplateResponse(
+        request,
+        "config_list.html",
+        {
+            "tier": "advanced",
+            "categories": _catalog_view(conn, advanced=True),
+            "sentinel": SECRET_SENTINEL,
+        },
     )
 
 
@@ -90,6 +126,7 @@ def config_group_edit_page(
             "fields": fields,
             "sentinel": SECRET_SENTINEL,
             "error": None,
+            "back_url": "/config/advanced" if group_is_advanced(group) else "/config",
         },
     )
 
@@ -132,6 +169,7 @@ async def config_group_save_action(
                 "fields": fields,
                 "sentinel": SECRET_SENTINEL,
                 "error": f"Required: {', '.join(missing)}",
+                "back_url": "/config/advanced" if group_is_advanced(group) else "/config",
             },
             status_code=400,
         )

@@ -226,15 +226,21 @@ def test_retransmit_action_blocked_when_beacon_not_configured(client, conn):
 
 
 def test_policies_list_returns_200(client):
-    response = client.get("/policies")
+    response = client.get("/config/policies")
     assert response.status_code == 200
     # a fresh install seeds only informational (see adapters.transmit_policy)
     assert "informational" in response.text
 
 
+def test_legacy_policies_url_redirects_under_config(client):
+    response = client.get("/policies", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/config/policies"
+
+
 def test_policy_create_redirects_and_persists(client, conn):
     response = client.post(
-        "/policies",
+        "/config/policies",
         data={
             "name": "critical",
             "repeat_times": "10",
@@ -245,7 +251,7 @@ def test_policy_create_redirects_and_persists(client, conn):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/policies")
+    assert response.headers["location"].startswith("/config/policies")
     row = conn.execute(
         "SELECT repeat_times, interval_seconds FROM transmit_policies WHERE name='critical'"
     ).fetchone()
@@ -255,21 +261,21 @@ def test_policy_create_redirects_and_persists(client, conn):
 def test_policy_edit_page_returns_200_for_known_policy(client, conn):
     set_policy(conn, "custom", 2, 15, "desc")
 
-    response = client.get("/policies/custom/edit")
+    response = client.get("/config/policies/custom/edit")
 
     assert response.status_code == 200
     assert "custom" in response.text
 
 
 def test_policy_edit_page_returns_404_for_unknown_policy(client):
-    response = client.get("/policies/does-not-exist/edit")
+    response = client.get("/config/policies/does-not-exist/edit")
     assert response.status_code == 404
 
 
 def test_policy_delete_redirects(client, conn):
     set_policy(conn, "temp", 1, 0)
 
-    response = client.post("/policies/temp/delete", follow_redirects=False)
+    response = client.post("/config/policies/temp/delete", follow_redirects=False)
 
     assert response.status_code == 303
     row = conn.execute("SELECT 1 FROM transmit_policies WHERE name='temp'").fetchone()

@@ -5,7 +5,7 @@ from adapters.storage import get_adapter_instance, get_source_fields, set_adapte
 
 
 def test_adapters_list_returns_200_and_shows_seeded_instances(client):
-    response = client.get("/adapters")
+    response = client.get("/config/adapters")
 
     assert response.status_code == 200
     assert "csn" in response.text
@@ -13,19 +13,27 @@ def test_adapters_list_returns_200_and_shows_seeded_instances(client):
 
 
 def test_nav_shows_adapters_link(client):
-    response = client.get("/")
+    # Adapters moved under Config — the link now lives in the /config sub-nav.
+    response = client.get("/config")
 
-    assert 'href="/adapters"' in response.text
+    assert 'href="/config/adapters"' in response.text
+
+
+def test_legacy_adapters_url_redirects_under_config(client):
+    response = client.get("/adapters", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/config/adapters"
 
 
 def test_adapter_new_page_returns_200(client):
-    response = client.get("/adapters/new")
+    response = client.get("/config/adapters/new")
 
     assert response.status_code == 200
 
 
 def test_adapter_edit_page_returns_200_for_known_source(client):
-    response = client.get("/adapters/csn/edit")
+    response = client.get("/config/adapters/csn/edit")
 
     assert response.status_code == 200
     # CSN's seeded config prefills the structured fields, not raw JSON.
@@ -34,14 +42,14 @@ def test_adapter_edit_page_returns_200_for_known_source(client):
 
 
 def test_adapter_edit_page_404s_for_unknown_source(client):
-    response = client.get("/adapters/does-not-exist/edit")
+    response = client.get("/config/adapters/does-not-exist/edit")
 
     assert response.status_code == 404
 
 
 def test_adapter_create_persists_structured_api_config(client, conn):
     response = client.post(
-        "/adapters",
+        "/config/adapters",
         data={
             "mode": "create",
             "source": "new-source",
@@ -68,7 +76,7 @@ def test_adapter_create_persists_structured_api_config(client, conn):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/adapters?msg=")
+    assert response.headers["location"].startswith("/config/adapters?msg=")
 
     row = get_adapter_instance(conn, "new-source")
     assert row is not None
@@ -92,7 +100,7 @@ def test_adapter_create_persists_structured_api_config(client, conn):
 
 def test_adapter_create_custom_type_config_is_only_code(client, conn):
     response = client.post(
-        "/adapters",
+        "/config/adapters",
         data={
             "mode": "create",
             "source": "new-custom",
@@ -111,7 +119,7 @@ def test_adapter_create_custom_type_config_is_only_code(client, conn):
 
 def test_adapter_create_rejects_missing_url(client, conn):
     response = client.post(
-        "/adapters",
+        "/config/adapters",
         data={"mode": "create", "source": "broken", "adapter_type": "api", "url": ""},
         follow_redirects=False,
     )
@@ -122,7 +130,7 @@ def test_adapter_create_rejects_missing_url(client, conn):
 
 def test_adapter_create_rejects_invalid_transmit_threshold(client, conn):
     response = client.post(
-        "/adapters",
+        "/config/adapters",
         data={
             "mode": "create",
             "source": "broken",
@@ -143,7 +151,7 @@ def test_adapter_create_rejects_invalid_transmit_threshold(client, conn):
 
 def test_adapter_edit_updates_existing_instance(client, conn):
     response = client.post(
-        "/adapters/csn",
+        "/config/adapters/csn",
         data={
             "mode": "edit",
             "source": "csn",
@@ -162,21 +170,21 @@ def test_adapter_edit_updates_existing_instance(client, conn):
 
 
 def test_adapter_delete_removes_row_and_redirects(client, conn):
-    response = client.post("/adapters/csn/delete", follow_redirects=False)
+    response = client.post("/config/adapters/csn/delete", follow_redirects=False)
 
     assert response.status_code == 303
     assert get_adapter_instance(conn, "csn") is None
 
 
 def test_adapter_delete_unknown_source_still_redirects(client):
-    response = client.post("/adapters/does-not-exist/delete", follow_redirects=False)
+    response = client.post("/config/adapters/does-not-exist/delete", follow_redirects=False)
 
     assert response.status_code == 303
 
 
 def test_adapter_test_action_runs_fetch_and_shows_result(client):
     response = client.post(
-        "/adapters/test",
+        "/config/adapters/test",
         data={
             "mode": "create",
             "source": "fake-test-source",
@@ -191,7 +199,7 @@ def test_adapter_test_action_runs_fetch_and_shows_result(client):
 
 def test_adapter_test_action_shows_every_mapped_field(client):
     response = client.post(
-        "/adapters/test",
+        "/config/adapters/test",
         data={
             "mode": "create",
             "source": "fake-test-source",
@@ -219,7 +227,7 @@ def test_adapter_test_action_shows_every_mapped_field(client):
 
 def test_adapter_test_action_shows_error_on_failure(client):
     response = client.post(
-        "/adapters/test",
+        "/config/adapters/test",
         data={
             "mode": "create",
             "source": "fake-test-source",
@@ -252,7 +260,7 @@ def test_adapter_test_action_for_api_type_uses_structured_fields(client):
         return_value=_FakeResponse([{"Fecha": "2026-01-01T00:00:00"}]),
     ):
         response = client.post(
-            "/adapters/test",
+            "/config/adapters/test",
             data={
                 "mode": "create",
                 "source": "fake-api-source",
@@ -269,7 +277,7 @@ def test_adapter_test_action_for_api_type_uses_structured_fields(client):
 
 def test_adapter_test_action_does_not_persist_anything(client, conn):
     client.post(
-        "/adapters/test",
+        "/config/adapters/test",
         data={
             "mode": "create",
             "source": "not-saved",
@@ -287,7 +295,7 @@ def test_adapter_sample_action_shows_raw_unmapped_response(client):
         return_value=_FakeResponse([{"Fecha": "2026-01-01 00:00:00", "Magnitud": "3.0"}]),
     ):
         response = client.post(
-            "/adapters/sample",
+            "/config/adapters/sample",
             data={
                 "mode": "create",
                 "source": "csn",
@@ -321,7 +329,7 @@ def test_adapter_sample_action_json_preview_top_level_keys_are_draggable(client)
         ),
     ):
         response = client.post(
-            "/adapters/sample",
+            "/config/adapters/sample",
             data={
                 "mode": "create",
                 "source": "csn",
@@ -348,7 +356,7 @@ def test_adapter_sample_action_escapes_untrusted_response_content(client):
         return_value=_FakeResponse([{"<script>alert(1)</script>": "<img src=x onerror=alert(1)>"}]),
     ):
         response = client.post(
-            "/adapters/sample",
+            "/config/adapters/sample",
             data={
                 "mode": "create",
                 "source": "csn",
@@ -369,7 +377,7 @@ def test_adapter_sample_action_needs_no_mapping_configured(client):
     previewing a response before any mapping is configured."""
     with patch("urllib.request.urlopen", return_value=_FakeResponse([{"a": 1}])):
         response = client.post(
-            "/adapters/sample",
+            "/config/adapters/sample",
             data={
                 "mode": "create",
                 "source": "new-source",
@@ -388,7 +396,7 @@ def test_adapter_sample_action_detects_nested_array_and_warns_when_items_path_is
         return_value=_FakeResponse({"result": {"items": [{"Id": "1"}, {"Id": "2"}]}}),
     ):
         response = client.post(
-            "/adapters/sample",
+            "/config/adapters/sample",
             data={
                 "mode": "create",
                 "source": "csn",
@@ -412,7 +420,7 @@ def test_adapter_sample_action_shows_error_on_failure(client):
 
     with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("boom")):
         response = client.post(
-            "/adapters/sample",
+            "/config/adapters/sample",
             data={
                 "mode": "create",
                 "source": "csn",
@@ -427,7 +435,7 @@ def test_adapter_sample_action_shows_error_on_failure(client):
 
 def test_adapter_sample_action_rejects_custom_type(client):
     response = client.post(
-        "/adapters/sample",
+        "/config/adapters/sample",
         data={
             "mode": "create",
             "source": "senapred",
@@ -443,7 +451,7 @@ def test_adapter_sample_action_rejects_custom_type(client):
 def test_adapter_sample_action_does_not_persist_anything(client, conn):
     with patch("urllib.request.urlopen", return_value=_FakeResponse([{"a": 1}])):
         client.post(
-            "/adapters/sample",
+            "/config/adapters/sample",
             data={
                 "mode": "create",
                 "source": "not-saved",
@@ -457,7 +465,7 @@ def test_adapter_sample_action_does_not_persist_anything(client, conn):
 
 def test_adapter_create_persists_ai_prompt_override(client, conn):
     response = client.post(
-        "/adapters",
+        "/config/adapters",
         data={
             "mode": "create",
             "source": "new-custom",
@@ -475,7 +483,7 @@ def test_adapter_create_persists_ai_prompt_override(client, conn):
 
 def test_adapter_create_omits_blank_ai_prompt(client, conn):
     client.post(
-        "/adapters",
+        "/config/adapters",
         data={
             "mode": "create",
             "source": "new-custom",
@@ -493,7 +501,7 @@ def test_adapter_create_omits_blank_ai_prompt(client, conn):
 def test_adapter_form_shows_default_prompt_as_placeholder_when_not_overridden(client, conn):
     from adapters.actions_defaults import AI_PROMPT_DEFAULT
 
-    response = client.get("/adapters/csn/edit")
+    response = client.get("/config/adapters/csn/edit")
 
     assert response.status_code == 200
     # built-in default shown greyed (placeholder), not as the field value
@@ -506,7 +514,7 @@ def test_adapter_form_placeholder_reflects_global_override(client, conn):
 
     set_setting(conn, "ACTIONS_AI_PROMPT", "GLOBAL DEFAULT {extracted_contents}")
 
-    response = client.get("/adapters/csn/edit")
+    response = client.get("/config/adapters/csn/edit")
 
     assert 'placeholder="GLOBAL DEFAULT {extracted_contents}"' in response.text
 
@@ -519,7 +527,7 @@ def test_adapter_edit_page_prefills_ai_prompt(client, conn):
         {"code": "def fetch(config): return []", "ai_prompt": "MARKER-PREFILL {url}"},
     )
 
-    response = client.get("/adapters/csn/edit")
+    response = client.get("/config/adapters/csn/edit")
 
     assert response.status_code == 200
     assert "MARKER-PREFILL {url}" in response.text
@@ -527,7 +535,7 @@ def test_adapter_edit_page_prefills_ai_prompt(client, conn):
 
 def test_adapter_create_persists_ai_fallback_to_title(client, conn):
     response = client.post(
-        "/adapters",
+        "/config/adapters",
         data={
             "mode": "create",
             "source": "new-custom",
@@ -545,7 +553,7 @@ def test_adapter_create_persists_ai_fallback_to_title(client, conn):
 
 def test_adapter_create_omits_ai_fallback_to_title_when_unchecked(client, conn):
     client.post(
-        "/adapters",
+        "/config/adapters",
         data={
             "mode": "create",
             "source": "new-custom",
@@ -567,7 +575,7 @@ def test_adapter_edit_page_checks_ai_fallback_to_title_box_when_set(client, conn
         {"code": "def fetch(config): return []", "ai_fallback_to_title": True},
     )
 
-    response = client.get("/adapters/csn/edit")
+    response = client.get("/config/adapters/csn/edit")
 
     assert response.status_code == 200
     assert 'id="ai_fallback_to_title"' in response.text
