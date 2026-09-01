@@ -65,6 +65,20 @@
           <code>ACTIONS_AI_PROMPT</code> if set, otherwise the built-in prompt.</div>
       </td>
     </tr>
+    <tr>
+      <th><label for="ai_fallback_to_title">On AI failure</label></th>
+      <td>
+        <label><input id="ai_fallback_to_title" name="ai_fallback_to_title" type="checkbox"
+                      {% if ai_fallback_to_title %}checked{% endif %}>
+          Use the item title when AI summarization fails</label>
+        <div class="meta-line">When the AI summarizer's provider call fails (network error, bad
+          API key, rate limit…): if checked, the item's <code>title</code> is stored as the
+          summary and the pipeline continues; if unchecked (the default), the failure stops the
+          item — nothing is published for it and no <code>action.ai.executed</code> audit row is
+          written. Only affects a genuine provider call failure, not the ordinary
+          AI-disabled / content-already-short skips.</div>
+      </td>
+    </tr>
   </table>
 
   <fieldset id="api-fields">

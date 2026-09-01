@@ -35,10 +35,14 @@ consumers, same as anything else on the broker.)
   isn't sent to the provider at all — not a cap on the output: whatever
   the provider returns is stored/published verbatim, never truncated
   (the prompt itself asks for a short, complete summary instead). A
-  provider call failure is the one case that's still NOT swallowed and
-  doesn't publish — it propagates so no misleading `action.ai.executed`
-  audit event (or downstream `chunk` run) happens for a message that
-  actually failed.
+  provider call failure is, by default, the one case that's still NOT
+  swallowed and doesn't publish — it propagates so no misleading
+  `action.ai.executed` audit event (or downstream `chunk` run) happens for
+  a message that actually failed. A source can opt out of that hard stop
+  per-adapter with `config.ai_fallback_to_title` (set on the `/adapters`
+  form; seeded `true` for `senapred`): when it's on, a failed provider call
+  is caught, the item's `title` is stored as the summary, and an ordinary
+  `summarized: false` skip is published so `chunk` still runs.
 
 - **chunk** (`src/actions/chunk.py`) — subscribes to `ai`'s own output
   (`item.ai_settled` by default), not `item.dispatched` directly, so it
@@ -219,6 +223,14 @@ length budget; not used for voice length — see `BEACON_VOICE_MAX_CHARS` in
 `item.ai_settled` event), plus the unprefixed
 `ANTHROPIC_API_KEY`/`OPENAI_API_KEY` read directly by each SDK — see
 `.env.example`.
+
+Per-adapter (not env vars — `adapter_instances.config`, set on the
+`/adapters` form): `ai_prompt` (above) and `ai_fallback_to_title`. The
+latter defaults off — a failed provider call propagates and the item stops
+(no publish, no `action.ai.executed` row). When on (seeded `true` for
+`senapred`), a failed provider call is caught, the item's `extracted_title`
+(falling back to `extracted_contents`) is stored as `items.summary`, and a
+normal `summarized: false` event is published so `chunk` still runs.
 
 Every `item.ai_settled` event carries diagnostic detail beyond the
 load-bearing `source`/`item_id`/`summarized` fields: a `reason` phrase on

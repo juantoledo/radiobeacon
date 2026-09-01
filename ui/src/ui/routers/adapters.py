@@ -249,6 +249,7 @@ def _form_context(
     interval_seconds: str,
     ai_prompt: str,
     ai_prompt_default: str,
+    ai_fallback_to_title: bool,
     api_fields: dict,
     custom_fields: dict,
     test_result: dict | None,
@@ -267,6 +268,9 @@ def _form_context(
         # see what the summarizer will use when this box is left blank — the
         # global ACTIONS_AI_PROMPT override if set, else the built-in default.
         "ai_prompt_default": ai_prompt_default,
+        # When checked, actions.ai stores the item's title as the summary if a
+        # provider call fails, instead of letting the item hard-stop.
+        "ai_fallback_to_title": ai_fallback_to_title,
         "mapped_fields": MAPPED_FIELDS,
         "api_fields": api_fields,
         "custom_fields": custom_fields,
@@ -317,6 +321,7 @@ def adapter_new_page(request: Request, conn: sqlite3.Connection = Depends(get_db
             interval_seconds="",
             ai_prompt="",
             ai_prompt_default=_default_prompt_placeholder(conn),
+            ai_fallback_to_title=False,
             api_fields=_config_to_fields("api", {}),
             custom_fields=_config_to_fields("custom", {}),
             test_result=None,
@@ -345,6 +350,7 @@ def adapter_edit_page(request: Request, source: str, conn: sqlite3.Connection = 
             interval_seconds=str(row["interval_seconds"]) if row["interval_seconds"] else "",
             ai_prompt=config.get("ai_prompt", ""),
             ai_prompt_default=_default_prompt_placeholder(conn),
+            ai_fallback_to_title=bool(config.get("ai_fallback_to_title", False)),
             api_fields=_config_to_fields("api", config if row["adapter_type"] == "api" else {}),
             custom_fields=_config_to_fields(
                 "custom", config if row["adapter_type"] == "custom" else {}
@@ -366,6 +372,7 @@ async def _read_common_form(request: Request) -> tuple[FormData, dict]:
         "enabled": form.get("enabled") == "on",
         "interval_seconds": (form.get("interval_seconds") or "").strip(),
         "ai_prompt": (form.get("ai_prompt") or "").strip(),
+        "ai_fallback_to_title": form.get("ai_fallback_to_title") == "on",
     }
     return form, common
 
@@ -383,6 +390,7 @@ def _error_context(
         interval_seconds=common["interval_seconds"],
         ai_prompt=common["ai_prompt"],
         ai_prompt_default=_default_prompt_placeholder(conn),
+        ai_fallback_to_title=common["ai_fallback_to_title"],
         api_fields=_form_to_fields("api", form),
         custom_fields=_form_to_fields("custom", form),
         test_result=None,
@@ -501,6 +509,13 @@ async def adapter_save_action(
     # out of the blob entirely when blank so an unused override never shows.
     if common["ai_prompt"]:
         config["ai_prompt"] = common["ai_prompt"]
+
+    # Optional per-adapter opt-in, also read by actions.ai: on a failed provider
+    # call, store the item's title as the summary and keep the pipeline flowing
+    # rather than letting the item hard-stop. Omitted when off, same as
+    # ai_prompt — a plain CUSTOM config stays just {"code": ...}.
+    if common["ai_fallback_to_title"]:
+        config["ai_fallback_to_title"] = True
 
     interval_seconds = int(common["interval_seconds"]) if common["interval_seconds"] else None
 

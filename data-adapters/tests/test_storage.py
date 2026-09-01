@@ -1309,16 +1309,70 @@ def test_get_connection_seeds_csn_api_and_senapred_custom_instances(tmp_path):
 
     assert csn["adapter_type"] == "api"
     assert csn["enabled"] == 1
-    assert json.loads(csn["config"])["url"] == "https://api.gael.cloud/general/public/sismos"
+    csn_config = json.loads(csn["config"])
+    assert csn_config["url"] == "https://api.gael.cloud/general/public/sismos"
+    # csn keeps the default (hard-stop) AI-failure behavior -- no key stored.
+    assert "ai_fallback_to_title" not in csn_config
 
     assert senapred["adapter_type"] == "custom"
     senapred_config = json.loads(senapred["config"])
-    assert set(senapred_config.keys()) == {"code"}  # CUSTOM config is only ever the code
+    # CUSTOM fetch config is only the code, plus the opt-in action-layer key
+    # seeded true for emergency alerts.
+    assert set(senapred_config.keys()) == {"code", "ai_fallback_to_title"}
+    assert senapred_config["ai_fallback_to_title"] is True
     assert "def fetch(config)" in senapred_config["code"]
     # The AWS/Cognito plumbing is baked into the code as literals at seed
     # time (see _build_senapred_code), not read from config at call time.
     assert 'config.get("identity_pool_id"' not in senapred_config["code"]
     assert "IDENTITY_POOL_ID = 'us-east-1:17c696bc-53e1-49a2-991f-f1b65f752fda'" in senapred_config["code"]
+
+
+def test_get_connection_backfills_senapred_ai_fallback_to_title(tmp_path):
+    """The key is seeded true for senapred, but the seed only runs on an
+    empty table -- a pre-existing senapred row without it is backfilled once."""
+    db_path = tmp_path / "radiobeacon.db"
+    legacy_conn = sqlite3.connect(db_path)
+    legacy_conn.execute(
+        "CREATE TABLE adapter_instances (source TEXT PRIMARY KEY, adapter_type TEXT "
+        "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER, "
+        "config TEXT NOT NULL, updated_at TEXT, updated_by TEXT)"
+    )
+    legacy_conn.execute(
+        "INSERT INTO adapter_instances (source, adapter_type, config) VALUES (?, ?, ?)",
+        ("senapred", "custom", json.dumps({"code": "def fetch(config): return []"})),
+    )
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    conn = get_connection(db_path)
+
+    sen = json.loads(get_adapter_instance(conn, "senapred")["config"])
+    assert sen["ai_fallback_to_title"] is True
+
+
+def test_backfill_leaves_explicit_senapred_ai_fallback_to_title_untouched(tmp_path):
+    db_path = tmp_path / "radiobeacon.db"
+    legacy_conn = sqlite3.connect(db_path)
+    legacy_conn.execute(
+        "CREATE TABLE adapter_instances (source TEXT PRIMARY KEY, adapter_type TEXT "
+        "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER, "
+        "config TEXT NOT NULL, updated_at TEXT, updated_by TEXT)"
+    )
+    legacy_conn.execute(
+        "INSERT INTO adapter_instances (source, adapter_type, config) VALUES (?, ?, ?)",
+        (
+            "senapred",
+            "custom",
+            json.dumps({"code": "def fetch(config): return []", "ai_fallback_to_title": False}),
+        ),
+    )
+    legacy_conn.commit()
+    legacy_conn.close()
+
+    conn = get_connection(db_path)
+
+    sen = json.loads(get_adapter_instance(conn, "senapred")["config"])
+    assert sen["ai_fallback_to_title"] is False
 
 
 def _senapred_strip_html():

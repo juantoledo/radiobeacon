@@ -211,10 +211,13 @@ CREATE TABLE IF NOT EXISTS adapter_instances (
 #
 # A CUSTOM-type adapter_instances.config holds *only* {"code": ...} as far
 # as fetch logic is concerned — no sibling keys the adapter itself reads
-# (see CustomAdapter). It may additionally carry an optional action-layer
-# override, `ai_prompt` (a per-source summarization prompt template, set on
-# the /adapters form and read by actions.ai — CustomAdapter ignores it).
-# So unlike the old senapred module,
+# (see CustomAdapter). It may additionally carry optional action-layer
+# overrides, both set on the /adapters form and read by actions.ai (never by
+# the adapter itself): `ai_prompt` (a per-source summarization prompt
+# template) and `ai_fallback_to_title` (when true, a failed provider call
+# stores the item's title as the summary and the pipeline continues instead
+# of the item hard-stopping — seeded true for senapred, absent/false
+# elsewhere). So unlike the old senapred module,
 # which read its AWS/Cognito plumbing from env vars/config at call time,
 # the generated snippet below has those values baked in as plain literals
 # at seed time — _build_senapred_code() renders this template with each
@@ -497,6 +500,10 @@ _SEED_ADAPTER_INSTANCES = (
         "senapred",
         "custom",
         lambda get: {
+            # Emergency alerts: keep the item on air even when the AI
+            # summarizer's provider call fails — actions.ai then stores the
+            # title as the summary instead of letting the item hard-stop.
+            "ai_fallback_to_title": True,
             "code": _build_senapred_code(
                 identity_pool_id=get(
                     "ADAPTERS_SENAPRED_IDENTITY_POOL_ID",
@@ -756,6 +763,47 @@ def _migrate_adapter_instances_config(conn: sqlite3.Connection) -> None:
             logger.debug("adapter_instances.%s config migration skipped (locked)", source)
 
 
+def _backfill_senapred_ai_fallback_to_title(conn: sqlite3.Connection) -> None:
+    """One-time, best-effort backfill: `ai_fallback_to_title` is seeded true
+    for senapred (see _SEED_ADAPTER_INSTANCES), but the seed only runs on an
+    empty table, so a database created before this key existed keeps senapred
+    without it. Add it (true) only when the senapred row exists and has no
+    such key — an operator who later set it explicitly (either value) is left
+    untouched, and no other source is touched. Locked-DB safe, never blocks
+    startup."""
+    _ensure_adapter_instances_table(conn)
+    try:
+        row = conn.execute(
+            "SELECT config FROM adapter_instances WHERE source = 'senapred'"
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return
+    if row is None:
+        return
+    try:
+        cfg = json.loads(row[0])
+    except (TypeError, ValueError):
+        return
+    if not isinstance(cfg, dict) or "ai_fallback_to_title" in cfg:
+        return
+    cfg["ai_fallback_to_title"] = True
+    try:
+        conn.execute(
+            "UPDATE adapter_instances SET config = ? WHERE source = 'senapred'",
+            (json.dumps(cfg),),
+        )
+        conn.commit()
+        record_audit_event(
+            conn,
+            event_type="adapter_instance.config_migrated",
+            actor="adapters.storage",
+            source="senapred",
+            details={"backfill": "ai_fallback_to_title=true"},
+        )
+    except sqlite3.OperationalError:
+        logger.debug("adapter_instances.senapred ai_fallback_to_title backfill skipped (locked)")
+
+
 def get_connection(
     db_path: str | Path = DEFAULT_DB_PATH, *, check_same_thread: bool = True
 ) -> sqlite3.Connection:
@@ -800,6 +848,7 @@ def get_connection(
         _ensure_transmit_policies_seeded(conn)
         _ensure_beacon_tx_schedule_table(conn)
         _migrate_adapter_instances_config(conn)
+        _backfill_senapred_ai_fallback_to_title(conn)
         conn.commit()
     except Exception:
         conn.close()

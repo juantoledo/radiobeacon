@@ -250,12 +250,59 @@ def test_ai_propagates_provider_call_errors(tmp_path, monkeypatch):
 
     monkeypatch.setattr(actions.ai, "_call_ollama", _raise)
     conn = get_connection(tmp_path / "radiobeacon.db")
-    _insert_item(conn, "senapred", "1", "Some contents.")
+    # csn is seeded without ai_fallback_to_title -> a provider failure still
+    # propagates (the default hard-stop).
+    _insert_item(conn, "csn", "1", "Some contents.")
 
     with pytest.raises(RuntimeError, match="boom"):
-        AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
+        AiAction().run(_dispatched_event("csn", "1"), conn=conn)
 
-    assert _stored_summary(conn, "senapred", "1") is None
+    assert _stored_summary(conn, "csn", "1") is None
+
+
+def test_ai_falls_back_to_title_when_provider_fails_and_flag_set(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
+    monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "0")
+
+    def _raise(prompt, model, host):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(actions.ai, "_call_ollama", _raise)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_adapter_instance(
+        conn, "alerts", "custom", {"code": "def fetch(config): return []", "ai_fallback_to_title": True}
+    )
+    _insert_item(conn, "alerts", "1", "Some contents.", extracted_title="A short title")
+
+    outputs = AiAction().run(_dispatched_event("alerts", "1"), conn=conn)
+
+    assert len(outputs) == 1
+    assert outputs[0]["summarized"] is False
+    assert outputs[0]["reason"].startswith("provider call failed")
+    assert outputs[0]["provider"] == "ollama"
+    assert _stored_summary(conn, "alerts", "1") == "A short title"
+
+
+def test_ai_fallback_to_title_uses_contents_when_title_empty(tmp_path, monkeypatch):
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
+    monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
+    monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "0")
+
+    def _raise(prompt, model, host):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(actions.ai, "_call_ollama", _raise)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_adapter_instance(
+        conn, "alerts", "custom", {"code": "def fetch(config): return []", "ai_fallback_to_title": True}
+    )
+    _insert_item(conn, "alerts", "1", "Some contents.")  # no extracted_title
+
+    outputs = AiAction().run(_dispatched_event("alerts", "1"), conn=conn)
+
+    assert outputs[0]["summarized"] is False
+    assert _stored_summary(conn, "alerts", "1") == "Some contents."
 
 
 def test_ai_publishes_summarized_false_when_store_summary_finds_no_matching_row(
