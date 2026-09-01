@@ -227,7 +227,7 @@ Env vars in `.env` at the repo root — also all editable live via `/config` →
 | `BEACON_VOICE_TEMPLATE` | `{text}` |
 | `BEACON_VOICE_PREFIX` | `Información de {source_name}, {date}. ` |
 | `BEACON_VOICE_SUFFIX` | `. Para más información consulte fuentes oficiales de {source_name}. Fin del comunicado. ` |
-| `BEACON_VOICE_MAX_CHARS` | `500` |
+| `BEACON_VOICE_MAX_CHARS` | `750` |
 | `BEACON_DATE_FORMAT` | `%d-%m-%Y %H:%M` |
 | `BEACON_FRAME_DESTINATION` | `NFO` |
 | `BEACON_FRAME_PREFIX` / `BEACON_FRAME_SUFFIX` | `""` / `""` |

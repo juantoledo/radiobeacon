@@ -65,6 +65,7 @@ from adapters.beacon_defaults import (  # noqa: E402
     BEACON_ENABLED_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
+    BEACON_VOICE_MAX_CHARS_DEFAULT,
     BEACON_VOICE_PREFIX_DEFAULT,
     BEACON_VOICE_SUFFIX_DEFAULT,
     BEACON_VOICE_TEMPLATE_DEFAULT,
@@ -570,7 +571,7 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
             ctx = {
                 "callsign": get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False),
                 "voice_template": get_setting("BEACON_VOICE_TEMPLATE", BEACON_VOICE_TEMPLATE_DEFAULT, conn=conn),
-                "voice_max_chars": int(get_setting("BEACON_VOICE_MAX_CHARS", "500", conn=conn)),
+                "voice_max_chars": int(get_setting("BEACON_VOICE_MAX_CHARS", BEACON_VOICE_MAX_CHARS_DEFAULT, conn=conn)),
                 "date_format": get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn),
                 "destination": get_setting("BEACON_FRAME_DESTINATION", "NFO", conn=conn),
                 "frame_prefix": get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or "",

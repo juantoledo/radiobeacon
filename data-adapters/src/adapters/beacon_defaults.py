@@ -23,3 +23,6 @@ BEACON_VOICE_SUFFIX_DEFAULT = (
     ". Para más información consulte fuentes oficiales de {source_name}. "
     "Fin del comunicado. "
 )
+# Word-boundary truncation budget for the resolved summary only (the
+# prefix/suffix envelope above is always spoken in full on top of this).
+BEACON_VOICE_MAX_CHARS_DEFAULT = "750"

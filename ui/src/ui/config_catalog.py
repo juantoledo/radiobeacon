@@ -21,6 +21,7 @@ from adapters.beacon_defaults import (
     BEACON_ENABLED_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
+    BEACON_VOICE_MAX_CHARS_DEFAULT,
     BEACON_VOICE_PREFIX_DEFAULT,
     BEACON_VOICE_SUFFIX_DEFAULT,
     BEACON_VOICE_TEMPLATE_DEFAULT,
@@ -603,7 +604,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "protocol limit like frame's. Deliberately separate from "
         "ACTIONS_AI_MAX_CHARS, whose job is gating whether the LLM runs at all.",
         "int",
-        "500",
+        BEACON_VOICE_MAX_CHARS_DEFAULT,
     ),
     SettingSpec(
         "BEACON_DATE_FORMAT",
