@@ -21,6 +21,9 @@ from adapters.beacon_defaults import (
     BEACON_ENABLED_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
+    BEACON_VOICE_PREFIX_DEFAULT,
+    BEACON_VOICE_SUFFIX_DEFAULT,
+    BEACON_VOICE_TEMPLATE_DEFAULT,
 )
 
 
@@ -559,9 +562,10 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "no template — its ORIGEN>DESTINO: structure is fixed protocol "
         "code — but BEACON_FRAME_PREFIX/SUFFIX support the same "
         "placeholders. An invalid placeholder falls back to \"\" rather "
-        "than crashing the transmit loop.",
+        "than crashing the transmit loop. Defaults to a bare {text} "
+        "passthrough — the framing lives in the prefix/suffix below.",
         "text",
-        "{callsign}. {text}. {date}",
+        BEACON_VOICE_TEMPLATE_DEFAULT,
     ),
     SettingSpec(
         "BEACON_VOICE_PREFIX",
@@ -573,9 +577,10 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "str.format template — {date} and the item-field placeholders "
         "(see BEACON_VOICE_TEMPLATE) are available. Added outside "
         "BEACON_VOICE_MAX_CHARS's truncation budget, mirroring how frame "
-        "prefix/suffix wrap an already-sized chunk.",
+        "prefix/suffix wrap an already-sized chunk. Defaults to a "
+        "spoken-Spanish bulletin opener naming the source and the item's date.",
         "text",
-        "",
+        BEACON_VOICE_PREFIX_DEFAULT,
     ),
     SettingSpec(
         "BEACON_VOICE_SUFFIX",
@@ -583,9 +588,10 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Voice content suffix",
         "Appended to the resolved voice text before it's substituted "
         "into BEACON_VOICE_TEMPLATE's {text}. Same placeholders and "
-        "truncation-budget behavior as BEACON_VOICE_PREFIX.",
+        "truncation-budget behavior as BEACON_VOICE_PREFIX. Defaults to a "
+        "closing line pointing listeners to the source's official channels.",
         "text",
-        "",
+        BEACON_VOICE_SUFFIX_DEFAULT,
     ),
     SettingSpec(
         "BEACON_VOICE_MAX_CHARS",
