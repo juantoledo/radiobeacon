@@ -9,6 +9,8 @@ from pathlib import Path
 from string import Template
 from typing import Any, Callable
 
+from adapters.beacon_defaults import BEACON_TYPE_DEFAULT
+
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -1206,6 +1208,57 @@ def add_tx_schedule_unit(
             (kind, kind, max_size),
         )
     conn.commit()
+
+
+def schedule_retransmit(conn: sqlite3.Connection, source: str, item_id: str) -> dict[str, Any]:
+    """Ad-hoc re-enqueue of an already-processed item's beacon transmission
+    (the ui item detail page's "Re-transmit" action on a beacon.voice.*/
+    beacon.frame.*/beacon.tx.retired audit row), as opposed to a fresh
+    item.content_ready publish. Schedules fresh beacon_tx_schedule row(s)
+    for the CURRENTLY configured BEACON_TYPE — one kind="voice" row, or one
+    kind="frame" row per existing `chunks` row (mirrors
+    beacon.__main__._handle_content_ready_event's own scheduling shape) —
+    which beacon's own already-running transmit loop picks up and sends on
+    its next tick via the normal _transmit_voice_unit/_transmit_frame_unit
+    path. No TTS/audio synthesis happens here — this only writes DB state,
+    keeping this callable from ui (which has no TTS binaries) without any
+    new dependency on the beacon package. Returns {"kind": None,
+    "scheduled": 0} if the item doesn't exist — nothing to retransmit."""
+    policy_row = conn.execute(
+        "SELECT transmit_policy FROM items WHERE source = ? AND item_id = ?",
+        (source, item_id),
+    ).fetchone()
+    if policy_row is None:
+        return {"kind": None, "scheduled": 0}
+    transmit_policy = policy_row[0]
+
+    beacon_type = (get_setting("BEACON_TYPE", BEACON_TYPE_DEFAULT, conn=conn) or "").strip().lower()
+    if beacon_type not in ("voice", "frame"):
+        beacon_type = BEACON_TYPE_DEFAULT
+
+    if beacon_type == "frame":
+        rows = conn.execute(
+            "SELECT chunk_index FROM chunks WHERE source = ? AND item_id = ? ORDER BY chunk_index",
+            (source, item_id),
+        ).fetchall()
+        for (chunk_index,) in rows:
+            add_tx_schedule_unit(
+                conn, source, item_id, "frame", str(chunk_index), transmit_policy, None
+            )
+        scheduled = len(rows)
+    else:
+        add_tx_schedule_unit(conn, source, item_id, "voice", "", transmit_policy, None)
+        scheduled = 1
+
+    record_audit_event(
+        conn,
+        event_type="beacon.retransmit.enqueued",
+        actor="ui.retransmit",
+        source=source,
+        item_id=item_id,
+        details={"beacon_type": beacon_type, "scheduled": scheduled},
+    )
+    return {"kind": beacon_type, "scheduled": scheduled}
 
 
 def due_tx_schedule_rows(conn: sqlite3.Connection, kind: str) -> list[dict[str, Any]]:

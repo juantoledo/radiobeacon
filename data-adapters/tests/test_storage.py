@@ -23,6 +23,7 @@ from adapters.storage import (
     list_sources,
     mark_item_ready_published,
     record_audit_event,
+    schedule_retransmit,
     set_adapter_instance,
     set_beacon_status,
     set_setting,
@@ -589,6 +590,69 @@ def test_delete_tx_schedule_other_kinds_keeps_only_the_named_kind(tmp_path):
     assert removed == 1
     assert count_tx_schedule_by_kind(conn) == {"frame": 2}
     assert delete_tx_schedule_other_kinds(conn, "frame") == 0
+
+
+def test_schedule_retransmit_voice_mode_schedules_one_row(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    store_reading(conn, _make_reading())
+
+    result = schedule_retransmit(conn, "fake_source", "1")
+
+    assert result == {"kind": "voice", "scheduled": 1}
+    rows = conn.execute(
+        "SELECT kind, ref FROM beacon_tx_schedule WHERE source='fake_source' AND item_id='1'"
+    ).fetchall()
+    assert rows == [("voice", "")]
+
+
+def test_schedule_retransmit_frame_mode_schedules_one_row_per_chunk(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    store_reading(conn, _make_reading())
+    set_setting(conn, "BEACON_TYPE", "frame")
+    store_chunks(
+        conn,
+        [
+            {"source": "fake_source", "item_id": "1", "chunk_index": i, "chunk_count": 3, "text": f"chunk {i}"}
+            for i in range(3)
+        ],
+    )
+
+    result = schedule_retransmit(conn, "fake_source", "1")
+
+    assert result == {"kind": "frame", "scheduled": 3}
+    refs = {
+        row[0]
+        for row in conn.execute(
+            "SELECT ref FROM beacon_tx_schedule WHERE source='fake_source' AND item_id='1' AND kind='frame'"
+        )
+    }
+    assert refs == {"0", "1", "2"}
+
+
+def test_schedule_retransmit_unknown_item_schedules_nothing(tmp_path):
+    from adapters.storage import count_tx_schedule_by_kind
+
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    result = schedule_retransmit(conn, "fake_source", "does-not-exist")
+
+    assert result == {"kind": None, "scheduled": 0}
+    assert count_tx_schedule_by_kind(conn) == {}
+
+
+def test_schedule_retransmit_records_audit_event(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    store_reading(conn, _make_reading())
+
+    schedule_retransmit(conn, "fake_source", "1")
+
+    row = conn.execute(
+        "SELECT actor, details FROM audit_log WHERE event_type='beacon.retransmit.enqueued' "
+        "AND source='fake_source' AND item_id='1'"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "ui.retransmit"
+    assert json.loads(row[1]) == {"beacon_type": "voice", "scheduled": 1}
 
 
 def test_migrate_adapter_instances_config_renames_rule_key_and_custom_code(tmp_path):

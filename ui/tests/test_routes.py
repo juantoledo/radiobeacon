@@ -140,6 +140,91 @@ def test_rearm_action_blocked_when_beacon_not_configured(client, conn):
     assert "error=" in response.headers["location"]
 
 
+def test_replay_action_redirects_for_dispatch_stage_event(client, conn):
+    _configure_beacon(conn)
+    _insert_item(conn, "csn", "1")
+
+    response = client.post(
+        "/items/csn/1/replay",
+        data={"event_type": "item.dispatched", "consumer": "log"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "msg=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer='log' AND source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row is not None
+
+
+def test_replay_action_rejects_non_replayable_event_type(client, conn):
+    _configure_beacon(conn)
+    _insert_item(conn, "csn", "1")
+
+    response = client.post(
+        "/items/csn/1/replay",
+        data={"event_type": "action.ai.executed", "consumer": "log"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer='log' AND source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row is None
+
+
+def test_replay_action_blocked_when_beacon_not_configured(client, conn):
+    _insert_item(conn, "csn", "1")
+
+    response = client.post(
+        "/items/csn/1/replay",
+        data={"event_type": "item.dispatched", "consumer": "log"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+
+
+def test_retransmit_action_redirects_and_schedules_row(client, conn):
+    _configure_beacon(conn)
+    _insert_item(conn, "csn", "1")
+
+    response = client.post("/items/csn/1/retransmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "msg=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT kind FROM beacon_tx_schedule WHERE source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row[0] == "voice"
+
+
+def test_retransmit_action_unknown_item(client, conn):
+    _configure_beacon(conn)
+
+    response = client.post("/items/csn/does-not-exist/retransmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+
+
+def test_retransmit_action_blocked_when_beacon_not_configured(client, conn):
+    _insert_item(conn, "csn", "1")
+
+    response = client.post("/items/csn/1/retransmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT 1 FROM beacon_tx_schedule WHERE source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row is None
+
+
 def test_policies_list_returns_200(client):
     response = client.get("/policies")
     assert response.status_code == 200

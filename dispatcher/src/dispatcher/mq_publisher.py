@@ -9,7 +9,7 @@ tests importing those modules directly never trigger MQTT side effects.
 paho-mqtt and cloudevents are imported lazily, inside functions, so
 importing this module has no hard dependency on either package being
 installed — only actually publishing (DISPATCHER_MQ_HOST non-empty, an
-event type in _PUBLISHED_EVENT_TYPES) does. Publishing is on by default:
+event type in PUBLISHED_EVENT_TYPES) does. Publishing is on by default:
 DISPATCHER_MQ_HOST resolves to "localhost" when unset, matching
 ACTIONS_MQ_HOST / BEACON_MQ_HOST — set it to an empty string to disable
 publishing entirely (no connection is ever attempted). (cloudevents.http.CloudEvent is used
@@ -27,7 +27,7 @@ from adapters.storage import get_setting
 
 logger = logging.getLogger(__name__)
 
-_PUBLISHED_EVENT_TYPES = frozenset(
+PUBLISHED_EVENT_TYPES = frozenset(
     {
         "item.dispatched",
         "item.dispatch_failed",
@@ -116,7 +116,7 @@ def publish_cloud_event(
     raises: any failure (broker down, timeout, etc.) is logged and
     swallowed — publishing is best-effort on top of the audit_log row,
     which is already committed by the time this runs."""
-    if event_type not in _PUBLISHED_EVENT_TYPES:
+    if event_type not in PUBLISHED_EVENT_TYPES:
         return
 
     host = get_setting("DISPATCHER_MQ_HOST", "localhost")
