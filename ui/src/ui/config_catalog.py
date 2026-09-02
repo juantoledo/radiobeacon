@@ -25,6 +25,10 @@ from adapters.beacon_defaults import (
     BEACON_VOICE_PREFIX_DEFAULT,
     BEACON_VOICE_SUFFIX_DEFAULT,
     BEACON_VOICE_TEMPLATE_DEFAULT,
+    BEACON_WATERMARK_ENABLED_DEFAULT,
+    BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT,
+    BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT,
+    BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT,
 )
 
 
@@ -744,6 +748,58 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "text",
         "storage/beacon_tts",
         advanced=True,
+    ),
+    # --- Beacon — Watermark ---
+    # A periodic, item-independent message on its own timer -- see
+    # beacon.__main__._transmit_watermark. Off by default. Its templates
+    # have no item behind them, so their placeholders are the beacon's own
+    # settings (this whole page, effectively) rather than item fields:
+    # {callsign}, {destination}, {date}, {voice_template}, {voice_prefix},
+    # {voice_suffix}, {voice_max_chars}, {frame_prefix}, {frame_suffix},
+    # {tts_voice}, {tts_engine}, {tts_piper_model}, {tts_piper_binary},
+    # {gen_packets_binary}, {frame_lead_silence_ms}, {wav_dir},
+    # {date_format} -- an invalid placeholder falls back to "" rather than
+    # crashing the transmit loop.
+    SettingSpec(
+        "BEACON_WATERMARK_ENABLED",
+        "Beacon — Watermark",
+        "Enabled",
+        "Whether the periodic watermark message transmits on its own timer, "
+        "independent of item content. Re-read every tick.",
+        "bool",
+        BEACON_WATERMARK_ENABLED_DEFAULT,
+    ),
+    SettingSpec(
+        "BEACON_WATERMARK_INTERVAL_SECONDS",
+        "Beacon — Watermark",
+        "Interval (s)",
+        "How often the watermark transmits. Tracked independently of item "
+        "transmissions and of BEACON_TICK_SECONDS.",
+        "int",
+        BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT,
+    ),
+    SettingSpec(
+        "BEACON_WATERMARK_VOICE_TEMPLATE",
+        "Beacon — Watermark",
+        "Voice template",
+        "str.format-style template for the watermark message when "
+        "BEACON_TYPE=voice. Placeholders: {callsign}, {date}, plus every "
+        "other beacon attribute (see this group's description above). "
+        "Rendered through the same TTS engine/voice as regular content.",
+        "text",
+        BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT,
+    ),
+    SettingSpec(
+        "BEACON_WATERMARK_FRAME_TEMPLATE",
+        "Beacon — Watermark",
+        "Frame template",
+        "str.format-style template for the watermark message when "
+        "BEACON_TYPE=frame, wrapped as CALLSIGN>DEST:template like any "
+        "other frame. Same placeholders as the voice template above. "
+        "Subject to the same 256-byte AX.25 hard limit -- an over-length "
+        "render is dropped and logged rather than transmitted.",
+        "text",
+        BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT,
     ),
     # --- Beacon — Queue ---
     SettingSpec(
