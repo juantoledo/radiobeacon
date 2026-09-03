@@ -5,6 +5,7 @@ import signal
 import sqlite3
 import threading
 
+from adapters.aiprompt_adapter import AiPromptAdapter
 from adapters.api_adapter import ApiAdapter
 from adapters.base import DataSourceAdapter
 from adapters.custom_adapter import CustomAdapter
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_INTERVAL_ENV_VAR = "ADAPTERS_DEFAULT_INTERVAL_SECONDS"
 DEFAULT_INTERVAL_SECONDS = 10
 
-_ADAPTER_CLASSES = {"api": ApiAdapter, "custom": CustomAdapter}
+_ADAPTER_CLASSES = {"api": ApiAdapter, "custom": CustomAdapter, "aiprompt": AiPromptAdapter}
 
 
 def build_adapter(adapter_type: str, source: str, config: dict) -> DataSourceAdapter:

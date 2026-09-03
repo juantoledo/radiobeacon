@@ -10,7 +10,7 @@ Adapters are configured, not coded: each configured *instance* is a row in
 the `adapter_instances` table (`source`, `adapter_type`, `enabled`,
 `interval_seconds`, `config` — a JSON blob), managed from the UI's
 `/adapters` page (or directly via `adapters.storage.set_adapter_instance`).
-There are two adapter *types*, each a small generic class in this package
+There are three adapter *types*, each a small generic class in this package
 that interprets `config`:
 
 - **`api`** (`src/adapters/api_adapter.py`, `ApiAdapter`) — calls an HTTP
@@ -40,13 +40,14 @@ that interprets `config`:
   shift, used for a stable `id`/`event_key` (see the comment on
   `FieldMapping` in `api_adapter.py`); it's ignored for any other template
   shape. Separately: convert a raw timestamp field to UTC (`date_field`/
-  `date_format`/`source_timezone`) for `source_date_time`, and optionally
-  compute `transmit_policy` from a numeric threshold rule
-  (`transmit_policy_rule`). No code required — a brand-new API-type source
-  is entirely a config row, edited in the UI as discrete fields (url,
-  method, header/query-param rows, a 7-row mapping table with drag-and-drop
-  from a live response preview, date parsing, transmit-policy rule) — never as raw
-  JSON. `FieldMapping.from_dict` still accepts the older three-key shape
+  `date_format`/`source_timezone`) for `source_date_time`, and pick a
+  `transmit_policy` — a named row from the `transmit_policies` table (the
+  UI shows a dropdown; blank/omitted resolves to `informational`). No code
+  required — a brand-new API-type source is entirely a config row, edited
+  in the UI as discrete fields (url, method, header/query-param rows, a
+  7-row mapping table with drag-and-drop from a live response preview, date
+  parsing, transmit policy) — never as raw JSON. `FieldMapping.from_dict`
+  still accepts the older three-key shape
   (`field`/`value`/`template`) transparently, migrating it to a template on
   read, so an already-saved instance never breaks across this change.
 
@@ -67,7 +68,45 @@ that interprets `config`:
   UI's edit form for a CUSTOM instance is a single code editor, no other
   fields.
 
-Both types read `config` fresh on every `fetch()` call — editing an
+- **`aiprompt`** (`src/adapters/aiprompt_adapter.py`, `AiPromptAdapter`) —
+  *generates* an item by calling an LLM, instead of relaying an external
+  source. It uses the deployment's configured AI provider exactly as the
+  summarizer does — `adapters.llm.resolve_provider_call` reads
+  `ACTIONS_AI_PROVIDER`, the provider's `ACTIONS_AI_*_MODEL` setting, and
+  the `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` setting; **there are no
+  per-adapter provider/model/token overrides**. It produces one item from
+  an operator-written `prompt` (a `str.format` template over `{date}`,
+  `{datetime}`, `{source_name}`, `{source_url}`; unknown placeholders
+  render blank) on a **`cron` schedule** (required). Optional config:
+  `transmit_policy` (a named policy for airing each generated item — the UI
+  defaults it to `informational`, "air once", since the content is
+  replaced rather than repeated), `title_template`, `type`, `subtype`,
+  `event_key_template`.
+
+  **Schedule + cost model.** `cron` is a standard 5-field expression,
+  evaluated in `DISPLAY_TIMEZONE` (so `0 6 * * *` means 06:00 local). The
+  item id is keyed to the current cron occurrence **and a fingerprint of
+  the prompt template** (`f"{source}-{occurrenceZ}-{hash8}"`), and `fetch()`
+  skips the LLM call entirely when that item already exists (`store_reading`
+  is `INSERT OR IGNORE`, items immutable). So an unchanged prompt is one
+  paid call per occurrence no matter how often the adapter polls — but
+  editing the prompt mints a new id and regenerates on the very next poll,
+  rather than waiting for the next occurrence. `event_key` stays
+  occurrence-only, so every generation for one slot groups together across
+  edits. A fresh item is generated each occurrence; the previous one is
+  never re-aired (the point — a weather report must be regenerated, not
+  repeated).
+
+  **Downstream.** Like every item, the generated text lands in
+  `items.extracted_contents` with `summary` NULL, so it still flows through
+  `actions.ai`. With `ACTIONS_AI_ENABLED=false` (the default) `AiAction`
+  copies the contents into `summary` verbatim — the generated copy goes to
+  air unchanged. With AI enabled, set this instance's per-source `ai_prompt`
+  override to a passthrough like `{extracted_contents}` (or keep the
+  generation prompt producing copy under `ACTIONS_AI_MAX_CHARS`) to avoid a
+  second summarization call.
+
+All types read `config` fresh on every `fetch()` call — editing an
 instance's config via the UI takes effect on the very next poll, no process
 restart required (only adding/removing/disabling an *instance* needs the
 long-running `adapters` process restarted, since that's what changes which
@@ -87,9 +126,9 @@ hand-written adapter modules:
   so the seeded config derives `id`/`event_key` from the raw `Fecha`
   timestamp field (`mapping.id.field_date_format`), and every item's `url`
   is a constant pointing at the sismologia.cl homepage. The seeded config
-  sets no `transmit_policy_rule`, so every item resolves to the default
-  `informational` policy; an operator can add a magnitude-threshold rule at
-  `/adapters` if they want big quakes on a different tier.
+  sets no `transmit_policy`, so every item resolves to the default
+  `informational` policy; an operator can pick a different named policy at
+  `/adapters` if they want quakes on a different tier.
 
 - **senapred** (`custom`) — active early-warning alerts from senapred.cl.
   The seeded snippet (`storage._build_senapred_code`) uses senapred.cl's

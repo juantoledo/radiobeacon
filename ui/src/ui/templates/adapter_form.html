@@ -35,6 +35,7 @@
         <select id="adapter_type" name="adapter_type">
           <option value="api" {% if adapter_type == "api" %}selected{% endif %}>API — calls an HTTP endpoint, maps the JSON response via config</option>
           <option value="custom" {% if adapter_type == "custom" %}selected{% endif %}>CUSTOM — a Python code snippet you write, executed on every poll</option>
+          <option value="aiprompt" {% if adapter_type == "aiprompt" %}selected{% endif %}>AI PROMPT — generates an item by calling an LLM on a schedule</option>
         </select>
       </td>
     </tr>
@@ -252,33 +253,19 @@
       </tr>
     </table>
 
-    <h3><label><input id="transmit_enabled" name="transmit_enabled" type="checkbox" {% if api_fields.transmit_enabled %}checked{% endif %}> 5. Dispatch policy rule</label></h3>
-    <table class="form-table" id="dispatch-fields">
+    <h3>5. Transmit policy</h3>
+    <table class="form-table">
       <tr>
-        <th><label for="transmit_field">Field</label></th>
-        <td><input id="transmit_field" name="transmit_field" type="text" value="{{ api_fields.transmit_field }}" list="sample-field-names" class="field-drop-target"></td>
-      </tr>
-      <tr>
-        <th><label for="transmit_operator">Operator</label></th>
+        <th><label for="api_transmit_policy">Transmit policy</label></th>
         <td>
-          <select id="transmit_operator" name="transmit_operator">
-            {% for op in (">=", ">", "<=", "<", "==", "!=") %}
-            <option value="{{ op }}" {% if api_fields.transmit_operator == op %}selected{% endif %}>{{ op }}</option>
+          <select id="api_transmit_policy" name="transmit_policy">
+            {% for p in policies %}
+            <option value="{{ p[0] }}" {% if api_fields.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
             {% endfor %}
           </select>
+          <div class="meta-line">How often / how far apart beacon airs each mapped item —
+            a named row from <a href="/config/policies">Transmit policies</a>.</div>
         </td>
-      </tr>
-      <tr>
-        <th><label for="transmit_threshold">Threshold</label></th>
-        <td><input id="transmit_threshold" name="transmit_threshold" type="text" value="{{ api_fields.transmit_threshold }}"></td>
-      </tr>
-      <tr>
-        <th><label for="transmit_if_true">If true</label></th>
-        <td><input id="transmit_if_true" name="transmit_if_true" type="text" value="{{ api_fields.transmit_if_true }}"></td>
-      </tr>
-      <tr>
-        <th><label for="transmit_if_false">If false</label></th>
-        <td><input id="transmit_if_false" name="transmit_if_false" type="text" value="{{ api_fields.transmit_if_false }}"></td>
       </tr>
     </table>
   </fieldset>
@@ -291,6 +278,82 @@
       Executed as trusted admin code — no sandboxing.
     </p>
     <textarea id="code" name="code" class="mono" rows="22">{{ custom_fields.code }}</textarea>
+  </fieldset>
+
+  <fieldset id="aiprompt-fields">
+    <div class="page-header"><h2>AI prompt configuration</h2></div>
+    <p class="meta-line">
+      This adapter asks the LLM provider configured under
+      <a href="/config/actions-ai">Actions&nbsp;—&nbsp;AI</a> (the same
+      <code>ACTIONS_AI_PROVIDER</code> / model / API-key settings the summarizer uses — no
+      per-adapter overrides) to produce one fresh item at each occurrence of the cron
+      schedule below, for content that must be re-generated every cycle, like a weather
+      report. It calls the model <strong>at most once per cron occurrence per prompt</strong>
+      (the item id is keyed to both), so set the adapter poll interval well below the cron
+      period; between occurrences every poll is a cheap no-op. Editing the prompt below
+      regenerates on the next poll rather than waiting for the next occurrence.
+    </p>
+    <table class="form-table">
+      <tr>
+        <th><label for="aip_prompt">Prompt</label></th>
+        <td>
+          <textarea id="aip_prompt" name="aip_prompt" rows="6"
+                    placeholder="e.g. Write one surprising fact about amateur radio in two sentences.">{{ aiprompt_fields.prompt }}</textarea>
+          <div class="meta-line">Required. <code>str.format</code> template — <code>{date}</code>,
+            <code>{datetime}</code>, <code>{source_name}</code>, <code>{source_url}</code> are
+            substituted; an unknown placeholder renders blank.</div>
+        </td>
+      </tr>
+      <tr>
+        <th><label for="aip_cron">Cron schedule</label></th>
+        <td>
+          <input id="aip_cron" name="aip_cron" type="text" value="{{ aiprompt_fields.cron }}"
+                 placeholder="e.g. 0 6 * * *  (every day at 06:00)">
+          <div class="meta-line">Required. Standard 5-field cron expression — a fresh item is
+            generated at each occurrence. Evaluated in the display timezone
+            (<code>DISPLAY_TIMEZONE</code>).</div>
+        </td>
+      </tr>
+      <tr>
+        <th><label for="aip_transmit_policy">Transmit policy</label></th>
+        <td>
+          <select id="aip_transmit_policy" name="aip_transmit_policy">
+            {% for p in policies %}
+            <option value="{{ p[0] }}" {% if aiprompt_fields.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
+            {% endfor %}
+          </select>
+          <div class="meta-line">How each generated item is aired — usually
+            <code>{{ default_policy_name }}</code> ("air once"), since the content is replaced
+            at the next occurrence rather than repeated.</div>
+        </td>
+      </tr>
+      <tr>
+        <th><label for="aip_title_template">Title template</label></th>
+        <td><input id="aip_title_template" name="aip_title_template" type="text"
+                   value="{{ aiprompt_fields.title_template }}"
+                   placeholder="optional, e.g. Fact of the day — {date}"></td>
+      </tr>
+      <tr>
+        <th><label for="aip_type">Type</label></th>
+        <td><input id="aip_type" name="aip_type" type="text" value="{{ aiprompt_fields.type }}"
+                   placeholder="optional -> items.type"></td>
+      </tr>
+      <tr>
+        <th><label for="aip_subtype">Subtype</label></th>
+        <td><input id="aip_subtype" name="aip_subtype" type="text" value="{{ aiprompt_fields.subtype }}"
+                   placeholder="optional -> items.subtype"></td>
+      </tr>
+      <tr>
+        <th><label for="aip_event_key_template">Event key template</label></th>
+        <td><input id="aip_event_key_template" name="aip_event_key_template" type="text"
+                   value="{{ aiprompt_fields.event_key_template }}"
+                   placeholder="optional str.format template — blank = the item id"></td>
+      </tr>
+    </table>
+    <p class="meta-line">
+      "Test fetch" below <strong>does make one real LLM call</strong> (and does not store the
+      result), the same way an API adapter's test fetch hits the real endpoint.
+    </p>
   </fieldset>
 
   <button type="submit">Save</button>
@@ -369,16 +432,10 @@
     var type = document.getElementById("adapter_type").value;
     document.getElementById("api-fields").style.display = type === "api" ? "" : "none";
     document.getElementById("custom-fields").style.display = type === "custom" ? "" : "none";
+    document.getElementById("aiprompt-fields").style.display = type === "aiprompt" ? "" : "none";
   }
   document.getElementById("adapter_type").addEventListener("change", updateAdapterTypeVisibility);
   updateAdapterTypeVisibility();
-
-  function updateDispatchVisibility() {
-    var enabled = document.getElementById("transmit_enabled").checked;
-    document.getElementById("dispatch-fields").style.display = enabled ? "" : "none";
-  }
-  document.getElementById("transmit_enabled").addEventListener("change", updateDispatchVisibility);
-  updateDispatchVisibility();
 
   // A row's "mapped" indicator (see .mapped-indicator/.mapping-row-mapped
   // in style.css) just reflects whether its template box is non-empty —

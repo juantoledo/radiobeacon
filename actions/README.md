@@ -47,6 +47,11 @@ consumers, same as anything else on the broker.)
   into `summary` verbatim, the item's `title` is stored. The
   content-already-short and bad-provider skips still copy extracted contents.
 
+  The three provider clients (`_call_openai` / `_call_claude` / `_call_ollama`)
+  now live in `adapters.llm` and are shared with the `aiprompt` adapter type
+  (see `data-adapters/README.md`); this module imports them under their
+  historical names.
+
 - **chunk** (`src/actions/chunk.py`) — subscribes to `ai`'s own output
   (`item.ai_settled` by default), not `item.dispatched` directly, so it
   always runs *after* `ai` has settled for the same dispatch. Chunks

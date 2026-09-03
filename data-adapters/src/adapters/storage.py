@@ -773,14 +773,17 @@ def _ensure_beacon_manual_tx_table(conn: sqlite3.Connection) -> None:
 
 
 def _migrate_adapter_instances_config(conn: sqlite3.Connection) -> None:
-    """One-time, best-effort cleanup of existing adapter_instances.config
-    rows for the dispatch_policy -> transmit_policy rename: the seeded csn
-    (api) config carried a `dispatch_policy_rule` key, and the seeded
-    senapred (custom) config's `code` string emitted a `"dispatch_policy"`
-    item field. api_adapter/custom_adapter both read the new names with a
-    fallback to the old, so this is not load-bearing — it just stops the
-    old names lingering in the DB. Per-row try/except so one malformed
-    config never blocks startup."""
+    """One-time, best-effort cleanup of existing adapter_instances.config rows:
+
+    - the dispatch_policy -> transmit_policy rename (seeded csn's
+      `dispatch_policy_rule` key, seeded senapred's `"dispatch_policy"` item
+      field in its `code` string);
+    - the api adapter's threshold rule (`transmit_policy_rule` /
+      `dispatch_policy_rule`) -> a plain `transmit_policy` name: the rule is
+      gone, so an existing rule collapses to its non-escalated branch
+      (`if_false`, default "informational").
+
+    Per-row try/except so one malformed config never blocks startup."""
     _ensure_adapter_instances_table(conn)
     try:
         rows = conn.execute(
@@ -795,10 +798,16 @@ def _migrate_adapter_instances_config(conn: sqlite3.Connection) -> None:
         except (TypeError, ValueError):
             continue
         changed = False
+        migration = "dispatch_policy -> transmit_policy"
         if isinstance(cfg, dict):
-            if "dispatch_policy_rule" in cfg and "transmit_policy_rule" not in cfg:
-                cfg["transmit_policy_rule"] = cfg.pop("dispatch_policy_rule")
+            # Collapse the removed threshold rule to a plain policy name.
+            rule = cfg.pop("transmit_policy_rule", None)
+            legacy_rule = cfg.pop("dispatch_policy_rule", None)
+            rule = rule or legacy_rule
+            if isinstance(rule, dict):
+                cfg.setdefault("transmit_policy", rule.get("if_false") or "informational")
                 changed = True
+                migration = "transmit_policy_rule -> transmit_policy"
             if (
                 adapter_type == "custom"
                 and isinstance(cfg.get("code"), str)
@@ -819,7 +828,7 @@ def _migrate_adapter_instances_config(conn: sqlite3.Connection) -> None:
                 event_type="adapter_instance.config_migrated",
                 actor="adapters.storage",
                 source=source,
-                details={"rename": "dispatch_policy -> transmit_policy"},
+                details={"rename": migration},
             )
         except sqlite3.OperationalError:
             logger.debug("adapter_instances.%s config migration skipped (locked)", source)
@@ -1036,6 +1045,19 @@ def store_summary(conn: sqlite3.Connection, source: str, item_id: str, summary: 
     )
     conn.commit()
     return cursor.rowcount > 0
+
+
+def item_exists(conn: sqlite3.Connection, source: str, item_id: str) -> bool:
+    """Whether a (source, item_id) row is already stored. Used by
+    adapters.aiprompt_adapter to skip an LLM call when this cron
+    occurrence's item already exists (items are immutable — store_reading
+    is INSERT OR IGNORE — so a second call would be wasted spend)."""
+    return (
+        conn.execute(
+            "SELECT 1 FROM items WHERE source = ? AND item_id = ?", (source, item_id)
+        ).fetchone()
+        is not None
+    )
 
 
 def _ensure_settings_table(conn: sqlite3.Connection) -> None:

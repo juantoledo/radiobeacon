@@ -4,6 +4,9 @@ import sqlite3
 from typing import Any
 
 from adapters.actions_defaults import AI_PROMPT_DEFAULT
+from adapters.llm import call_claude as _call_claude
+from adapters.llm import call_ollama as _call_ollama
+from adapters.llm import call_openai as _call_openai
 from adapters.storage import (
     get_adapter_instance,
     get_setting,
@@ -19,36 +22,9 @@ logger = logging.getLogger(__name__)
 # package so ui/ (which has no dependency on actions/) can show it too.
 _DEFAULT_PROMPT = AI_PROMPT_DEFAULT
 
-
-def _call_openai(prompt: str, model: str, api_key: str | None) -> str:
-    import openai
-
-    client = openai.OpenAI(api_key=api_key) if api_key else openai.OpenAI()
-    response = client.chat.completions.create(
-        model=model,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.choices[0].message.content
-
-
-def _call_claude(prompt: str, model: str, api_key: str | None) -> str:
-    import anthropic
-
-    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-    response = client.messages.create(
-        model=model,
-        max_tokens=1024,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.content[0].text
-
-
-def _call_ollama(prompt: str, model: str, host: str) -> str:
-    import ollama
-
-    client = ollama.Client(host=host)
-    response = client.chat(model=model, messages=[{"role": "user", "content": prompt}])
-    return response["message"]["content"]
+# The provider clients live in adapters.llm now, shared with the aiprompt
+# adapter. Imported under their historical private names so this module's
+# call sites (and the tests that monkeypatch them) are unchanged.
 
 
 # Every item column the AI prompt template can reference as a

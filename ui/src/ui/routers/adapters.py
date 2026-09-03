@@ -5,6 +5,8 @@ import sqlite3
 from typing import Any
 from urllib.parse import urlencode
 
+from adapters import cron
+from adapters.aiprompt_adapter import AiPromptAdapter
 from adapters.api_adapter import ApiAdapter, FieldMapping, preview_response
 from adapters.custom_adapter import CustomAdapter
 from adapters.actions_defaults import AI_PROMPT_DEFAULT
@@ -18,6 +20,7 @@ from adapters.storage import (
     set_adapter_instance,
     set_source,
 )
+from adapters.transmit_policy import DEFAULT_POLICY_NAME, list_policies
 from fastapi import APIRouter, Depends, HTTPException, Request
 from markupsafe import Markup
 from starlette.datastructures import FormData
@@ -30,7 +33,19 @@ from ..templating import templates
 
 router = APIRouter()
 
-_ADAPTER_CLASSES = {"api": ApiAdapter, "custom": CustomAdapter}
+_ADAPTER_CLASSES = {"api": ApiAdapter, "custom": CustomAdapter, "aiprompt": AiPromptAdapter}
+
+# The aiprompt-type fields, flat, in template-input-name order. Mirrors
+# MAPPED_FIELDS' role for the API type — see _config_to_fields / _form_to_fields.
+AIPROMPT_FIELDS = (
+    "prompt",
+    "cron",
+    "transmit_policy",
+    "title_template",
+    "type",
+    "subtype",
+    "event_key_template",
+)
 
 # The 7 contract fields an API-type adapter can map — fixed and known, so
 # the UI renders one static table row per name rather than a dynamic
@@ -108,6 +123,17 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
     if adapter_type == "custom":
         return {"code": config.get("code", "")}
 
+    if adapter_type == "aiprompt":
+        return {
+            "prompt": config.get("prompt", ""),
+            "cron": config.get("cron", ""),
+            "transmit_policy": config.get("transmit_policy", "") or DEFAULT_POLICY_NAME,
+            "title_template": config.get("title_template", ""),
+            "type": config.get("type", ""),
+            "subtype": config.get("subtype", ""),
+            "event_key_template": config.get("event_key_template", ""),
+        }
+
     mapping_raw = config.get("mapping") or {}
     mapping = {}
     for name in MAPPED_FIELDS:
@@ -121,8 +147,9 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
             "date_format": fm.field_date_format or "",
         }
 
-    # Back-compat: a config saved before the rename may still hold the old key.
-    rule = config.get("transmit_policy_rule") or config.get("dispatch_policy_rule") or {}
+    # Back-compat: an unmigrated config may still hold the removed threshold
+    # rule — surface its non-escalated branch as the plain policy selection.
+    legacy_rule = config.get("transmit_policy_rule") or config.get("dispatch_policy_rule") or {}
     return {
         "url": config.get("url") or "",
         "method": config.get("method") or "GET",
@@ -134,14 +161,11 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
         "date_field": config.get("date_field") or "",
         "date_format": config.get("date_format") or "",
         "source_timezone": config.get("source_timezone") or "",
-        "transmit_enabled": bool(
-            config.get("transmit_policy_rule") or config.get("dispatch_policy_rule")
+        "transmit_policy": (
+            config.get("transmit_policy")
+            or legacy_rule.get("if_false")
+            or DEFAULT_POLICY_NAME
         ),
-        "transmit_field": rule.get("field", ""),
-        "transmit_operator": rule.get("operator", ">="),
-        "transmit_threshold": str(rule["threshold"]) if "threshold" in rule else "",
-        "transmit_if_true": rule.get("if_true", "urgent"),
-        "transmit_if_false": rule.get("if_false", "informational"),
     }
 
 
@@ -151,6 +175,9 @@ def _form_to_fields(adapter_type: str, form: FormData) -> dict:
     a validation error, without round-tripping through config parsing."""
     if adapter_type == "custom":
         return {"code": form.get("code") or ""}
+
+    if adapter_type == "aiprompt":
+        return {name: (form.get(f"aip_{name}") or "") for name in AIPROMPT_FIELDS}
 
     mapping = {
         name: {
@@ -178,23 +205,37 @@ def _form_to_fields(adapter_type: str, form: FormData) -> dict:
         "date_field": form.get("date_field") or "",
         "date_format": form.get("date_format") or "",
         "source_timezone": form.get("source_timezone") or "",
-        "transmit_enabled": form.get("transmit_enabled") == "on",
-        "transmit_field": form.get("transmit_field") or "",
-        "transmit_operator": form.get("transmit_operator") or ">=",
-        "transmit_threshold": form.get("transmit_threshold") or "",
-        "transmit_if_true": form.get("transmit_if_true") or "urgent",
-        "transmit_if_false": form.get("transmit_if_false") or "informational",
+        "transmit_policy": form.get("transmit_policy") or DEFAULT_POLICY_NAME,
     }
 
 
 def _form_to_config(adapter_type: str, form: FormData) -> dict:
     """Posted form -> the config dict to store/test — the inverse of
-    _config_to_fields. Raises ValueError on bad numeric input (the
-    dispatch threshold); callers catch it and re-render via
-    _form_to_fields so nothing the user typed is lost."""
+    _config_to_fields. Raises ValueError on bad input (missing URL, a
+    non-integer max_tokens, an invalid aiprompt cron); callers catch it
+    and re-render via _form_to_fields so nothing the user typed is lost."""
     fields = _form_to_fields(adapter_type, form)
     if adapter_type == "custom":
         return {"code": fields["code"]}
+
+    if adapter_type == "aiprompt":
+        prompt = fields["prompt"].strip()
+        if not prompt:
+            raise ValueError("Prompt is required.")
+        cron_expr = fields["cron"].strip()
+        if not cron_expr:
+            raise ValueError("A cron expression is required.")
+        if not cron.is_valid_cron(cron_expr):
+            raise ValueError(f"Cron expression {cron_expr!r} is not valid.")
+        config = {"prompt": prompt, "cron": cron_expr}
+        for key in ("title_template", "type", "subtype", "event_key_template"):
+            value = fields[key].strip()
+            if value:
+                config[key] = value
+        policy = fields["transmit_policy"].strip()
+        if policy and policy != DEFAULT_POLICY_NAME:
+            config["transmit_policy"] = policy
+        return config
 
     if not fields["url"].strip():
         raise ValueError("URL is required.")
@@ -229,14 +270,10 @@ def _form_to_config(adapter_type: str, form: FormData) -> dict:
             config["date_format"] = fields["date_format"].strip()
         if fields["source_timezone"].strip():
             config["source_timezone"] = fields["source_timezone"].strip()
-    if fields["transmit_enabled"]:
-        config["transmit_policy_rule"] = {
-            "field": fields["transmit_field"].strip(),
-            "operator": fields["transmit_operator"],
-            "threshold": float(fields["transmit_threshold"] or "0"),
-            "if_true": fields["transmit_if_true"].strip() or "urgent",
-            "if_false": fields["transmit_if_false"].strip() or "informational",
-        }
+    # Omit when it's just the default, to keep the stored blob tidy — a NULL
+    # items.transmit_policy resolves to DEFAULT_POLICY_NAME anyway.
+    if fields["transmit_policy"] and fields["transmit_policy"] != DEFAULT_POLICY_NAME:
+        config["transmit_policy"] = fields["transmit_policy"]
     return config
 
 
@@ -254,6 +291,8 @@ def _form_context(
     ai_fallback_to_title: bool,
     api_fields: dict,
     custom_fields: dict,
+    aiprompt_fields: dict,
+    policies: list,
     test_result: dict | None,
     error: str | None,
 ) -> dict:
@@ -276,6 +315,11 @@ def _form_context(
         "mapped_fields": MAPPED_FIELDS,
         "api_fields": api_fields,
         "custom_fields": custom_fields,
+        "aiprompt_fields": aiprompt_fields,
+        # (name, repeat_times, interval_seconds, description) rows for the
+        # transmit-policy <select>s in the api / aiprompt fieldsets.
+        "policies": policies,
+        "default_policy_name": DEFAULT_POLICY_NAME,
         "test_result": test_result,
         "sample_response": None,
         "error": error,
@@ -350,6 +394,8 @@ def adapter_new_page(request: Request, conn: sqlite3.Connection = Depends(get_db
             ai_fallback_to_title=False,
             api_fields=_config_to_fields("api", {}),
             custom_fields=_config_to_fields("custom", {}),
+            aiprompt_fields=_config_to_fields("aiprompt", {}),
+            policies=list_policies(conn),
             test_result=None,
             error=None,
         ),
@@ -381,6 +427,10 @@ def adapter_edit_page(request: Request, source: str, conn: sqlite3.Connection = 
             custom_fields=_config_to_fields(
                 "custom", config if row["adapter_type"] == "custom" else {}
             ),
+            aiprompt_fields=_config_to_fields(
+                "aiprompt", config if row["adapter_type"] == "aiprompt" else {}
+            ),
+            policies=list_policies(conn),
             test_result=None,
             error=None,
         ),
@@ -419,26 +469,28 @@ def _error_context(
         ai_fallback_to_title=common["ai_fallback_to_title"],
         api_fields=_form_to_fields("api", form),
         custom_fields=_form_to_fields("custom", form),
+        aiprompt_fields=_form_to_fields("aiprompt", form),
+        policies=list_policies(conn) if conn is not None else [],
         test_result=None,
         error=message,
     )
 
 
 @router.post("/config/adapters/test")
-async def adapter_test_action(request: Request):
+async def adapter_test_action(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     form, common = await _read_common_form(request)
 
     if not common["source"]:
-        context = _error_context(common, form, "Source is required to run a test fetch.")
+        context = _error_context(common, form, "Source is required to run a test fetch.", conn=conn)
         return templates.TemplateResponse(request, "adapter_form.html", context)
 
     try:
         config = _form_to_config(common["adapter_type"], form)
     except ValueError as e:
-        context = _error_context(common, form, str(e))
+        context = _error_context(common, form, str(e), conn=conn)
         return templates.TemplateResponse(request, "adapter_form.html", context)
 
-    context = _error_context(common, form, None)
+    context = _error_context(common, form, None, conn=conn)
     adapter = _build_test_adapter(common["source"], common["adapter_type"], config)
     reading = adapter.fetch()
     context["test_result"] = {
@@ -455,7 +507,7 @@ async def adapter_test_action(request: Request):
 
 
 @router.post("/config/adapters/sample")
-async def adapter_sample_action(request: Request):
+async def adapter_sample_action(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     """Calls the endpoint with whatever connection fields (url/method/
     headers/query_params/body/items_path) are currently in the form and
     shows the raw, unmapped response — so an operator can see a source's
@@ -466,17 +518,19 @@ async def adapter_sample_action(request: Request):
     form, common = await _read_common_form(request)
 
     if common["adapter_type"] != "api":
-        context = _error_context(common, form, "Sample fetch is only available for API-type adapters.")
+        context = _error_context(
+            common, form, "Sample fetch is only available for API-type adapters.", conn=conn
+        )
         return templates.TemplateResponse(request, "adapter_form.html", context)
 
     try:
         config = _form_to_config("api", form)
         preview = preview_response(config)
     except Exception as e:
-        context = _error_context(common, form, f"Sample fetch failed: {e}")
+        context = _error_context(common, form, f"Sample fetch failed: {e}", conn=conn)
         return templates.TemplateResponse(request, "adapter_form.html", context)
 
-    context = _error_context(common, form, None)
+    context = _error_context(common, form, None, conn=conn)
     items = preview["items"]
     context["sample_response"] = {
         # interactive_keys=True: `items` is the list of sample items

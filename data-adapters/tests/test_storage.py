@@ -725,7 +725,7 @@ def test_schedule_retransmit_records_audit_event(tmp_path):
     assert json.loads(row[1]) == {"beacon_type": "voice", "scheduled": 1}
 
 
-def test_migrate_adapter_instances_config_renames_rule_key_and_custom_code(tmp_path):
+def test_migrate_adapter_instances_config_collapses_rule_to_policy_name_and_custom_code(tmp_path):
     db_path = tmp_path / "radiobeacon.db"
     legacy_conn = sqlite3.connect(db_path)
     legacy_conn.execute(
@@ -733,9 +733,17 @@ def test_migrate_adapter_instances_config_renames_rule_key_and_custom_code(tmp_p
         "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER, "
         "config TEXT NOT NULL, updated_at TEXT, updated_by TEXT)"
     )
+    # Legacy threshold rule (pre-rename key) -> collapses to its non-escalated
+    # branch as a plain transmit_policy name.
     legacy_conn.execute(
         "INSERT INTO adapter_instances (source, adapter_type, config) VALUES (?, ?, ?)",
-        ("csn", "api", json.dumps({"url": "u", "dispatch_policy_rule": {"field": "M"}})),
+        (
+            "csn",
+            "api",
+            json.dumps(
+                {"url": "u", "dispatch_policy_rule": {"field": "M", "if_false": "informational"}}
+            ),
+        ),
     )
     legacy_conn.execute(
         "INSERT INTO adapter_instances (source, adapter_type, config) VALUES (?, ?, ?)",
@@ -750,7 +758,8 @@ def test_migrate_adapter_instances_config_renames_rule_key_and_custom_code(tmp_p
         conn.execute("SELECT config FROM adapter_instances WHERE source='csn'").fetchone()[0]
     )
     assert "dispatch_policy_rule" not in csn
-    assert csn["transmit_policy_rule"] == {"field": "M"}
+    assert "transmit_policy_rule" not in csn
+    assert csn["transmit_policy"] == "informational"
 
     sen = json.loads(
         conn.execute("SELECT config FROM adapter_instances WHERE source='senapred'").fetchone()[0]

@@ -17,15 +17,6 @@ logger = logging.getLogger(__name__)
 
 _MAPPED_FIELDS = ("id", "title", "contents", "url", "event_key", "type", "subtype")
 
-_OPERATORS = {
-    ">=": lambda a, b: a >= b,
-    ">": lambda a, b: a > b,
-    "<=": lambda a, b: a <= b,
-    "<": lambda a, b: a < b,
-    "==": lambda a, b: a == b,
-    "!=": lambda a, b: a != b,
-}
-
 
 def _content_uuid(item: dict[str, Any]) -> str:
     """A UUID derived from this item's own content (uuid5, not uuid4) —
@@ -135,35 +126,6 @@ class FieldMapping:
 
 
 @dataclass
-class TransmitPolicyRule:
-    """Computes transmit_policy from a single numeric threshold comparison
-    against one raw response field — e.g. CSN's magnitude threshold."""
-
-    field: str
-    operator: str = ">="
-    threshold: float = 0.0
-    if_true: str = "urgent"
-    if_false: str = "informational"
-
-    def resolve(self, item: dict[str, Any]) -> str | None:
-        value = item.get(self.field)
-        if value is None:
-            return None
-        op = _OPERATORS[self.operator]
-        return self.if_true if op(float(value), float(self.threshold)) else self.if_false
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "TransmitPolicyRule":
-        return cls(
-            field=d["field"],
-            operator=d.get("operator", ">="),
-            threshold=float(d.get("threshold", 0.0)),
-            if_true=d.get("if_true", "urgent"),
-            if_false=d.get("if_false", "informational"),
-        )
-
-
-@dataclass
 class ApiAdapterConfig:
     """The full, typed shape of an `api`-type adapter_instances.config —
     every attribute an HTTP+JSON-mapping adapter is known to need,
@@ -180,7 +142,7 @@ class ApiAdapterConfig:
     date_field: str | None = None
     date_format: str | None = None
     source_timezone: str | None = None
-    transmit_policy_rule: TransmitPolicyRule | None = None
+    transmit_policy: str | None = None
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "ApiAdapterConfig":
@@ -188,10 +150,6 @@ class ApiAdapterConfig:
             name: FieldMapping.from_dict(raw)
             for name, raw in (config.get("mapping") or {}).items()
         }
-        # Back-compat: honor the pre-rename key if a config row still carries
-        # it (adapters.storage._migrate_adapter_instances_config rewrites
-        # seeded rows, but an operator's hand-edited one is covered here).
-        rule = config.get("transmit_policy_rule") or config.get("dispatch_policy_rule")
         return cls(
             url=config["url"],
             method=config.get("method") or "GET",
@@ -203,7 +161,7 @@ class ApiAdapterConfig:
             date_field=config.get("date_field"),
             date_format=config.get("date_format"),
             source_timezone=config.get("source_timezone"),
-            transmit_policy_rule=TransmitPolicyRule.from_dict(rule) if rule else None,
+            transmit_policy=config.get("transmit_policy"),
         )
 
     def mapping_for(self, name: str) -> FieldMapping:
@@ -215,11 +173,6 @@ class ApiAdapterConfig:
         raw = item[self.date_field]
         dt = datetime.strptime(raw, self.date_format) if self.date_format else datetime.fromisoformat(raw)
         return to_utc(dt, assume_tz=self.source_timezone)
-
-    def resolve_transmit_policy(self, item: dict[str, Any]) -> str | None:
-        if self.transmit_policy_rule is None:
-            return None
-        return self.transmit_policy_rule.resolve(item)
 
 
 def _lookup_path(data: Any, dotted_path: str) -> Any:
@@ -247,7 +200,7 @@ def _map_item(
         raise ValueError("mapped id is None")
     return AdapterItem(
         source_date_time=cfg.resolve_source_date_time(item),
-        transmit_policy=cfg.resolve_transmit_policy(item),
+        transmit_policy=cfg.transmit_policy,
         raw=item,
         **fields,
     )
@@ -295,7 +248,7 @@ def _find_array_paths(
 
 def preview_response(config: dict[str, Any], limit: int = 5) -> dict[str, Any]:
     """Calls the endpoint (url/method/headers/query_params/body only —
-    `mapping`/`date_field`/`transmit_policy_rule` are irrelevant here)
+    `mapping`/`date_field`/`transmit_policy` are irrelevant here)
     without mapping anything, so the UI can show an operator what a
     source's real response looks like *before* they've configured any
     field mapping. Reports both what the *currently configured*

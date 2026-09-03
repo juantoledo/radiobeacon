@@ -1,6 +1,6 @@
 import uuid
 
-from adapters.api_adapter import ApiAdapterConfig, TransmitPolicyRule, FieldMapping
+from adapters.api_adapter import ApiAdapterConfig, FieldMapping
 
 
 def test_field_mapping_template_renders_against_item():
@@ -115,26 +115,6 @@ def test_field_mapping_from_dict_defaults_to_empty():
     assert mapping == FieldMapping()
 
 
-def test_transmit_policy_rule_resolves_above_and_below_threshold():
-    rule = TransmitPolicyRule(field="magnitude", threshold=4.5)
-
-    assert rule.resolve({"magnitude": "5.0"}) == "urgent"
-    assert rule.resolve({"magnitude": "3.0"}) == "informational"
-
-
-def test_transmit_policy_rule_returns_none_when_field_missing():
-    rule = TransmitPolicyRule(field="magnitude", threshold=4.5)
-
-    assert rule.resolve({}) is None
-
-
-def test_transmit_policy_rule_supports_other_operators():
-    rule = TransmitPolicyRule(field="x", operator="<", threshold=10, if_true="a", if_false="b")
-
-    assert rule.resolve({"x": "5"}) == "a"
-    assert rule.resolve({"x": "15"}) == "b"
-
-
 def test_api_adapter_config_from_dict_minimal():
     cfg = ApiAdapterConfig.from_dict({"url": "https://example.test/"})
 
@@ -144,7 +124,7 @@ def test_api_adapter_config_from_dict_minimal():
     assert cfg.query_params == {}
     assert cfg.items_path == ""
     assert cfg.mapping == {}
-    assert cfg.transmit_policy_rule is None
+    assert cfg.transmit_policy is None
 
 
 def test_api_adapter_config_from_dict_full():
@@ -160,7 +140,7 @@ def test_api_adapter_config_from_dict_full():
             "date_field": "Date",
             "date_format": "%Y-%m-%d",
             "source_timezone": "America/Santiago",
-            "transmit_policy_rule": {"field": "score", "threshold": 5},
+            "transmit_policy": "urgent",
         }
     )
 
@@ -172,29 +152,10 @@ def test_api_adapter_config_from_dict_full():
     assert cfg.mapping_for("id") == FieldMapping(template="{Id}")
     assert cfg.mapping_for("title") == FieldMapping(template="fixed")
     assert cfg.mapping_for("contents") == FieldMapping()  # unconfigured -> empty, not KeyError
-    assert cfg.transmit_policy_rule == TransmitPolicyRule(field="score", threshold=5)
+    assert cfg.transmit_policy == "urgent"
 
 
 def test_api_adapter_config_resolve_source_date_time_none_when_unconfigured():
     cfg = ApiAdapterConfig.from_dict({"url": "https://example.test/"})
 
     assert cfg.resolve_source_date_time({"Date": "2026-01-01"}) is None
-
-
-def test_api_adapter_config_resolve_transmit_policy_none_when_unconfigured():
-    cfg = ApiAdapterConfig.from_dict({"url": "https://example.test/"})
-
-    assert cfg.resolve_transmit_policy({"score": "10"}) is None
-
-
-def test_api_adapter_config_from_dict_honors_legacy_dispatch_policy_rule_key():
-    """A config row written before the rename still carries
-    dispatch_policy_rule — from_dict falls back to it."""
-    cfg = ApiAdapterConfig.from_dict(
-        {
-            "url": "https://example.test/",
-            "dispatch_policy_rule": {"field": "score", "threshold": 5},
-        }
-    )
-
-    assert cfg.transmit_policy_rule == TransmitPolicyRule(field="score", threshold=5)

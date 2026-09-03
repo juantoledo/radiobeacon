@@ -8,3 +8,7 @@ paho-mqtt
 cloudevents>=1.9,<2
 tzdata
 botocore
+croniter
+anthropic
+openai
+ollama

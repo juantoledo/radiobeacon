@@ -1,3 +1,7 @@
 pytest
 botocore
 tzdata
+croniter
+anthropic
+openai
+ollama
