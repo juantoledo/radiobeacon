@@ -67,16 +67,16 @@
 {% endif %}
 
 <h2>Audit trail</h2>
-<div class="table-wrap">
+<div class="table-wrap cards">
 <table>
   <thead><tr><th>Event</th><th>Actor</th><th class="wrap">Details</th><th>Recorded</th><th>Actions</th></tr></thead>
   <tbody>
     {% for event in audit_events %}
     <tr>
-      <td><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
-      <td class="muted">{{ event.actor }}</td>
-      <td class="wrap mono">{{ event.details or "" }}</td>
-      <td class="muted">{{ event.recorded_at | display_dt }}</td>
+      <td data-label="Event"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
+      <td data-label="Actor" class="muted">{{ event.actor }}</td>
+      <td data-label="Details" class="wrap mono">{{ event.details or "" }}</td>
+      <td data-label="Recorded" class="muted">{{ event.recorded_at | display_dt }}</td>
       <td class="actions-cell">
         {% if event.event_type in replayable_event_types %}
         <form method="post" action="/items/{{ item.source }}/{{ item.item_id }}/replay">

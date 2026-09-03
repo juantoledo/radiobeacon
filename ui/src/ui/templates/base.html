@@ -3,35 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>{% block title %}radiobeacon{% endblock %} · radiobeacon</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%234f46e5'/><circle cx='12' cy='7' r='2.2' fill='white'/><path d='M8 12a5 5 0 0 1 8 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round'/><path d='M5 9a9 9 0 0 1 14 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.55'/></svg>">
 </head>
 <body>
-  <header class="topbar">
+{% set nav_items = [
+  ('/', 'dashboard', 'Dashboard', request.url.path == '/'),
+  ('/items', 'items', 'Items', request.url.path.startswith('/items')),
+  ('/config', 'config', 'Config', request.url.path.startswith('/config') or request.url.path.startswith('/adapters') or request.url.path.startswith('/policies')),
+  ('/audit', 'audit', 'Audit log', request.url.path.startswith('/audit')),
+] %}
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <div class="mobile-bar">
+    <button type="button" class="nav-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 20) }}</button>
     <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
-    <nav>
-      <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">{{ icon('dashboard') }}Dashboard</a>
-      <a href="/items" class="{{ 'active' if request.url.path.startswith('/items') else '' }}">{{ icon('items') }}Items</a>
-      <a href="/config" class="{{ 'active' if request.url.path.startswith('/config') or request.url.path.startswith('/adapters') or request.url.path.startswith('/policies') else '' }}">{{ icon('config') }}Config{% if not is_beacon_configured() %} <span class="badge badge-warn">!</span>{% endif %}</a>
-      <a href="/audit" class="{{ 'active' if request.url.path.startswith('/audit') else '' }}">{{ icon('audit') }}Audit log</a>
+  </div>
+
+  <div class="nav-scrim" hidden></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
+      <button type="button" class="nav-close" aria-label="Close navigation">{{ icon('close', 20) }}</button>
+    </div>
+    <nav class="sidebar-nav">
+      {% for href, ic, label, active in nav_items %}
+      <a href="{{ href }}" class="{{ 'active' if active else '' }}"{% if active %} aria-current="page"{% endif %}>{{ icon(ic, 18) }}{{ label }}{% if href == '/config' and not is_beacon_configured() %} <span class="badge badge-warn">!</span>{% endif %}</a>
+      {% endfor %}
       {% if dev_tools_enabled() %}
-      <a href="/dev" class="{{ 'active' if request.url.path.startswith('/dev') else '' }}">{{ icon('developers') }}Developers</a>
+      <a href="/dev" class="{{ 'active' if request.url.path.startswith('/dev') else '' }}">{{ icon('developers', 18) }}Developers</a>
       {% endif %}
     </nav>
-  </header>
-  <main>
-    {% if request.query_params.get('msg') %}
-      <p class="banner">✓ {{ request.query_params.get('msg') }}</p>
-    {% endif %}
-    {% if request.query_params.get('error') %}
-      <p class="banner-warn">⚠ {{ request.query_params.get('error') }}</p>
-    {% endif %}
-    {% if not is_beacon_configured() and not request.url.path.startswith('/config/beacon-identity') %}
-      <p class="banner-warn">⚠ Beacon identity not configured — <a href="/config/beacon-identity">set it up</a>. Browsing is unaffected; the Override/Rearm actions on item pages are blocked until this is done.</p>
-    {% endif %}
-    {% block content %}{% endblock %}
-  </main>
+    <div class="sidebar-foot">
+      {% if is_beacon_configured() %}
+      <span class="live-badge"><span class="pulse-dot" aria-hidden="true"></span>beacon identity set</span>
+      {% else %}
+      <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} configure beacon identity</a>
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="app-main">
+    <main id="main">
+      {% if request.query_params.get('msg') %}
+        <p class="banner">✓ {{ request.query_params.get('msg') }}</p>
+      {% endif %}
+      {% if request.query_params.get('error') %}
+        <p class="banner-warn">⚠ {{ request.query_params.get('error') }}</p>
+      {% endif %}
+      {% if not is_beacon_configured() and not request.url.path.startswith('/config/beacon-identity') %}
+        <p class="banner-warn">⚠ Beacon identity not configured — <a href="/config/beacon-identity">set it up</a>. Browsing is unaffected; the Override/Rearm actions on item pages are blocked until this is done.</p>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <script src="/static/app-shell.js" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

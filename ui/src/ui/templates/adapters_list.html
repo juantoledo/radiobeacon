@@ -8,15 +8,15 @@
   <h3>General</h3>
   <a class="btn secondary" href="/config/adapters-general">Edit</a>
 </div>
-<div class="table-wrap">
+<div class="table-wrap cards">
 <table>
   <thead><tr><th>Key</th><th>Value</th><th>Source</th></tr></thead>
   <tbody>
     {% for f in general_fields %}
     <tr>
-      <td class="mono">{{ f.spec.key }}</td>
-      <td class="wrap">{{ f.value }}</td>
-      <td>{% if f.overridden %}<span class="badge badge-success">overridden in DB</span>{% else %}<span class="badge badge-neutral">env / default</span>{% endif %}</td>
+      <td data-label="Key" class="mono">{{ f.spec.key }}</td>
+      <td data-label="Value" class="wrap">{{ f.value }}</td>
+      <td data-label="Source">{% if f.overridden %}<span class="badge badge-success">overridden in DB</span>{% else %}<span class="badge badge-neutral">env / default</span>{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -25,17 +25,17 @@
 
 <div class="page-header"><h3>Sources</h3><a class="btn" href="/config/adapters/new">+ New adapter</a></div>
 
-<div class="table-wrap">
+<div class="table-wrap cards">
 <table>
   <thead><tr><th>Source</th><th>Type</th><th>Enabled</th><th>Interval (s)</th><th>Last fetch</th><th></th></tr></thead>
   <tbody>
     {% for row in rows %}
     <tr>
-      <td><strong>{{ row.source }}</strong></td>
-      <td><span class="badge badge-neutral">{{ row.adapter_type }}</span></td>
-      <td>{% if row.enabled %}<span class="badge badge-success">on</span>{% else %}<span class="badge badge-neutral">off</span>{% endif %}</td>
-      <td>{{ row.interval_seconds or "default" }}</td>
-      <td class="muted">
+      <td data-label="Source"><strong>{{ row.source }}</strong></td>
+      <td data-label="Type"><span class="badge badge-neutral">{{ row.adapter_type }}</span></td>
+      <td data-label="Enabled">{% if row.enabled %}<span class="badge badge-success">on</span>{% else %}<span class="badge badge-neutral">off</span>{% endif %}</td>
+      <td data-label="Interval (s)">{{ row.interval_seconds or "default" }}</td>
+      <td data-label="Last fetch" class="muted">
         {% if row.last_fetch %}
           {% if row.last_fetch.ok %}<span class="badge badge-success">ok</span>{% else %}<span class="badge badge-warn">error</span>{% endif %}
           {{ row.last_fetch.recorded_at }}

@@ -17,14 +17,14 @@
   <h3>{{ group.name }}</h3>
   <a class="btn secondary" href="/config/{{ group.slug }}">Edit</a>
 </div>
-<div class="table-wrap">
+<div class="table-wrap cards">
 <table>
   <thead><tr><th>Key</th><th>Value</th><th>Source</th></tr></thead>
   <tbody>
     {% for entry in group.rows %}
     <tr>
-      <td class="mono">{{ entry.spec.key }}</td>
-      <td class="wrap">
+      <td data-label="Key" class="mono">{{ entry.spec.key }}</td>
+      <td data-label="Value" class="wrap">
         {% if entry.spec.is_secret %}
           {% if entry.row %}<span class="mono">{{ sentinel }}</span>{% else %}<span class="muted">(not set)</span>{% endif %}
         {% elif entry.effective %}
@@ -33,7 +33,7 @@
           <span class="muted">(not set)</span>
         {% endif %}
       </td>
-      <td>
+      <td data-label="Source">
         {% if entry.row %}
           <span class="badge badge-success">overridden in DB</span>
         {% else %}

@@ -67,6 +67,13 @@ _ICONS: dict[str, str] = {
         '<rect x="4" y="11" width="16" height="10" rx="2"/>'
         '<path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
     ),
+    "menu": (
+        '<line x1="3" y1="6" x2="21" y2="6"/>'
+        '<line x1="3" y1="12" x2="21" y2="12"/>'
+        '<line x1="3" y1="18" x2="21" y2="18"/>'
+    ),
+    "close": ('<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>'),
+    "arrow-right": ('<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>'),
 }
 
 

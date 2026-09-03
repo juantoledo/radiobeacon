@@ -11,22 +11,22 @@
   <a class="btn secondary" href="/audit">Clear</a>
 </form>
 
-<div class="table-wrap">
+<div class="table-wrap cards">
 <table>
   <thead><tr><th>Event</th><th>Actor</th><th>Source</th><th>Item</th><th class="wrap">Details</th><th>Recorded</th></tr></thead>
   <tbody>
     {% for event in events %}
     <tr>
-      <td><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
-      <td class="muted">{{ event.actor }}</td>
-      <td>{{ event.source or "" }}</td>
-      <td class="mono">
+      <td data-label="Event"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
+      <td data-label="Actor" class="muted">{{ event.actor }}</td>
+      <td data-label="Source">{{ event.source or "" }}</td>
+      <td data-label="Item" class="mono">
         {% if event.source and event.item_id %}
           <a href="/items/{{ event.source }}/{{ event.item_id }}">{{ event.item_id }}</a>
         {% else %}{{ event.item_id or "" }}{% endif %}
       </td>
-      <td class="wrap muted mono">{{ event.details or "" }}</td>
-      <td class="muted">{{ event.recorded_at | display_dt }}</td>
+      <td data-label="Details" class="wrap muted mono">{{ event.details or "" }}</td>
+      <td data-label="Recorded" class="muted">{{ event.recorded_at | display_dt }}</td>
     </tr>
     {% else %}
     <tr class="empty-row"><td colspan="6">No audit events match these filters.</td></tr>
