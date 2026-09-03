@@ -23,6 +23,7 @@ from adapters.beacon_defaults import (
     BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
+    BEACON_VOICE_ATTENTION_TONE_DEFAULT,
     BEACON_VOICE_MAX_CHARS_DEFAULT,
     BEACON_VOICE_PREFIX_DEFAULT,
     BEACON_VOICE_SUFFIX_DEFAULT,
@@ -767,6 +768,20 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "text",
         BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
         advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_VOICE_ATTENTION_TONE",
+        "Beacon — Voice",
+        "Attention tone",
+        "A short sequence of beeps prepended to every rendered voice WAV "
+        "(scheduled bulletins and \"Transmit now\" alike — not the watermark) "
+        "so listeners know an announcement is starting. Comma-separated "
+        "\"freq:ms\" pairs, freq in Hz with 0 meaning silence — e.g. "
+        "\"1400:250,0:120,1400:250\" is two 250 ms tones 120 ms apart. "
+        "Defaults to a short rising/falling sweep; clear the field for no "
+        "tone. Use the Preview button to hear it before saving.",
+        "text",
+        BEACON_VOICE_ATTENTION_TONE_DEFAULT,
     ),
     # --- Beacon — Watermark ---
     # A periodic, item-independent message on its own timer -- see

@@ -207,3 +207,36 @@ def test_secret_field_empty_when_nothing_stored(client):
     # operator can tell "nothing stored" apart from "something is stored".
     assert f'id="ANTHROPIC_API_KEY"' in response.text
     assert SECRET_SENTINEL not in response.text
+
+
+def test_attention_tone_preview_returns_wav(client):
+    response = client.get("/config/tone-preview", params={"spec": "1000:120,0:80,1000:120"})
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "audio/wav"
+    assert response.content[:4] == b"RIFF"
+
+
+def test_attention_tone_preview_rejects_bad_spec(client):
+    response = client.get("/config/tone-preview", params={"spec": "9000:1"})
+
+    assert response.status_code == 400
+    assert "out of range" in response.text
+
+
+def test_attention_tone_setting_save_round_trip(client, conn):
+    response = client.post(
+        "/config/beacon-voice",
+        data={"BEACON_VOICE_ATTENTION_TONE": "1400:250,0:120,1400:250"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert get_setting("BEACON_VOICE_ATTENTION_TONE", conn=conn) == "1400:250,0:120,1400:250"
+
+
+def test_attention_tone_preview_button_on_beacon_voice_page(client):
+    response = client.get("/config/beacon-voice")
+
+    assert response.status_code == 200
+    assert 'id="tone-preview-btn"' in response.text

@@ -42,6 +42,11 @@
                  {% if f.spec.required %}required{% endif %}>
         {% endif %}
         <div class="meta-line">{{ f.spec.description }}</div>
+        {% if f.spec.key == "BEACON_VOICE_ATTENTION_TONE" %}
+        <button type="button" id="tone-preview-btn" class="secondary">&#9654; Preview</button>
+        <span id="tone-preview-msg" class="meta-line" role="status"></span>
+        <audio id="tone-preview-audio" preload="none"></audio>
+        {% endif %}
         {% if f.overridden %}
         <button type="submit" form="reset-{{ f.spec.key }}" class="secondary">Reset to env/default</button>
         {% endif %}
@@ -74,5 +79,40 @@
       event.preventDefault();
     }
   });
+
+  // Attention-tone preview: render the *unsaved* field value to a WAV and
+  // play it, so the operator hears the beeps before Save. A bad spec comes
+  // back as 400 + a readable message.
+  (function () {
+    var btn = document.getElementById("tone-preview-btn");
+    if (!btn) return;
+    var input = document.getElementById("BEACON_VOICE_ATTENTION_TONE");
+    var msg = document.getElementById("tone-preview-msg");
+    var audio = document.getElementById("tone-preview-audio");
+    var objectUrl = null;
+    function cleanup() {
+      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    }
+    audio.addEventListener("ended", cleanup);
+    btn.addEventListener("click", function () {
+      var spec = (input.value || "").trim();
+      msg.textContent = "";
+      if (!spec) { msg.textContent = "Tone disabled (field is empty)."; return; }
+      btn.disabled = true;
+      fetch("/config/tone-preview?spec=" + encodeURIComponent(spec))
+        .then(function (res) {
+          if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
+          return res.blob();
+        })
+        .then(function (blob) {
+          cleanup();
+          objectUrl = URL.createObjectURL(blob);
+          audio.src = objectUrl;
+          audio.play();
+        })
+        .catch(function (err) { msg.textContent = "⚠ " + err.message; })
+        .finally(function () { btn.disabled = false; });
+    });
+  })();
 </script>
 {% endblock %}

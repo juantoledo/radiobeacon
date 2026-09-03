@@ -37,6 +37,14 @@ BEACON_VOICE_SUFFIX_DEFAULT = (
 # prefix/suffix envelope above is always spoken in full on top of this).
 BEACON_VOICE_MAX_CHARS_DEFAULT = "750"
 
+# Attention tone: a short sequence of beeps prepended to every rendered voice
+# WAV (scheduled bulletins and manual "Transmit now" alike -- not the
+# watermark) so listeners recognize an announcement is starting. See
+# adapters.attention_tone. Comma-separated `freq:ms` pairs, freq in Hz with
+# 0 meaning silence. The default is a ~2 s rising-then-falling seven-note
+# sweep; set it blank to disable the tone entirely.
+BEACON_VOICE_ATTENTION_TONE_DEFAULT = "500:250,600:250,700:300,800:300,700:250,600:250,500:350"
+
 # Watermark: a periodic, item-independent message on its own timer (see
 # beacon.__main__._transmit_watermark), rendered through whichever
 # BEACON_TYPE is currently active. Off by default -- an operator opts in

@@ -70,12 +70,14 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 
+from adapters.attention_tone import prepend_tone_to_wav  # noqa: E402
 from adapters.beacon_defaults import (  # noqa: E402
     BEACON_ENABLED_DEFAULT,
     BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
     BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
+    BEACON_VOICE_ATTENTION_TONE_DEFAULT,
     BEACON_VOICE_MAX_CHARS_DEFAULT,
     BEACON_VOICE_PREFIX_DEFAULT,
     BEACON_VOICE_SUFFIX_DEFAULT,
@@ -405,6 +407,9 @@ def _transmit_voice_unit(conn, row: dict, ctx: dict) -> bool:
         )
         return False
 
+    if ctx["voice_attention_tone"]:
+        prepend_tone_to_wav(wav_path, ctx["voice_attention_tone"])
+
     try:
         sent = ctx["wav_transmitter"].transmit(
             wav_path=wav_path, label=f"voice {source}/{item_id}"
@@ -500,7 +505,9 @@ def _transmit_frame_unit(conn, row: dict, ctx: dict) -> bool:
 # callsign is always passed to format_voice/format_frame as its own named
 # parameter below -- excluded here so it doesn't collide as a duplicate
 # keyword argument; still available to templates via that named parameter.
-_WATERMARK_FIELDS_EXCLUDE = {"callsign"}
+# voice_attention_tone is an audio concern with no meaning as a spoken
+# template placeholder, and the watermark deliberately carries no tone.
+_WATERMARK_FIELDS_EXCLUDE = {"callsign", "voice_attention_tone"}
 
 
 def _watermark_fields(ctx: dict) -> dict[str, str]:
@@ -634,6 +641,8 @@ def _transmit_manual_unit(conn, row: dict, beacon_type: str, ctx: dict, now_dt: 
                 details={"kind": "voice", "reason": "tts_failed"},
             )
             return False
+        if ctx["voice_attention_tone"]:
+            prepend_tone_to_wav(wav_path, ctx["voice_attention_tone"])
         label = "manual voice"
     elif beacon_type == "frame":
         try:
@@ -860,6 +869,9 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 "frame_suffix": get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or "",
                 "voice_prefix": get_setting("BEACON_VOICE_PREFIX", BEACON_VOICE_PREFIX_DEFAULT, conn=conn) or "",
                 "voice_suffix": get_setting("BEACON_VOICE_SUFFIX", BEACON_VOICE_SUFFIX_DEFAULT, conn=conn) or "",
+                "voice_attention_tone": get_setting(
+                    "BEACON_VOICE_ATTENTION_TONE", BEACON_VOICE_ATTENTION_TONE_DEFAULT, conn=conn
+                ) or "",
                 "wav_dir": _resolve_wav_dir(
                     get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
                 ),

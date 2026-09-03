@@ -124,6 +124,7 @@ def _ctx(**overrides):
         "frame_suffix": "",
         "voice_prefix": "",
         "voice_suffix": "",
+        "voice_attention_tone": "",
         "wav_dir": "/tmp",
         "tts_voice": "es",
         "tts_engine": "espeak",
@@ -219,6 +220,22 @@ def test_drain_manual_tx_transmits_voice_and_deletes_row(tmp_path, monkeypatch):
     assert pending_manual_tx(conn, "voice") == []
     assert "beacon.manual.transmitted" in _audit_types(conn)
     assert get_beacon_status(conn, "last_manual_transmit_at") is not None
+
+
+def test_drain_manual_tx_voice_prepends_attention_tone(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    tones = []
+    monkeypatch.setattr(main_module, "prepend_tone_to_wav", lambda wav_path, spec, **k: tones.append(spec))
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    enqueue_manual_tx(conn, kind="voice", text="Prueba", actor="ui.dashboard")
+    ctx = _ctx(wav_dir=str(tmp_path), voice_attention_tone="900:150,0:80,900:150")
+
+    main_module._drain_manual_tx(
+        threading.Event(), conn, "voice", datetime.now(timezone.utc), ctx, 0.0
+    )
+
+    assert tones == ["900:150,0:80,900:150"]
+    assert ctx["wav_transmitter"].calls
 
 
 def test_drain_manual_tx_leaves_other_kind_queued(tmp_path):
@@ -744,6 +761,41 @@ def test_transmit_voice_unit_records_tts_failure(tmp_path, monkeypatch):
         "SELECT details FROM audit_log WHERE event_type = 'beacon.voice.transmit_failed'"
     ).fetchone()
     assert json.loads(row[0])["reason"] == "tts_failed"
+
+
+def test_transmit_voice_unit_prepends_attention_tone_after_synth(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: calls.append("synth") or True)
+    monkeypatch.setattr(
+        main_module, "prepend_tone_to_wav",
+        lambda wav_path, spec, **k: calls.append(("tone", spec)),
+    )
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", summary="hola")
+    tx = _RecordingWavTransmitter()
+
+    main_module._transmit_voice_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": ""},
+        _ctx(wav_transmitter=tx, voice_attention_tone="1400:200"),
+    )
+
+    # tone prepended after synthesis, before the WAV reaches the transmitter
+    assert calls == ["synth", ("tone", "1400:200")]
+    assert len(tx.calls) == 1
+
+
+def test_transmit_voice_unit_skips_tone_when_unconfigured(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    called = []
+    monkeypatch.setattr(main_module, "prepend_tone_to_wav", lambda *a, **k: called.append(a))
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", summary="hola")
+
+    main_module._transmit_voice_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": ""}, _ctx(voice_attention_tone=""),
+    )
+
+    assert called == []
 
 
 def test_transmit_frame_unit_skips_when_no_callsign(tmp_path, _stub_frame_audio):

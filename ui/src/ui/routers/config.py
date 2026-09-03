@@ -1,9 +1,10 @@
 import sqlite3
 from urllib.parse import urlencode
 
+from adapters.attention_tone import ToneSpecError, render_tone_wav
 from adapters.storage import delete_setting, get_setting, list_settings, set_setting
 from fastapi import APIRouter, Depends, HTTPException, Request
-from starlette.responses import RedirectResponse
+from starlette.responses import PlainTextResponse, RedirectResponse, Response
 
 from ..config_catalog import (
     SETTINGS_CATALOG,
@@ -78,6 +79,19 @@ def _group_back_url(group: str, slug: str) -> str | None:
 @router.get("/config")
 def config_root_redirect():
     return RedirectResponse(url="/config/adapters", status_code=307)
+
+
+# Registered before /config/{slug} so the literal path wins over the catch-all.
+@router.get("/config/tone-preview")
+def config_tone_preview(spec: str = ""):
+    """Render BEACON_VOICE_ATTENTION_TONE to a standalone WAV so the config
+    page can play it back before the operator saves. 400 (with a readable
+    message) on a bad spec — the preview doubles as the validation surface."""
+    try:
+        wav = render_tone_wav(spec)
+    except ToneSpecError as exc:
+        return PlainTextResponse(str(exc), status_code=400)
+    return Response(wav, media_type="audio/wav")
 
 
 @router.get("/config/{slug}")
