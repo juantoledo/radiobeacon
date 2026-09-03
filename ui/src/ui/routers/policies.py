@@ -12,21 +12,27 @@ from ..templating import templates
 router = APIRouter()
 
 
-@router.get("/policies")
+@router.get("/policies", include_in_schema=False)
+def policies_legacy_redirect():
+    """The Policies page moved under /config — keep old bookmarks working."""
+    return RedirectResponse(url="/config/policies", status_code=307)
+
+
+@router.get("/config/policies")
 def policies_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return templates.TemplateResponse(
         request, "policies_list.html", {"policies": list_policies(conn)}
     )
 
 
-@router.get("/policies/new")
+@router.get("/config/policies/new")
 def policy_new_page(request: Request):
     return templates.TemplateResponse(
         request, "policy_form.html", {"policy": None, "mode": "create"}
     )
 
 
-@router.get("/policies/{name}/edit")
+@router.get("/config/policies/{name}/edit")
 def policy_edit_page(request: Request, name: str, conn: sqlite3.Connection = Depends(get_db)):
     row = queries.get_policy_row(conn, name)
     if row is None:
@@ -36,7 +42,7 @@ def policy_edit_page(request: Request, name: str, conn: sqlite3.Connection = Dep
     )
 
 
-@router.post("/policies")
+@router.post("/config/policies")
 def policy_create_action(
     name: str = Form(...),
     repeat_times: int = Form(...),
@@ -46,11 +52,11 @@ def policy_create_action(
 ):
     set_policy(conn, name, repeat_times, interval_seconds, description or None)
     msg = urlencode({"msg": f"policy '{name}' saved"})
-    return RedirectResponse(url=f"/policies?{msg}", status_code=303)
+    return RedirectResponse(url=f"/config/policies?{msg}", status_code=303)
 
 
-@router.post("/policies/{name}/delete")
+@router.post("/config/policies/{name}/delete")
 def policy_delete_action(name: str, conn: sqlite3.Connection = Depends(get_db)):
     deleted = delete_policy(conn, name)
     msg = f"policy '{name}' deleted" if deleted else f"policy '{name}' not found"
-    return RedirectResponse(url=f"/policies?{urlencode({'msg': msg})}", status_code=303)
+    return RedirectResponse(url=f"/config/policies?{urlencode({'msg': msg})}", status_code=303)

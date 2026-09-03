@@ -26,3 +26,16 @@ BEACON_VOICE_SUFFIX_DEFAULT = (
 # Word-boundary truncation budget for the resolved summary only (the
 # prefix/suffix envelope above is always spoken in full on top of this).
 BEACON_VOICE_MAX_CHARS_DEFAULT = "750"
+
+# Watermark: a periodic, item-independent message on its own timer (see
+# beacon.__main__._transmit_watermark), rendered through whichever
+# BEACON_TYPE is currently active. Off by default -- an operator opts in
+# and writes their own templates once they've set BEACON_CALLSIGN. Unlike
+# the voice content templates above, these have no item behind them, so
+# their placeholders are the beacon's own per-tick settings (callsign,
+# date, destination, ...) rather than item fields -- see
+# beacon.__main__._watermark_fields.
+BEACON_WATERMARK_ENABLED_DEFAULT = "false"
+BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT = "600"
+BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT = "Estación {callsign}, transmisión automática. {date}."
+BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT = "{callsign} watermark {date}"

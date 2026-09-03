@@ -13,6 +13,7 @@ from markupsafe import Markup
 
 from . import config
 from .beacon import is_beacon_configured
+from .config_catalog import NAV_CATEGORY_ORDER, category_slug
 from .icons import render_icon
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -25,6 +26,36 @@ def _icon_global(name: str, size: int = 16) -> Markup:
 
 
 templates.env.globals["icon"] = _icon_global
+
+# Icon per /config tab — purely presentational, keyed by category name (see
+# NAV_CATEGORY_ORDER) plus the one non-catalog tab, Policies.
+_CONFIG_TAB_ICONS: dict[str, str] = {
+    "Adapters": "layers",
+    "Dispatcher": "activity",
+    "MQ": "database",
+    "Actions": "zap",
+    "Beacon": "beacon",
+    "Secrets": "lock",
+    "Display": "activity",
+    "UI": "config",
+    "Policies": "policies",
+}
+
+
+def _config_nav_tabs_global() -> list[dict]:
+    """Tabs for the /config subnav — one per settings category (in
+    NAV_CATEGORY_ORDER) plus Policies, which lives outside SETTINGS_CATALOG
+    entirely (see ui.routers.policies) but is now folded into the same
+    Config section rather than a separate top-level page."""
+    tabs = [
+        {"name": category, "slug": category_slug(category), "icon": _CONFIG_TAB_ICONS[category]}
+        for category in NAV_CATEGORY_ORDER
+    ]
+    tabs.append({"name": "Policies", "slug": "policies", "icon": _CONFIG_TAB_ICONS["Policies"]})
+    return tabs
+
+
+templates.env.globals["config_nav_tabs"] = _config_nav_tabs_global
 
 
 @pass_context

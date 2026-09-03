@@ -6,11 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import RedirectResponse
 
 from ..config_catalog import (
-    CATEGORIES,
     SETTINGS_CATALOG,
+    category_for_group,
+    category_for_slug,
     category_slug,
     group_slug,
     groups_for_category,
+    is_advanced,
+    is_multi_group_category,
     specs_for_group,
 )
 from ..db import get_db
@@ -26,41 +29,72 @@ router = APIRouter()
 SECRET_SENTINEL = "•" * 8
 
 
-@router.get("/config")
-def config_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
+def _category_groups_view(conn: sqlite3.Connection, category: str) -> list[dict]:
+    """group -> row list for one category's tab page — every group in the
+    category, every spec regardless of advanced/wiring tier (that split no
+    longer separates pages; each row just carries its own "advanced" flag so
+    the template can badge it in place)."""
     overrides = {row["key"]: row for row in list_settings(conn)}
-    categories = []
-    for category in CATEGORIES:
-        cat_groups = []
-        for group in groups_for_category(category):
-            rows = []
-            for spec in SETTINGS_CATALOG:
-                if spec.group != group:
-                    continue
-                row = overrides.get(spec.key)
-                # Effective value (DB override -> env var -> catalog
-                # default, or DB override -> catalog default only when
-                # spec.env_fallback is False) — never resolved for
-                # secrets, which are masked unconditionally.
-                effective = (
-                    None
-                    if spec.is_secret
-                    else get_setting(
-                        spec.key, spec.default, conn=conn, env_fallback=spec.env_fallback
-                    )
+    cat_groups = []
+    for group in groups_for_category(category):
+        rows = []
+        for spec in SETTINGS_CATALOG:
+            if spec.group != group:
+                continue
+            row = overrides.get(spec.key)
+            # Effective value (DB override -> env var -> catalog default, or
+            # DB override -> catalog default only when spec.env_fallback is
+            # False) — never resolved for secrets, which are masked
+            # unconditionally.
+            effective = (
+                None
+                if spec.is_secret
+                else get_setting(
+                    spec.key, spec.default, conn=conn, env_fallback=spec.env_fallback
                 )
-                rows.append({"spec": spec, "row": row, "effective": effective})
-            cat_groups.append({"name": group, "slug": group_slug(group), "rows": rows})
-        categories.append({"name": category, "slug": category_slug(category), "groups": cat_groups})
-    return templates.TemplateResponse(
-        request, "config_list.html", {"categories": categories, "sentinel": SECRET_SENTINEL}
-    )
+            )
+            rows.append(
+                {"spec": spec, "row": row, "effective": effective, "advanced": is_advanced(spec)}
+            )
+        cat_groups.append({"name": group, "slug": group_slug(group), "rows": rows})
+    return cat_groups
 
 
-@router.get("/config/{group}")
-def config_group_edit_page(
-    request: Request, group: str, conn: sqlite3.Connection = Depends(get_db)
-):
+def _group_back_url(group: str, slug: str) -> str | None:
+    """Where a group's edit form's "back" crumb points. The Adapters —
+    General group is special: its tab lives at /config/adapters (merged with
+    the adapter-instance CRUD there, see ui.routers.adapters), not at a
+    generic category page. A single-group category (Dispatcher, Secrets,
+    Display, UI) has no separate listing page at all — its tab IS this form
+    — so there's nothing to crumb back to."""
+    if slug == "adapters-general":
+        return "/config/adapters"
+    category = category_for_group(group)
+    if is_multi_group_category(category):
+        return f"/config/{category_slug(category)}"
+    return None
+
+
+@router.get("/config")
+def config_root_redirect():
+    return RedirectResponse(url="/config/adapters", status_code=307)
+
+
+@router.get("/config/{slug}")
+def config_tab_page(request: Request, slug: str, conn: sqlite3.Connection = Depends(get_db)):
+    category = category_for_slug(slug)
+    if category is not None and is_multi_group_category(category):
+        return templates.TemplateResponse(
+            request,
+            "config_category.html",
+            {
+                "category": category,
+                "groups": _category_groups_view(conn, category),
+                "sentinel": SECRET_SENTINEL,
+            },
+        )
+
+    group = slug
     specs = specs_for_group(group)
     if not specs:
         raise HTTPException(status_code=404, detail="settings group not found")
@@ -90,6 +124,7 @@ def config_group_edit_page(
             "fields": fields,
             "sentinel": SECRET_SENTINEL,
             "error": None,
+            "back_url": _group_back_url(specs[0].group, group),
         },
     )
 
@@ -132,6 +167,7 @@ async def config_group_save_action(
                 "fields": fields,
                 "sentinel": SECRET_SENTINEL,
                 "error": f"Required: {', '.join(missing)}",
+                "back_url": _group_back_url(specs[0].group, group),
             },
             status_code=400,
         )

@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{% if mode == "edit" %}Edit adapter{% else %}New adapter{% endif %}{% endblock %}
 {% block content %}
-<a class="crumb" href="/adapters">&larr; Back to adapters</a>
+{% include "_config_nav.html" %}
+<a class="crumb" href="/config/adapters">&larr; Back to adapters</a>
 <div class="page-header"><h1>{% if mode == "edit" %}Edit adapter: {{ source }}{% else %}New adapter{% endif %}</h1></div>
 
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
 
-<form method="post" action="{{ '/adapters/' + source if mode == 'edit' else '/adapters' }}" id="adapter-form">
+<form method="post" action="{{ '/config/adapters/' + source if mode == 'edit' else '/config/adapters' }}" id="adapter-form">
   <input type="hidden" name="mode" value="{{ mode }}">
   <table class="form-table">
     <tr>
@@ -157,7 +158,7 @@
       Calls the endpoint with the connection settings above — no mapping needed yet — so you can see the
       real field names before configuring the mapping below, instead of guessing them blind.
     </p>
-    <button type="submit" formaction="/adapters/sample" formnovalidate class="secondary">Fetch sample response</button>
+    <button type="submit" formaction="/config/adapters/sample" formnovalidate class="secondary">Fetch sample response</button>
     {% if sample_response %}
 
     {% if sample_response.is_list %}
@@ -293,7 +294,7 @@
   </fieldset>
 
   <button type="submit">Save</button>
-  <button type="submit" formaction="/adapters/test" formnovalidate class="secondary">Test fetch</button>
+  <button type="submit" formaction="/config/adapters/test" formnovalidate class="secondary">Test fetch</button>
 </form>
 
 {% if test_result %}
@@ -398,7 +399,7 @@
     btn.addEventListener("click", function () {
       document.getElementById("items_path").value = btn.dataset.path;
       var form = document.getElementById("adapter-form");
-      form.action = "/adapters/sample";
+      form.action = "/config/adapters/sample";
       form.submit();
     });
   });

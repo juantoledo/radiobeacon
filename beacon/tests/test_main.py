@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from adapters.storage import (
     add_tx_schedule_unit,
+    get_beacon_status,
     get_connection,
     mark_item_ready_published,
     record_audit_event,
@@ -128,6 +129,8 @@ def _ctx(**overrides):
         "tts_piper_binary": "piper",
         "gen_packets_binary": "gen_packets",
         "frame_lead_silence_ms": 0,
+        "watermark_voice_template": "{callsign} watermark {date}",
+        "watermark_frame_template": "{callsign} watermark {date}",
         "wav_transmitter": _RecordingWavTransmitter(),
     }
     ctx.update(overrides)
@@ -677,6 +680,126 @@ def test_transmit_frame_unit_records_transmit_failed_on_handoff_failure(tmp_path
     assert conn.execute(
         "SELECT 1 FROM audit_log WHERE event_type = 'beacon.frame.transmit_failed'"
     ).fetchone() is not None
+
+
+# --- watermark ---
+
+
+def test_transmit_watermark_skips_when_no_callsign(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    tx = _RecordingWavTransmitter()
+
+    sent = main_module._transmit_watermark(
+        conn, "voice", _ctx(callsign=None, wav_transmitter=tx), datetime.now(timezone.utc),
+    )
+
+    assert sent is False
+    assert tx.calls == []
+    assert conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.watermark.skipped_no_callsign'"
+    ).fetchone() is not None
+
+
+def test_transmit_watermark_voice_renders_template_and_hands_wav_to_transmitter(tmp_path, monkeypatch):
+    monkeypatch.setenv("DISPLAY_TIMEZONE", "UTC")
+    synth = []
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda text, **k: synth.append(text) or True)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    tx = _RecordingWavTransmitter()
+    now_dt = datetime(2026, 8, 22, 14, 30, tzinfo=timezone.utc)
+
+    sent = main_module._transmit_watermark(
+        conn, "voice",
+        _ctx(watermark_voice_template="{callsign} auto {date}", wav_transmitter=tx),
+        now_dt,
+    )
+
+    assert sent is True
+    assert synth == ["CD3DXZ-1 auto 22-08-2026 14:30"]
+    assert len(tx.calls) == 1
+    assert tx.calls[0][1] == "watermark"
+    assert conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.watermark.transmitted'"
+    ).fetchone() is not None
+    assert get_beacon_status(conn, "last_watermark_transmit_at") is not None
+
+
+def test_transmit_watermark_voice_records_tts_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: False)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    tx = _RecordingWavTransmitter()
+
+    sent = main_module._transmit_watermark(
+        conn, "voice", _ctx(wav_transmitter=tx), datetime.now(timezone.utc),
+    )
+
+    assert sent is False
+    assert tx.calls == []
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.watermark.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "tts_failed"
+
+
+def test_transmit_watermark_frame_renders_and_records_audit_event(tmp_path, monkeypatch, _stub_frame_audio):
+    monkeypatch.setenv("DISPLAY_TIMEZONE", "UTC")
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    tx = _RecordingWavTransmitter()
+    now_dt = datetime(2026, 8, 22, 14, 30, tzinfo=timezone.utc)
+
+    sent = main_module._transmit_watermark(
+        conn, "frame",
+        _ctx(watermark_frame_template="watermark {date}", wav_transmitter=tx),
+        now_dt,
+    )
+
+    assert sent is True
+    assert _stub_frame_audio == ["CD3DXZ-1>WXALRT:watermark 22-08-2026 14:30"]
+    assert len(tx.calls) == 1
+    assert conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.watermark.transmitted'"
+    ).fetchone() is not None
+
+
+def test_transmit_watermark_frame_records_dropped_too_long(tmp_path, _stub_frame_audio):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    sent = main_module._transmit_watermark(
+        conn, "frame", _ctx(watermark_frame_template="x" * 300), datetime.now(timezone.utc),
+    )
+
+    assert sent is False
+    assert _stub_frame_audio == []
+    assert conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.watermark.dropped_too_long'"
+    ).fetchone() is not None
+
+
+def test_transmit_watermark_records_transmit_failed_on_handoff_failure(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    sent = main_module._transmit_watermark(
+        conn, "voice", _ctx(wav_transmitter=_RecordingWavTransmitter(result=False)), datetime.now(timezone.utc),
+    )
+
+    assert sent is False
+    assert conn.execute(
+        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.watermark.transmit_failed'"
+    ).fetchone() is not None
+
+
+def test_transmit_watermark_placeholders_include_beacon_attributes_beyond_callsign(tmp_path, monkeypatch):
+    synth = []
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda text, **k: synth.append(text) or True)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    main_module._transmit_watermark(
+        conn, "voice",
+        _ctx(watermark_voice_template="{destination} via {tts_engine}"),
+        datetime.now(timezone.utc),
+    )
+
+    assert synth == ["WXALRT via espeak"]
 
 
 # --- factories ---

@@ -140,16 +140,107 @@ def test_rearm_action_blocked_when_beacon_not_configured(client, conn):
     assert "error=" in response.headers["location"]
 
 
+def test_replay_action_redirects_for_dispatch_stage_event(client, conn):
+    _configure_beacon(conn)
+    _insert_item(conn, "csn", "1")
+
+    response = client.post(
+        "/items/csn/1/replay",
+        data={"event_type": "item.dispatched", "consumer": "log"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "msg=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer='log' AND source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row is not None
+
+
+def test_replay_action_rejects_non_replayable_event_type(client, conn):
+    _configure_beacon(conn)
+    _insert_item(conn, "csn", "1")
+
+    response = client.post(
+        "/items/csn/1/replay",
+        data={"event_type": "action.ai.executed", "consumer": "log"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT 1 FROM trigger_dispatches WHERE consumer='log' AND source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row is None
+
+
+def test_replay_action_blocked_when_beacon_not_configured(client, conn):
+    _insert_item(conn, "csn", "1")
+
+    response = client.post(
+        "/items/csn/1/replay",
+        data={"event_type": "item.dispatched", "consumer": "log"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+
+
+def test_retransmit_action_redirects_and_schedules_row(client, conn):
+    _configure_beacon(conn)
+    _insert_item(conn, "csn", "1")
+
+    response = client.post("/items/csn/1/retransmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "msg=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT kind FROM beacon_tx_schedule WHERE source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row[0] == "voice"
+
+
+def test_retransmit_action_unknown_item(client, conn):
+    _configure_beacon(conn)
+
+    response = client.post("/items/csn/does-not-exist/retransmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+
+
+def test_retransmit_action_blocked_when_beacon_not_configured(client, conn):
+    _insert_item(conn, "csn", "1")
+
+    response = client.post("/items/csn/1/retransmit", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    row = conn.execute(
+        "SELECT 1 FROM beacon_tx_schedule WHERE source='csn' AND item_id='1'"
+    ).fetchone()
+    assert row is None
+
+
 def test_policies_list_returns_200(client):
-    response = client.get("/policies")
+    response = client.get("/config/policies")
     assert response.status_code == 200
     # a fresh install seeds only informational (see adapters.transmit_policy)
     assert "informational" in response.text
 
 
+def test_legacy_policies_url_redirects_under_config(client):
+    response = client.get("/policies", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/config/policies"
+
+
 def test_policy_create_redirects_and_persists(client, conn):
     response = client.post(
-        "/policies",
+        "/config/policies",
         data={
             "name": "critical",
             "repeat_times": "10",
@@ -160,7 +251,7 @@ def test_policy_create_redirects_and_persists(client, conn):
     )
 
     assert response.status_code == 303
-    assert response.headers["location"].startswith("/policies")
+    assert response.headers["location"].startswith("/config/policies")
     row = conn.execute(
         "SELECT repeat_times, interval_seconds FROM transmit_policies WHERE name='critical'"
     ).fetchone()
@@ -170,21 +261,21 @@ def test_policy_create_redirects_and_persists(client, conn):
 def test_policy_edit_page_returns_200_for_known_policy(client, conn):
     set_policy(conn, "custom", 2, 15, "desc")
 
-    response = client.get("/policies/custom/edit")
+    response = client.get("/config/policies/custom/edit")
 
     assert response.status_code == 200
     assert "custom" in response.text
 
 
 def test_policy_edit_page_returns_404_for_unknown_policy(client):
-    response = client.get("/policies/does-not-exist/edit")
+    response = client.get("/config/policies/does-not-exist/edit")
     assert response.status_code == 404
 
 
 def test_policy_delete_redirects(client, conn):
     set_policy(conn, "temp", 1, 0)
 
-    response = client.post("/policies/temp/delete", follow_redirects=False)
+    response = client.post("/config/policies/temp/delete", follow_redirects=False)
 
     assert response.status_code == 303
     row = conn.execute("SELECT 1 FROM transmit_policies WHERE name='temp'").fetchone()

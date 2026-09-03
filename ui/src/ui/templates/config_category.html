@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ category }}{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+<div class="page-header"><h1>{{ category }}</h1></div>
+
+<p class="banner-warn">
+  ⚠ Changes take effect immediately for Actions (config is re-read per message)
+  and on next process restart for Dispatcher, MQ, and Beacon infra (config is
+  read once at process start). Rows marked "advanced" are internal wiring —
+  most installs never touch these. This dashboard has no login — anyone with
+  network access to it can change live pipeline behavior and provider credentials.
+</p>
+
+{% for group in groups %}
+<div class="page-header">
+  <h3>{{ group.name }}</h3>
+  <a class="btn secondary" href="/config/{{ group.slug }}">Edit</a>
+</div>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Value</th><th>Source</th></tr></thead>
+  <tbody>
+    {% for entry in group.rows %}
+    <tr>
+      <td class="mono">{{ entry.spec.key }}</td>
+      <td class="wrap">
+        {% if entry.spec.is_secret %}
+          {% if entry.row %}<span class="mono">{{ sentinel }}</span>{% else %}<span class="muted">(not set)</span>{% endif %}
+        {% elif entry.effective %}
+          {% if entry.row %}{{ entry.effective }}{% else %}<span class="muted">{{ entry.effective }}</span>{% endif %}
+        {% else %}
+          <span class="muted">(not set)</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if entry.row %}
+          <span class="badge badge-success">overridden in DB</span>
+        {% else %}
+          <span class="badge badge-neutral">env / default</span>
+        {% endif %}
+        {% if entry.spec.wiring %}<span class="badge badge-warn">wiring</span>{% elif entry.advanced %}<span class="badge badge-neutral">advanced</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endfor %}
+{% endblock %}

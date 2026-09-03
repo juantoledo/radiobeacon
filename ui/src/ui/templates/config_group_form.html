@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{{ group }}{% endblock %}
 {% block content %}
-<a class="crumb" href="/config">&larr; Back to config</a>
+{% include "_config_nav.html" %}
+{% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; Back to {{ group.split(' — ')[0] }}</a>{% endif %}
 <div class="page-header"><h1>{{ group }}</h1></div>
 
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
@@ -9,11 +10,11 @@
 <form method="post" action="/config/{{ slug }}" id="config-form">
   <table class="form-table">
     {% for f in fields %}
-    <tr class="{{ 'advanced-row' if f.spec.advanced else '' }}">
+    <tr class="{{ 'wiring-row' if f.spec.wiring else '' }}">
       <th>
         <label for="{{ f.spec.key }}">{{ f.spec.label }}{% if f.spec.required %} *{% endif %}</label>
         <div class="mono muted" style="font-weight:400; font-size:0.78rem;">{{ f.spec.key }}</div>
-        {% if f.spec.advanced %}<span class="badge badge-warn">wiring</span>{% endif %}
+        {% if f.spec.wiring %}<span class="badge badge-warn">wiring</span>{% endif %}
       </th>
       <td>
         {% if f.spec.type == "secret" %}
@@ -37,7 +38,7 @@
         {% else %}
           <input id="{{ f.spec.key }}" name="{{ f.spec.key }}" type="text"
                  value="{{ f.value }}" data-original="{{ f.value }}"
-                 {% if f.spec.advanced %}data-advanced{% endif %}
+                 {% if f.spec.wiring %}data-wiring{% endif %}
                  {% if f.spec.required %}required{% endif %}>
         {% endif %}
         <div class="meta-line">{{ f.spec.description }}</div>
@@ -60,13 +61,13 @@
 
 {% block scripts %}
 <script>
-  // Advanced (wiring) fields change pub/sub topology — confirm only when
-  // one of them actually changed, so routine edits to a non-wiring field
-  // in the same group aren't interrupted.
+  // Wiring fields change pub/sub topology — confirm only when one of them
+  // actually changed, so routine edits to a non-wiring field in the same
+  // group aren't interrupted.
   document.getElementById("config-form").addEventListener("submit", function (event) {
-    var advanced = document.querySelectorAll("[data-advanced], .advanced-row select");
+    var wiring = document.querySelectorAll("[data-wiring], .wiring-row select");
     var changed = false;
-    advanced.forEach(function (el) {
+    wiring.forEach(function (el) {
       if (el.value !== el.dataset.original) changed = true;
     });
     if (changed && !confirm("This changes MQTT topic/event wiring — a mistake here can silently break a pipeline. Save anyway?")) {

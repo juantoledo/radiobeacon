@@ -69,7 +69,7 @@
 <h2>Audit trail</h2>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Event</th><th>Actor</th><th class="wrap">Details</th><th>Recorded</th></tr></thead>
+  <thead><tr><th>Event</th><th>Actor</th><th class="wrap">Details</th><th>Recorded</th><th>Actions</th></tr></thead>
   <tbody>
     {% for event in audit_events %}
     <tr>
@@ -77,9 +77,23 @@
       <td class="muted">{{ event.actor }}</td>
       <td class="wrap mono">{{ event.details or "" }}</td>
       <td class="muted">{{ event.recorded_at | display_dt }}</td>
+      <td class="actions-cell">
+        {% if event.event_type in replayable_event_types %}
+        <form method="post" action="/items/{{ item.source }}/{{ item.item_id }}/replay">
+          <input type="hidden" name="event_type" value="{{ event.event_type }}">
+          <input type="hidden" name="consumer" value="{{ default_consumer }}">
+          <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Replay</button>
+        </form>
+        {% endif %}
+        {% if event.event_type.startswith('beacon.voice.') or event.event_type.startswith('beacon.frame.') or event.event_type == 'beacon.tx.retired' %}
+        <form method="post" action="/items/{{ item.source }}/{{ item.item_id }}/retransmit">
+          <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Re-transmit</button>
+        </form>
+        {% endif %}
+      </td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="4">No audit events for this item.</td></tr>
+    <tr class="empty-row"><td colspan="5">No audit events for this item.</td></tr>
     {% endfor %}
   </tbody>
 </table>

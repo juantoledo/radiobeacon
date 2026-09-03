@@ -45,6 +45,15 @@ see beacon/README.md) is re-read every tick; scheduling rows from MQTT
 happens unconditionally regardless of it — only the transmit step checks
 it.
 
+BEACON_WATERMARK_ENABLED adds a second, independent transmit path: a
+periodic message on its own BEACON_WATERMARK_INTERVAL_SECONDS timer,
+checked once per tick alongside the NTP/reconcile checks below, bypassing
+beacon_tx_schedule entirely (see _transmit_watermark). It has no item
+behind it, so its BEACON_WATERMARK_VOICE_TEMPLATE/BEACON_WATERMARK_FRAME_TEMPLATE
+placeholders are the beacon's own per-tick ctx attributes (callsign, date,
+destination, ...) rather than item fields — see _watermark_fields. Also
+gated by BEACON_ENABLED, same as regular content.
+
 The loop's wait between ticks is a wake_event.wait(timeout=tick_seconds),
 not a plain sleep -- _handle_content_ready_event sets wake_event right
 after scheduling rows (both the live MQTT path and
@@ -69,6 +78,10 @@ from adapters.beacon_defaults import (  # noqa: E402
     BEACON_VOICE_PREFIX_DEFAULT,
     BEACON_VOICE_SUFFIX_DEFAULT,
     BEACON_VOICE_TEMPLATE_DEFAULT,
+    BEACON_WATERMARK_ENABLED_DEFAULT,
+    BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT,
+    BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT,
+    BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT,
 )
 from adapters.storage import (  # noqa: E402
     DEFAULT_DB_PATH,
@@ -469,6 +482,107 @@ def _transmit_frame_unit(conn, row: dict, ctx: dict) -> bool:
     return sent
 
 
+# callsign is always passed to format_voice/format_frame as its own named
+# parameter below -- excluded here so it doesn't collide as a duplicate
+# keyword argument; still available to templates via that named parameter.
+_WATERMARK_FIELDS_EXCLUDE = {"callsign"}
+
+
+def _watermark_fields(ctx: dict) -> dict[str, str]:
+    """Beacon's own per-tick ctx, flattened to str values -- the "all
+    beacon attributes" available as BEACON_WATERMARK_VOICE_TEMPLATE/
+    BEACON_WATERMARK_FRAME_TEMPLATE placeholders. A watermark has no item
+    behind it, so unlike voice/frame content it can't offer
+    content.resolve_item_fields()'s {type}/{subtype}/{url}/... -- this is
+    the beacon-level equivalent. wav_transmitter (not a str/int/float) is
+    excluded by the isinstance filter, same as any other non-placeholder
+    value a future ctx entry might add."""
+    return {
+        k: str(v) for k, v in ctx.items()
+        if isinstance(v, (str, int, float)) and k not in _WATERMARK_FIELDS_EXCLUDE
+    }
+
+
+def _transmit_watermark(conn, beacon_type: str, ctx: dict, now_dt: datetime) -> bool:
+    """Renders and transmits the periodic watermark message for whichever
+    beacon type is currently active. Independent of beacon_tx_schedule --
+    no row, no transmit_policy repeat/interval budget, just the caller's
+    own BEACON_WATERMARK_INTERVAL_SECONDS timer. Returns whether it was
+    actually sent."""
+    callsign = ctx["callsign"]
+    if not callsign:
+        logger.warning("beacon: BEACON_CALLSIGN not configured, skipping watermark transmission")
+        record_audit_event(conn, event_type="beacon.watermark.skipped_no_callsign", actor="beacon")
+        return False
+
+    date_str = to_display_tz(now_dt, conn=conn).strftime(ctx["date_format"])
+    watermark_fields = _watermark_fields(ctx)
+    wav_path = Path(ctx["wav_dir"]) / f"watermark-{int(time.time())}.wav"
+
+    if beacon_type == "voice":
+        formatted = formatters.format_voice(
+            "", callsign=callsign, template=ctx["watermark_voice_template"],
+            max_chars=0,  # text is always "" here -- the template is the whole message
+            prefix="", suffix="", date=date_str, **watermark_fields,
+        )
+        if not formatted.text.strip():
+            logger.info("beacon: watermark voice template rendered empty, skipping")
+            return False
+        if not voice.synthesize_speech(
+            formatted.text, out_path=wav_path, voice=ctx["tts_voice"],
+            engine=ctx["tts_engine"], piper_model=ctx["tts_piper_model"], piper_binary=ctx["tts_piper_binary"],
+        ):
+            record_audit_event(
+                conn, event_type="beacon.watermark.transmit_failed", actor="beacon",
+                details={"reason": "tts_failed"},
+            )
+            return False
+    elif beacon_type == "frame":
+        # destination is also an explicit named parameter here (unlike
+        # format_voice, which has no destination at all) -- drop it from
+        # the overflow kwargs to avoid the same duplicate-keyword collision.
+        frame_watermark_fields = {k: v for k, v in watermark_fields.items() if k != "destination"}
+        try:
+            formatted_frame = formatters.format_frame(
+                "", callsign=callsign, destination=ctx["destination"],
+                prefix=ctx["watermark_frame_template"], suffix="", date=date_str, **frame_watermark_fields,
+            )
+        except formatters.FrameTooLongError as exc:
+            logger.error("beacon: watermark frame too long, dropping: %s", exc)
+            record_audit_event(
+                conn, event_type="beacon.watermark.dropped_too_long", actor="beacon",
+                details={"error": str(exc)},
+            )
+            return False
+        if not formatted_frame.content.strip():
+            logger.info("beacon: watermark frame template rendered empty, skipping")
+            return False
+        if not frame_audio.synthesize_frame_wav(
+            formatted_frame.tnc2, out_path=wav_path,
+            gen_packets_binary=ctx["gen_packets_binary"], lead_silence_ms=ctx["frame_lead_silence_ms"],
+        ):
+            record_audit_event(
+                conn, event_type="beacon.watermark.transmit_failed", actor="beacon",
+                details={"reason": "gen_packets_failed"},
+            )
+            return False
+    else:
+        return False
+
+    try:
+        sent = ctx["wav_transmitter"].transmit(wav_path=wav_path, label="watermark")
+    except Exception:
+        logger.error("beacon: wav transmitter raised", exc_info=True)
+        sent = False
+
+    if sent:
+        record_audit_event(conn, event_type="beacon.watermark.transmitted", actor="beacon")
+        set_beacon_status(conn, "last_watermark_transmit_at", utc_now().isoformat())
+    else:
+        record_audit_event(conn, event_type="beacon.watermark.transmit_failed", actor="beacon")
+    return sent
+
+
 # kind -> (conn, row, ctx) -> bool
 KIND_TRANSMITTERS = {
     "voice": _transmit_voice_unit,
@@ -545,6 +659,7 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
 
         last_ntp_check_at = 0.0
         last_reconcile_at = 0.0
+        last_watermark_at = 0.0
 
         logger.info("beacon: transmit loop starting (type=%s)", last_beacon_type)
 
@@ -568,6 +683,14 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
             )
             inter_tx_delay = float(get_setting("BEACON_INTER_TX_DELAY_SECONDS", "2", conn=conn))
+            watermark_enabled = get_setting(
+                "BEACON_WATERMARK_ENABLED", BEACON_WATERMARK_ENABLED_DEFAULT, conn=conn
+            ).lower() == "true"
+            watermark_interval = int(
+                get_setting(
+                    "BEACON_WATERMARK_INTERVAL_SECONDS", BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT, conn=conn
+                )
+            )
             ctx = {
                 "callsign": get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False),
                 "voice_template": get_setting("BEACON_VOICE_TEMPLATE", BEACON_VOICE_TEMPLATE_DEFAULT, conn=conn),
@@ -587,6 +710,12 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 "tts_piper_binary": get_setting("BEACON_TTS_PIPER_BINARY", "piper", conn=conn),
                 "gen_packets_binary": get_setting("BEACON_GEN_PACKETS_BINARY", "gen_packets", conn=conn),
                 "frame_lead_silence_ms": int(get_setting("BEACON_FRAME_LEAD_SILENCE_MS", "250", conn=conn)),
+                "watermark_voice_template": get_setting(
+                    "BEACON_WATERMARK_VOICE_TEMPLATE", BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT, conn=conn
+                ),
+                "watermark_frame_template": get_setting(
+                    "BEACON_WATERMARK_FRAME_TEMPLATE", BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT, conn=conn
+                ),
                 "wav_transmitter": _build_wav_transmitter(conn),
             }
 
@@ -599,6 +728,10 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 if reconciled:
                     logger.warning("beacon: reconciled %d missed item.content_ready publish(es)", reconciled)
                 last_reconcile_at = now
+
+            if enabled and watermark_enabled and now - last_watermark_at >= watermark_interval:
+                _transmit_watermark(conn, beacon_type, ctx, now_dt)
+                last_watermark_at = now
 
             _write_heartbeat(conn, beacon_type)
 

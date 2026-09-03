@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Policies{% endblock %}
 {% block content %}
-<div class="page-header"><h1>Dispatch policies</h1><a class="btn" href="/policies/new">+ New policy</a></div>
+{% include "_config_nav.html" %}
+<div class="page-header"><h1>Dispatch policies</h1><a class="btn" href="/config/policies/new">+ New policy</a></div>
 
 <div class="table-wrap">
 <table>
@@ -14,8 +15,8 @@
       <td>{{ interval_seconds }}</td>
       <td class="wrap muted">{{ description or "" }}</td>
       <td class="actions-cell">
-        <a class="btn secondary" href="/policies/{{ name }}/edit">Edit</a>
-        <form method="post" action="/policies/{{ name }}/delete">
+        <a class="btn secondary" href="/config/policies/{{ name }}/edit">Edit</a>
+        <form method="post" action="/config/policies/{{ name }}/delete">
           <button type="submit" class="danger">Delete</button>
         </form>
       </td>

@@ -2,7 +2,8 @@ import math
 import sqlite3
 from urllib.parse import urlencode
 
-from adapters.storage import get_setting
+from adapters.storage import get_setting, schedule_retransmit
+from dispatcher.mq_publisher import PUBLISHED_EVENT_TYPES
 from dispatcher.override import override_item, rearm_item
 from adapters.transmit_policy import list_policies
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -96,6 +97,7 @@ def item_detail_page(
             "audit_events": queries.list_audit_log_for_item(conn, source, item_id),
             "policies": list_policies(conn),
             "default_consumer": default_consumer,
+            "replayable_event_types": PUBLISHED_EVENT_TYPES,
         },
     )
 
@@ -139,4 +141,58 @@ def rearm_item_action(
     )
     return RedirectResponse(
         url=f"/items/{source}/{item_id}?{urlencode({'msg': msg})}", status_code=303
+    )
+
+
+@router.post("/items/{source}/{item_id}/replay")
+def replay_audit_event_action(
+    source: str,
+    item_id: str,
+    event_type: str = Form(...),
+    consumer: str = Form(...),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    if not is_beacon_configured(conn):
+        error = "beacon identity not configured — set it up before replaying"
+        return RedirectResponse(
+            url=f"/items/{source}/{item_id}?{urlencode({'error': error})}", status_code=303
+        )
+    if event_type not in PUBLISHED_EVENT_TYPES:
+        error = f"'{event_type}' isn't replayable — nothing downstream reacts to it"
+        return RedirectResponse(
+            url=f"/items/{source}/{item_id}?{urlencode({'error': error})}", status_code=303
+        )
+    rearmed = rearm_item(conn, consumer, source, item_id)
+    key = "msg" if rearmed else "error"
+    msg = (
+        f"replayed {event_type} — re-armed for consumer={consumer}"
+        if rearmed
+        else "not re-armed — item doesn't exist or is already in-flight"
+    )
+    return RedirectResponse(
+        url=f"/items/{source}/{item_id}?{urlencode({key: msg})}", status_code=303
+    )
+
+
+@router.post("/items/{source}/{item_id}/retransmit")
+def retransmit_item_action(
+    source: str,
+    item_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    if not is_beacon_configured(conn):
+        error = "beacon identity not configured — set it up before retransmitting"
+        return RedirectResponse(
+            url=f"/items/{source}/{item_id}?{urlencode({'error': error})}", status_code=303
+        )
+    result = schedule_retransmit(conn, source, item_id)
+    if result["scheduled"] == 0:
+        key, msg = "error", "not retransmitted — item not found"
+    else:
+        key, msg = "msg", (
+            f"retransmit scheduled ({result['kind']}, {result['scheduled']} unit(s)) "
+            "— beacon will send it on its next tick"
+        )
+    return RedirectResponse(
+        url=f"/items/{source}/{item_id}?{urlencode({key: msg})}", status_code=303
     )

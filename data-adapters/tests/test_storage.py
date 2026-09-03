@@ -23,6 +23,7 @@ from adapters.storage import (
     list_sources,
     mark_item_ready_published,
     record_audit_event,
+    schedule_retransmit,
     set_adapter_instance,
     set_beacon_status,
     set_setting,
@@ -589,6 +590,69 @@ def test_delete_tx_schedule_other_kinds_keeps_only_the_named_kind(tmp_path):
     assert removed == 1
     assert count_tx_schedule_by_kind(conn) == {"frame": 2}
     assert delete_tx_schedule_other_kinds(conn, "frame") == 0
+
+
+def test_schedule_retransmit_voice_mode_schedules_one_row(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    store_reading(conn, _make_reading())
+
+    result = schedule_retransmit(conn, "fake_source", "1")
+
+    assert result == {"kind": "voice", "scheduled": 1}
+    rows = conn.execute(
+        "SELECT kind, ref FROM beacon_tx_schedule WHERE source='fake_source' AND item_id='1'"
+    ).fetchall()
+    assert rows == [("voice", "")]
+
+
+def test_schedule_retransmit_frame_mode_schedules_one_row_per_chunk(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    store_reading(conn, _make_reading())
+    set_setting(conn, "BEACON_TYPE", "frame")
+    store_chunks(
+        conn,
+        [
+            {"source": "fake_source", "item_id": "1", "chunk_index": i, "chunk_count": 3, "text": f"chunk {i}"}
+            for i in range(3)
+        ],
+    )
+
+    result = schedule_retransmit(conn, "fake_source", "1")
+
+    assert result == {"kind": "frame", "scheduled": 3}
+    refs = {
+        row[0]
+        for row in conn.execute(
+            "SELECT ref FROM beacon_tx_schedule WHERE source='fake_source' AND item_id='1' AND kind='frame'"
+        )
+    }
+    assert refs == {"0", "1", "2"}
+
+
+def test_schedule_retransmit_unknown_item_schedules_nothing(tmp_path):
+    from adapters.storage import count_tx_schedule_by_kind
+
+    conn = get_connection(tmp_path / "radiobeacon.db")
+
+    result = schedule_retransmit(conn, "fake_source", "does-not-exist")
+
+    assert result == {"kind": None, "scheduled": 0}
+    assert count_tx_schedule_by_kind(conn) == {}
+
+
+def test_schedule_retransmit_records_audit_event(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    store_reading(conn, _make_reading())
+
+    schedule_retransmit(conn, "fake_source", "1")
+
+    row = conn.execute(
+        "SELECT actor, details FROM audit_log WHERE event_type='beacon.retransmit.enqueued' "
+        "AND source='fake_source' AND item_id='1'"
+    ).fetchone()
+    assert row is not None
+    assert row[0] == "ui.retransmit"
+    assert json.loads(row[1]) == {"beacon_type": "voice", "scheduled": 1}
 
 
 def test_migrate_adapter_instances_config_renames_rule_key_and_custom_code(tmp_path):
@@ -1316,10 +1380,14 @@ def test_get_connection_seeds_csn_api_and_senapred_custom_instances(tmp_path):
 
     assert senapred["adapter_type"] == "custom"
     senapred_config = json.loads(senapred["config"])
-    # CUSTOM fetch config is only the code, plus the opt-in action-layer key
-    # seeded true for emergency alerts.
-    assert set(senapred_config.keys()) == {"code", "ai_fallback_to_title"}
+    # CUSTOM fetch config is only the code, plus the opt-in action-layer keys
+    # seeded for emergency alerts: fallback-to-title on AI failure, and a
+    # qualitative-language summarization prompt override (see
+    # _SENAPRED_AI_PROMPT_DEFAULT).
+    assert set(senapred_config.keys()) == {"code", "ai_fallback_to_title", "ai_prompt"}
     assert senapred_config["ai_fallback_to_title"] is True
+    assert "{extracted_contents}" in senapred_config["ai_prompt"]
+    assert "cifra numérica" in senapred_config["ai_prompt"]
     assert "def fetch(config)" in senapred_config["code"]
     # The AWS/Cognito plumbing is baked into the code as literals at seed
     # time (see _build_senapred_code), not read from config at call time.
