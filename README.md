@@ -1,139 +1,220 @@
-# radiobeacon
+# radiobeacon — CD3DXZ-1
 
-Data pipeline (and, as of [beacon/](beacon/README.md), the transmission
-layer) for **CD3DXZ-1**, an experimental VHF (2m) propagation beacon
-project: pulling in raw data (starting with SENAPRED early-warning alerts
-and CSN earthquake reports), storing it, and — for a single operator-chosen
-**beacon type** (`voice` or AX.25 `frame`) — rendering each item to one WAV
-file that SvxLink plays on air when the channel is idle, via the
-`svxlink-txqueue` spool folder
-([documentation/svxlink-txqueue-SETUP.md](documentation/svxlink-txqueue-SETUP.md)).
-Deploying SvxLink and `svxlink-txqueue` themselves is out of scope here.
-Frame audio is rendered with Direwolf's `gen_packets` CLI (`apt install
-direwolf`) — no Direwolf process runs. See [CONTEXT.md](CONTEXT.md) for the
-original system design.
+*Versión en español: [README.es.md](README.es.md).*
 
-## Layout
+**CD3DXZ-1** is an experimental VHF (2 m band) propagation beacon. It is a
+radio station, not just a program: an amateur node — formerly an EchoLink
+gateway — that now transmits automatically, on a fixed frequency, so other
+operators can use its signal to check whether the 2 m path between their
+station and this one is open.
+
+Instead of sending only a plain identifier, the beacon puts *useful
+content* on air: it pulls in public-interest bulletins (civil-protection
+early warnings, earthquake reports), turns each one into a short
+transmission, and plays it out over the repeater/simplex channel when the
+frequency is idle. A listener who copies the beacon gets both a
+propagation check and the bulletin itself.
+
+Everything in this repository is the automation behind that station — the
+data collection, the text preparation, and the on-air hand-off. Setting up
+the transmitter, the sound interface and SvxLink itself is assumed already
+done and is out of scope here.
+
+---
+
+## The station
+
+| | |
+|---|---|
+| **Callsign** | CD3DXZ-1 |
+| **Band** | VHF, 2 m (144–146 MHz) |
+| **Mode** | Operator picks **one**: spoken **voice**, or **AX.25 packet** (1200-baud AFSK) |
+| **Frequency / grid locator** | Set per install (station identity, entered in the dashboard) |
+| **Transmitter control** | [SvxLink](https://www.svxlink.org/) — keys the radio, plays each clip only when the channel is clear |
+| **Duty** | Disabled by default; the operator enables transmission explicitly |
+| **Identification** | Callsign spoken/sent with every bulletin; a separate continuous CW ID (required by Chilean regulation) is noted as still to be added |
+
+The beacon transmits **one content type at a time**. Switching between
+voice and packet is a settings change, not a rebuild — the pending
+transmit queue for the other type is cleared automatically.
+
+### Voice
+
+Each bulletin is spoken in Spanish by an offline text-to-speech engine
+(Piper, neural; `espeak-ng` as a fallback). The spoken text is wrapped in
+a fixed bulletin envelope — source name, date, and a closing line that
+points listeners to official sources — so even a truncated bulletin is
+still framed as an informational announcement and not mistaken for an
+official channel.
+
+### AX.25 packet
+
+Each bulletin is sent as an AX.25 UI frame at 1200-baud AFSK, rendered to
+audio with Direwolf's `gen_packets` tool (no live TNC, no network
+connection). The frame uses an APRS-compatible message layout
+(`CALLSIGN>DEST:text`) **but is not transmitted on the APRS calling
+frequency** — it runs on a coordinated experimental frequency so it never
+appears on the public APRS network. Long bulletins are split into several
+frames; the frame length is held under the ~256-byte AX.25 limit
+automatically.
+
+---
+
+## What goes on air
+
+Content comes from configurable **sources**. Each source is polled on its
+own interval, new items are stored, optionally shortened, and then queued
+for transmission.
+
+- **SENAPRED early warnings** — Chile's civil-protection early-warning
+  alerts (weather, hydrological, geophysical events).
+- **CSN earthquake reports** — seismic events published by the Centro
+  Sismológico Nacional.
+- **Any HTTP/JSON feed** — additional sources (weather APIs, local sensor
+  readouts, etc.) are added from the dashboard by describing the endpoint
+  and how to map its fields; no code change.
+
+Every alert-type transmission is explicitly marked as an **experimental,
+unofficial relay** and refers listeners to SENAPRED as the authoritative
+source.
+
+### From item to transmission
 
 ```
-data-adapters/  fetches raw data from external sources, stores it in SQLite
-dispatcher/     watches for new items and delivers them to handlers, run separately
-mq/             optional local MQTT broker (Docker), dispatcher can publish CloudEvents here
-actions/        optional MQTT-subscribed pipeline of N configurable actions (e.g. chunking)
-ui/             server-rendered ops dashboard (FastAPI) — browse/override items, manage
-                transmit policies, view the audit log; dockerizable, localhost-only by default
-beacon/         transmission layer — renders content for the chosen BEACON_TYPE (voice
-                or AX.25 frame) to a WAV, hands it to SvxLink; disabled by default
-storage/        the shared SQLite database (radiobeacon.db) all packages read/write
-query_history.sh   ad hoc SQL queries against radiobeacon.db from the CLI
-start.sh        one-command fresh-clone setup — see Quick start below
-stop.sh         stops running services (all, one, or --status) — see Quick start below
-lib.sh          shared .env/.venv helpers sourced by this start.sh and every package's own start.sh
+sources  →  stored item  →  (optional) AI summary, 2–3 sentences  →  sized for the chosen mode
+                                                                      │
+                                                          queued: N transmissions,
+                                                          M seconds apart
+                                                                      │
+                                                      rendered to a WAV, one at a time
+                                                                      │
+                                            handed to SvxLink → played when the channel is idle
 ```
 
-Each package folder has its own README with setup and usage details:
-[data-adapters/README.md](data-adapters/README.md),
-[dispatcher/README.md](dispatcher/README.md),
-[mq/README.md](mq/README.md),
-[actions/README.md](actions/README.md),
-[ui/README.md](ui/README.md),
-[beacon/README.md](beacon/README.md),
-[storage/README.md](storage/README.md).
+### The role of AI
 
-### Architecture
+AI does one narrow job here, and it is **off by default**: condensing a
+bulletin so it fits an on-air transmission. A source item is often a full
+web notice — too long to speak in a reasonable window or to fit in a
+packet frame. When enabled, each new item is sent to a language model with
+a fixed, operator-editable prompt (Spanish, "summarise this notice in 2–3
+clear, complete sentences, invent nothing, leave no sentence unfinished").
+The result is stored as the item's `summary` and is what the voice and
+packet stages then use; the original text is kept untouched.
 
-`data-adapters` and `dispatcher` are intentionally decoupled — data-adapters only
-fetch and store raw data, dispatcher only watches for and delivers new
-rows. Neither imports the other; they're wired together only by both
-pointing at the same `storage/radiobeacon.db`. See [CONTEXT.md](CONTEXT.md)
-for the broader layered design (adapters → aggregator → formatters → TX
-layer) this project is working toward.
+- **Provider-agnostic** — OpenAI, Claude, or a self-hosted Ollama model,
+  chosen by config. This is the only step that makes an outbound call to
+  an external service; with Ollama it stays fully local.
+- **Only when it helps** — items already short enough are passed straight
+  through, never sent to a provider.
+- **No silent rewriting on failure** — if the model call fails the item is
+  *not* transmitted, rather than going on air with unreviewed or partial
+  text. A source can instead opt to fall back to its plain title
+  (SENAPRED does).
+- **Not a filter or a decision-maker** — it never chooses what to transmit,
+  changes a transmit policy, or edits station identity. It only shortens
+  text that a human-defined source already selected.
 
-```
-data-adapters (fetch)  →  storage/radiobeacon.db  ←  ui/ (browse + override, HTTP on localhost)
-                              ↑
-                     dispatcher (watch + deliver, run separately)
-                              ┊ (optional)
-                     mq/ (Mosquitto, CloudEvents)
-                              ┊ (optional)
-                     actions/ (chained MQTT-subscribed pipeline)
-                              ┊ item.content_ready
-                     beacon/ (renders the chosen BEACON_TYPE to one WAV per item)
-                              ┊ WAV dropped into the svxlink-txqueue spool
-                     SvxLink (plays each WAV on air when the channel is idle)
-```
+The model output is not length-capped after the fact — the prompt asks for
+a complete short summary — so a badly-behaved model can still be caught by
+the per-mode length limits downstream.
 
-## Quick start
+### Repeat behaviour
+
+Each item is put on air a set number of times, a set interval apart —
+these two numbers are a named **transmit policy**. Policies are edited
+from the dashboard; an operator can override the policy on a single item,
+or re-arm an item that has already finished its repeats. Every attempt
+counts toward the repeat total, so a bulletin does not transmit forever if
+the link is failing. The queue is stored on disk and survives a restart.
+
+---
+
+## Operating it
+
+The dashboard (local web page, `http://127.0.0.1:8080`) is the operator
+console:
+
+- current beacon status — enabled/disabled, active mode, pending
+  transmissions, last heartbeat, measured NTP clock offset;
+- recent items and the on-air audit trail (what was transmitted, when, and
+  the result);
+- enable/disable transmission and switch mode without a restart;
+- browse/search items, override a transmit policy, re-arm an item;
+- manage sources and transmit policies.
+
+Time is disciplined by the operating system's own NTP client. The beacon
+additionally measures its clock offset against a public NTP server purely
+to display it — it never adjusts the clock itself.
+
+---
+
+## Running the automation
 
 ```bash
-./start.sh   # fresh clone: creates .env, sets up every .venv, starts
-             # mq + data-adapters + dispatcher + actions + ui + beacon
-             # together (Ctrl+C stops all of them). No secrets required
-             # — every .env.example default is safe to run as-is, and
-             # beacon starts disabled (BEACON_ENABLED=false).
-./query_history.sh --help   # explore what's in radiobeacon.db
+./start.sh   # fresh clone: creates .env, sets up each component's venv,
+             # and starts data collection + delivery + actions + the
+             # dashboard + the beacon together (Ctrl+C stops all).
+             # No secrets required; every default is safe to run as-is,
+             # and the beacon starts disabled (BEACON_ENABLED=false).
+
+./query_history.sh --help   # ad-hoc SQL against the local database
+./stop.sh --status          # what's running, and its pid
 ```
 
-Once running, visit `http://127.0.0.1:8080` for the [ui/](ui/README.md)
-dashboard.
+Once running, open `http://127.0.0.1:8080`.
 
-To run just one piece instead of everything, use that package's own
-`start.sh` directly (`./data-adapters/start.sh`, `./dispatcher/start.sh`,
-`./mq/start.sh`, `./actions/start.sh`, `./ui/start.sh`, `./beacon/start.sh`)
-— each is self-contained (creates its own `.venv` on first run) and
-independent of the others. Each also refuses to start if it's already
-running (tracked via a PID file under `run/`), so re-running one by
-mistake errors instead of silently launching an untracked duplicate.
+Each component can also be run on its own (`./data-adapters/start.sh`,
+`./dispatcher/start.sh`, `./mq/start.sh`, `./actions/start.sh`,
+`./ui/start.sh`, `./beacon/start.sh`) — each is self-contained and refuses
+to start twice.
 
-To stop things, use `./stop.sh` — it finds services by PID file, so it
-works regardless of how they were started (`./start.sh`, an
-individual `start.sh`, or a shell that's since closed):
+### How it's built
 
-```bash
-./stop.sh                  # stop every service + mq
-./stop.sh beacon actions   # stop only the named service(s)
-./stop.sh --status         # show what's currently running, and its pid
+Seven decoupled components, wired together only by a shared SQLite
+database (`storage/radiobeacon.db`) and, optionally, a local MQTT broker.
+Each has its own README with the details.
+
 ```
+data-adapters/  polls external sources, stores raw items          → data-adapters/README.md
+dispatcher/     watches for new items, delivers them to handlers   → dispatcher/README.md
+mq/             optional local MQTT broker (Docker)                → mq/README.md
+actions/        optional MQTT pipeline (AI summary, chunking, …)   → actions/README.md
+ui/             the operator dashboard (FastAPI, server-rendered)  → ui/README.md
+beacon/         the transmission layer — renders + hands to SvxLink → beacon/README.md
+storage/        the shared SQLite database                         → storage/README.md
+```
+
+`beacon/` renders each queued item to a single WAV and drops it into the
+`svxlink-txqueue` spool folder; SvxLink plays it on the next idle channel.
+Deploying SvxLink and `svxlink-txqueue` is out of scope — see
+[documentation/svxlink-txqueue-SETUP.md](documentation/svxlink-txqueue-SETUP.md).
+[CONTEXT.md](CONTEXT.md) records the original station design (the
+interleaved voice/packet TDMA scheme that `beacon/` later replaced with
+the simpler one-type-at-a-time model).
+
+---
 
 ## Configuration
 
-All configuration is via a single `.env` file at the repo root (copy
-`.env.example` to `.env` and fill in real values — `.env` is gitignored).
-Naming convention: vars specific to one package/adapter are prefixed with
-its path (`ADAPTERS_SENAPRED_*`); generic vars read directly by a
-third-party SDK under its own standard name are unprefixed.
+All configuration is a single `.env` file at the repo root (copy
+`.env.example` to `.env`). Most settings are also editable live from the
+dashboard's `/config` page. Variables specific to one component or source
+are prefixed with its path (`ADAPTERS_SENAPRED_*`, `BEACON_*`); variables
+read directly by a third-party SDK keep that SDK's own name.
 
-## Dates and times: always UTC
+The **station identity** (callsign, description, grid locator, frequency,
+operator contact) is entered only in the dashboard and never read from the
+environment — a stray `BEACON_CALLSIGN` in the shell can't put a wrong
+callsign on air. The beacon refuses to transmit until every identity field
+is filled in.
 
-Every datetime that enters this repo — from an adapter's source, computed
-internally, or read back out of storage — is UTC, always timezone-aware,
-no exceptions. This applies uniformly across data-adapters, dispatcher,
-and actions.
+## Time is always UTC
 
-- Never call `datetime.now()` or `datetime.utcnow()` directly. Use
-  `adapters.timeutil.utc_now()`.
-- Never store or pass along a naive datetime from an external source
-  without converting it first via `adapters.timeutil.to_utc()`, which
-  requires you to state the source's timezone explicitly if it's naive
-  — an unlabeled naive datetime silently treated as UTC is exactly the
-  bug class this rule exists to prevent (senapred/csn's `fetched_at`
-  originally used bare `datetime.now()`, which silently encoded the
-  host's local timezone).
-- `items.captured_at` and `audit_log.recorded_at` are populated by
-  SQLite's own `datetime('now')`, which is correct in *value* (UTC) but
-  uses SQLite's native string format (no offset marker) rather than
-  Python's offset-suffixed ISO 8601. A deliberate, known format
-  difference, not a bug — don't string-compare these columns against
-  Python-generated ISO strings without normalizing first.
-- One documented, permanent exception: CSN's `id`/`event_key` are
-  derived from the *raw, unconverted* source timestamp string
-  (`adapters.csn.CsnEarthquake.fecha`), not the UTC-converted
-  `source_date_time` — intentional, to keep historical `items.item_id`
-  values stable. Do not "fix" this to use the converted value; see the
-  docstring on `CsnEarthquake.source_date_time`.
-- Displaying a UTC datetime to a person (a future UI, a human-readable
-  log/notification line) is the one legitimate reason to convert away
-  from UTC — use `adapters.timeutil.to_display_tz()`, which converts to
-  `DISPLAY_TIMEZONE` (env var, default `America/Santiago`; see
-  `.env.example`). Presentation only: never feed its result back into
-  anything stored or compared against other stored datetimes.
+Every datetime handled anywhere in this repo is timezone-aware UTC, with
+no exceptions in storage, transmission scheduling, or internal
+computation. The only place a local zone appears is text shown to a
+person — spoken bulletin dates, the dashboard, human-readable logs — which
+is converted to `DISPLAY_TIMEZONE` (default `America/Santiago`) at the
+last step and never fed back into anything stored. See the code comments
+in `adapters/timeutil.py` for the full rule.
