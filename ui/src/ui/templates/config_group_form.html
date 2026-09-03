@@ -2,7 +2,7 @@
 {% block title %}{{ group }}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-<a class="crumb" href="{{ back_url or '/config' }}">&larr; Back to config</a>
+{% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; Back to {{ group.split(' — ')[0] }}</a>{% endif %}
 <div class="page-header"><h1>{{ group }}</h1></div>
 
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}

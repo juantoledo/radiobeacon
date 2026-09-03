@@ -62,6 +62,11 @@ _ICONS: dict[str, str] = {
         '<polygon points="12 4 20 9 12 14 4 9 12 4"/>'
         '<polyline points="4 13 12 18 20 13"/>'
     ),
+    "zap": ('<polygon points="13 2 4 14 11 14 10 22 20 9 13 9 13 2"/>'),
+    "lock": (
+        '<rect x="4" y="11" width="16" height="10" rx="2"/>'
+        '<path d="M8 11V7a4 4 0 0 1 8 0v4"/>'
+    ),
 }
 
 

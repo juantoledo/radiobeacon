@@ -253,7 +253,7 @@ def test_dashboard_reflects_beacon_enabled_state(client, conn):
 
 
 def test_beacon_group_settings_appear_in_config(client):
-    response = client.get("/config")
+    response = client.get("/config/beacon")
 
     assert "Beacon — Transmission" in response.text
     assert "BEACON_TYPE" in response.text

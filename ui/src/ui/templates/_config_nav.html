@@ -1,23 +1,15 @@
-{# Secondary tab bar for the Config section. `path` decides the active tab;
-   Adapters/Policies match their whole subtree, Advanced is exact, and
-   everything else under /config (the Settings list + every /config/{group}
-   edit form) falls through to Settings. #}
+{# Tab bar for the Config section — one tab per settings category plus
+   Policies (see templating._config_nav_tabs_global). A tab is active
+   whenever the current path names that category's tab page or any group
+   underneath it — every group slug in a category starts with the
+   category's own slug (e.g. "beacon-identity" starts with "beacon"), so a
+   plain prefix check covers both without per-tab special-casing. #}
 {% set path = request.url.path %}
 <nav class="subnav">
-  <a href="/config"
-     class="{{ 'active' if not (path.startswith('/config/adapters') or path.startswith('/config/policies') or path == '/config/advanced') else '' }}">
-    {{ icon('config') }}Settings
+  {% for tab in config_nav_tabs() %}
+  <a href="/config/{{ tab.slug }}"
+     class="{{ 'active' if path.startswith('/config/' + tab.slug) else '' }}">
+    {{ icon(tab.icon) }}{{ tab.name }}
   </a>
-  <a href="/config/advanced"
-     class="{{ 'active' if path == '/config/advanced' else '' }}">
-    {{ icon('activity') }}Advanced
-  </a>
-  <a href="/config/adapters"
-     class="{{ 'active' if path.startswith('/config/adapters') else '' }}">
-    {{ icon('layers') }}Adapters
-  </a>
-  <a href="/config/policies"
-     class="{{ 'active' if path.startswith('/config/policies') else '' }}">
-    {{ icon('policies') }}Policies
-  </a>
+  {% endfor %}
 </nav>

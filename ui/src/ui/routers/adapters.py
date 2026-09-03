@@ -14,6 +14,7 @@ from adapters.storage import (
     get_setting,
     get_source_fields,
     list_adapter_instances,
+    list_settings,
     set_adapter_instance,
     set_source,
 )
@@ -23,6 +24,7 @@ from starlette.datastructures import FormData
 from starlette.responses import RedirectResponse
 
 from .. import queries
+from ..config_catalog import specs_for_group
 from ..db import get_db
 from ..templating import templates
 
@@ -286,6 +288,20 @@ def adapters_legacy_redirect():
     return RedirectResponse(url="/config/adapters", status_code=307)
 
 
+def _general_settings_fields(conn: sqlite3.Connection) -> list[dict]:
+    """The "Adapters — General" catalog group (currently just the default
+    poll interval), shown inline at the top of this page instead of on its
+    own tab — this page is the single Adapters section, covering both that
+    shared setting and every per-source instance below."""
+    overrides = {row["key"]: row for row in list_settings(conn)}
+    fields = []
+    for spec in specs_for_group("adapters-general"):
+        row = overrides.get(spec.key)
+        value = get_setting(spec.key, spec.default, conn=conn, env_fallback=spec.env_fallback) or ""
+        fields.append({"spec": spec, "value": value, "overridden": row is not None})
+    return fields
+
+
 @router.get("/config/adapters")
 def adapters_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     instances = list_adapter_instances(conn)
@@ -298,7 +314,11 @@ def adapters_list_page(request: Request, conn: sqlite3.Connection = Depends(get_
             details = json.loads(event["details"]) if event["details"] else {}
             last_fetch = {"recorded_at": event["recorded_at"], "ok": details.get("ok")}
         rows.append({**row, "last_fetch": last_fetch})
-    return templates.TemplateResponse(request, "adapters_list.html", {"rows": rows})
+    return templates.TemplateResponse(
+        request,
+        "adapters_list.html",
+        {"rows": rows, "general_fields": _general_settings_fields(conn)},
+    )
 
 
 def _default_prompt_placeholder(conn: sqlite3.Connection | None) -> str:

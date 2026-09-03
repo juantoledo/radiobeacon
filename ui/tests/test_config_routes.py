@@ -3,43 +3,57 @@ from adapters.storage import get_setting, list_settings, set_setting
 from ui.routers.config import SECRET_SENTINEL
 
 
-def test_config_list_page_returns_200_and_lists_every_group(client):
-    response = client.get("/config")
+def test_config_root_redirects_to_adapters_tab(client):
+    response = client.get("/config", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "/config/adapters"
+
+
+def test_mq_category_tab_lists_every_group_regardless_of_advanced(client):
+    response = client.get("/config/mq")
 
     assert response.status_code == 200
-    assert "Dispatcher" in response.text
-    assert "Actions — AI" in response.text
-    assert "Secrets" in response.text
-    assert "DISPATCHER_INTERVAL_SECONDS" in response.text
+    assert "MQ — Dispatcher" in response.text
+    assert "MQ — Actions" in response.text
+    assert "DISPATCHER_MQ_HOST" in response.text  # advanced, still shown on its own tab
 
 
-def test_settings_tab_shows_friendly_keys_and_hides_advanced(client):
-    response = client.get("/config")
+def test_actions_category_tab_lists_basic_and_wiring_keys_together(client):
+    response = client.get("/config/actions")
 
     assert response.status_code == 200
-    assert "BEACON_CALLSIGN" in response.text  # basic
     assert "ACTIONS_AI_PROVIDER" in response.text  # basic
-    assert "BEACON_MQ_HOST" not in response.text  # advanced
-    assert "ACTIONS_AI_OUTPUT_TOPIC" not in response.text  # wiring
+    assert "ACTIONS_AI_OUTPUT_TOPIC" in response.text  # wiring, no longer hidden on a separate tab
 
 
-def test_advanced_tab_shows_internal_keys_and_hides_friendly(client):
-    response = client.get("/config/advanced")
+def test_beacon_category_tab_lists_every_beacon_group(client):
+    response = client.get("/config/beacon")
 
     assert response.status_code == 200
-    assert "BEACON_MQ_HOST" in response.text  # advanced
-    assert "ACTIONS_AI_OUTPUT_TOPIC" in response.text  # wiring
-    assert "BEACON_CALLSIGN" not in response.text  # basic
+    assert "Beacon — Identity" in response.text
+    assert "Beacon — MQ" in response.text  # advanced
+    assert "BEACON_MQ_HOST" in response.text
 
 
-def test_config_subnav_links_to_every_tab(client):
-    response = client.get("/config")
+def test_config_nav_links_to_every_tab(client):
+    response = client.get("/config/beacon")
 
-    for href in ("/config", "/config/advanced", "/config/adapters", "/config/policies"):
+    for href in (
+        "/config/adapters",
+        "/config/dispatcher",
+        "/config/mq",
+        "/config/actions",
+        "/config/beacon",
+        "/config/secrets",
+        "/config/display",
+        "/config/ui",
+        "/config/policies",
+    ):
         assert f'href="{href}"' in response.text
 
 
-def test_config_group_edit_page_returns_200_and_prefills_known_values(client):
+def test_single_group_category_tab_is_the_group_edit_form(client):
     response = client.get("/config/dispatcher")
 
     assert response.status_code == 200
@@ -118,6 +132,22 @@ def test_nav_shows_config_link(client):
     assert 'href="/config"' in response.text
 
 
+def test_adapters_tab_shows_general_setting_and_instance_list(client):
+    response = client.get("/config/adapters")
+
+    assert response.status_code == 200
+    assert "ADAPTERS_DEFAULT_INTERVAL_SECONDS" in response.text
+    assert 'href="/config/adapters-general"' in response.text
+    assert 'href="/config/adapters/new"' in response.text
+
+
+def test_adapters_general_group_edit_back_url_points_at_adapters_tab(client):
+    response = client.get("/config/adapters-general")
+
+    assert response.status_code == 200
+    assert 'href="/config/adapters"' in response.text
+
+
 # --- secret masking: the single most important test in this feature ---
 
 
@@ -138,9 +168,9 @@ def test_secret_round_trip_never_leaks_plaintext(client, conn):
     assert real_value not in page.text
     assert SECRET_SENTINEL in page.text
 
-    # The config list page must not leak it either.
-    list_page = client.get("/config")
-    assert real_value not in list_page.text
+    # The MQ category tab (a different config page) must not leak it either.
+    other_page = client.get("/config/mq")
+    assert real_value not in other_page.text
 
     # Re-submitting the sentinel (what the browser would send back
     # unmodified) must NOT overwrite the stored secret.

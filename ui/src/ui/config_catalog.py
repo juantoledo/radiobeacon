@@ -944,6 +944,43 @@ def groups_for_category(category: str) -> list[str]:
     return [g for g in GROUPS if category_for_group(g) == category]
 
 
+_SLUG_TO_CATEGORY: dict[str, str] = {category_slug(c): c for c in CATEGORIES}
+
+
+def category_for_slug(slug: str) -> str | None:
+    """Inverse of category_slug — used by /config/{slug} to decide whether a
+    path segment names a whole category (Settings tab) rather than a single
+    group. Distinct from _SLUG_TO_GROUP: a category with exactly one group
+    happens to share its slug with that group (e.g. "dispatcher"), which is
+    resolved by the caller preferring the group-edit page in that case."""
+    return _SLUG_TO_CATEGORY.get(slug)
+
+
+def is_multi_group_category(category: str) -> bool:
+    """True when a category has more than one settings group and therefore
+    needs its own tab-landing page listing them; a single-group category's
+    tab IS that group's edit form directly (same slug either way)."""
+    return len(groups_for_category(category)) > 1
+
+
+# Explicit tab order for the reorganized /config page — deliberately not
+# CATEGORIES' own first-occurrence-in-SETTINGS_CATALOG order (which would
+# bury Beacon after Secrets/Display/UI); Adapters is still listed here even
+# though its tab is actually owned by ui.routers.adapters (merging this
+# category's one group with the adapter-instance CRUD into a single
+# section), so the nav can treat every tab uniformly.
+NAV_CATEGORY_ORDER: list[str] = [
+    "Adapters",
+    "Dispatcher",
+    "MQ",
+    "Actions",
+    "Beacon",
+    "Secrets",
+    "Display",
+    "UI",
+]
+
+
 def specs_for_group(slug: str) -> list[SettingSpec]:
     group = _SLUG_TO_GROUP.get(slug)
     if group is None:
