@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
   <title>{% block title %}radiobeacon{% endblock %} · radiobeacon</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%234f46e5'/><circle cx='12' cy='7' r='2.2' fill='white'/><path d='M8 12a5 5 0 0 1 8 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round'/><path d='M5 9a9 9 0 0 1 14 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.55'/></svg>">
 </head>
 <body>
@@ -61,7 +61,7 @@
     </main>
   </div>
 
-  <script src="/static/app-shell.js" defer></script>
+  <script src="{{ static_url('app-shell.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -42,6 +42,22 @@ def test_dashboard_includes_auto_refresh_script_when_enabled(client, conn):
     assert 'data-interval-ms="5000"' in response.text
 
 
+def test_dashboard_activity_tabs_are_css_only(client):
+    """Items/Audit switching must not depend on dashboard-refresh.js (which
+    is cache-sensitive and only loaded when auto-refresh is on)."""
+    text = client.get("/").text
+
+    assert 'id="af-items"' in text and 'id="af-audit"' in text
+    assert 'for="af-audit"' in text
+    assert "data-feed-tab" not in text  # old JS-driven markup is gone
+
+
+def test_static_urls_are_cache_busted(client):
+    text = client.get("/").text
+
+    assert "/static/style.css?v=" in text
+
+
 def test_dashboard_live_fragment_is_partial_html(client):
     full = client.get("/").text
     fragment = client.get("/", headers={"X-Auto-Refresh": "1"}).text

@@ -17,8 +17,24 @@ from .config_catalog import NAV_CATEGORY_ORDER, category_slug
 from .icons import render_icon
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+
+def _static_url(path: str) -> str:
+    """`/static/<path>?v=<mtime>` — the query string changes whenever the
+    file does, so a browser can't keep serving a stale style.css / JS after
+    a deploy (the UI has no other cache-busting; StaticFiles sends no
+    max-age). Falls back to an unversioned URL if the file is missing."""
+    try:
+        version = int((STATIC_DIR / path).stat().st_mtime)
+    except OSError:
+        return f"/static/{path}"
+    return f"/static/{path}?v={version}"
+
+
+templates.env.globals["static_url"] = _static_url
 
 
 def _icon_global(name: str, size: int = 16) -> Markup:

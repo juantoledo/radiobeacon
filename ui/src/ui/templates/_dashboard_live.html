@@ -141,16 +141,23 @@
     </div>
   </section>
 
-  <section class="panel">
+  {# Activity feed tabs are CSS-only (radio + :checked ~ sibling) so they
+     work with no JS at all — the auto-refresh script is optional and
+     cache-sensitive, and tab switching must not depend on it. The inputs
+     sit as direct children of .activity-panel so the ~ combinator can
+     reach both the labels (in .panel-head) and the feed lists. #}
+  <section class="panel activity-panel">
+    <input type="radio" name="activity-feed" id="af-items" class="af-radio" checked>
+    <input type="radio" name="activity-feed" id="af-audit" class="af-radio">
     <div class="panel-head">
       <h2>Activity</h2>
       <div class="seg" role="tablist" aria-label="Activity feed">
-        <button type="button" class="active" role="tab" aria-selected="true" data-feed-tab="items">Items</button>
-        <button type="button" role="tab" aria-selected="false" data-feed-tab="audit">Audit</button>
+        <label for="af-items" class="af-tab af-tab--items">Items</label>
+        <label for="af-audit" class="af-tab af-tab--audit">Audit</label>
       </div>
     </div>
 
-    <ul class="feed" data-cell="feed_items" data-feed="items">
+    <ul class="feed feed--items" data-cell="feed_items">
       {% for item in recent_items %}
       <li>
         <a class="feed-main" href="/items/{{ item.source }}/{{ item.item_id }}">
@@ -168,7 +175,7 @@
       {% endfor %}
     </ul>
 
-    <ul class="feed" data-cell="feed_audit" data-feed="audit" hidden>
+    <ul class="feed feed--audit" data-cell="feed_audit">
       {% for event in recent_audit_events %}
       <li>
         <span class="feed-main">

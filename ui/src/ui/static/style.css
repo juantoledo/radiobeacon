@@ -700,15 +700,42 @@ main {
   background: var(--bg-subtle);
   border-radius: var(--radius-sm);
 }
-.seg button {
+.af-tab {
+  display: inline-block;
+  margin: 0;
   padding: 0.3rem 0.7rem;
-  background: transparent;
-  border: none;
+  border-radius: calc(var(--radius-sm) - 0.1rem);
   color: var(--fg-muted);
   font-size: var(--text-sm);
   font-weight: 600;
+  cursor: pointer;
+  user-select: none;
 }
-.seg button.active { background: var(--bg-raised); color: var(--fg); box-shadow: var(--shadow-sm); }
+.af-tab:hover { color: var(--fg); }
+
+/* CSS-only Activity tabs: radio inputs as siblings of the labels + feeds */
+.activity-panel { position: relative; }
+.af-radio {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.feed--audit { display: none; }
+#af-audit:checked ~ .feed--items { display: none; }
+#af-audit:checked ~ .feed--audit { display: block; }
+#af-items:checked ~ .panel-head .af-tab--items,
+#af-audit:checked ~ .panel-head .af-tab--audit {
+  background: var(--bg-raised);
+  color: var(--fg);
+  box-shadow: var(--shadow-sm);
+}
+#af-items:focus-visible ~ .panel-head .af-tab--items,
+#af-audit:focus-visible ~ .panel-head .af-tab--audit {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .feed { list-style: none; margin: 0; padding: 0; }
 .feed > li {

@@ -98,21 +98,8 @@
       });
   }
 
-  // ---- activity feed tabs (static, no fetch) ---------------------------
-
-  document.querySelectorAll("[data-feed-tab]").forEach(function (btn) {
-    btn.addEventListener("click", function () {
-      var want = btn.getAttribute("data-feed-tab");
-      document.querySelectorAll("[data-feed-tab]").forEach(function (b) {
-        var on = b === btn;
-        b.classList.toggle("active", on);
-        b.setAttribute("aria-selected", on ? "true" : "false");
-      });
-      document.querySelectorAll("[data-feed]").forEach(function (feed) {
-        feed.hidden = feed.getAttribute("data-feed") !== want;
-      });
-    });
-  });
+  // (The Activity Items/Audit tabs are CSS-only — radio + :checked ~ — so
+  // they work with no JS and survive a cell patch untouched.)
 
   // ---- wire up --------------------------------------------------------
 
