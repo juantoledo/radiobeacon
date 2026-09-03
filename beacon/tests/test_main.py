@@ -6,9 +6,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from adapters.storage import (
     add_tx_schedule_unit,
+    enqueue_manual_tx,
     get_beacon_status,
     get_connection,
     mark_item_ready_published,
+    pending_manual_tx,
     record_audit_event,
     set_setting,
 )
@@ -131,6 +133,7 @@ def _ctx(**overrides):
         "frame_lead_silence_ms": 0,
         "watermark_voice_template": "{callsign} watermark {date}",
         "watermark_frame_template": "{callsign} watermark {date}",
+        "manual_voice_template": "Aquí {callsign}. {text}",
         "wav_transmitter": _RecordingWavTransmitter(),
     }
     ctx.update(overrides)
@@ -186,6 +189,74 @@ def test_resolve_wav_dir_anchors_relative_path_at_repo_root():
 
 def test_resolve_wav_dir_keeps_absolute_path(tmp_path):
     assert main_module._resolve_wav_dir(str(tmp_path)) == str(tmp_path)
+
+
+# --- manual transmission (beacon_manual_tx) ---
+
+
+def _audit_types(conn):
+    return [r[0] for r in conn.execute("SELECT event_type FROM audit_log ORDER BY id")]
+
+
+def test_drain_manual_tx_transmits_voice_and_deletes_row(tmp_path, monkeypatch):
+    spoken = []
+    monkeypatch.setattr(
+        "beacon.voice.synthesize_speech",
+        lambda text, **k: (spoken.append(text) or True),
+    )
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    enqueue_manual_tx(conn, kind="voice", text="Prueba manual", actor="ui.dashboard")
+    ctx = _ctx(wav_dir=str(tmp_path))
+    stop = threading.Event()
+
+    attempted = main_module._drain_manual_tx(
+        stop, conn, "voice", datetime.now(timezone.utc), ctx, 0.0
+    )
+
+    assert attempted == 1
+    assert spoken == ["Aquí CD3DXZ-1. Prueba manual"]
+    assert ctx["wav_transmitter"].calls
+    assert pending_manual_tx(conn, "voice") == []
+    assert "beacon.manual.transmitted" in _audit_types(conn)
+    assert get_beacon_status(conn, "last_manual_transmit_at") is not None
+
+
+def test_drain_manual_tx_leaves_other_kind_queued(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    enqueue_manual_tx(conn, kind="frame", text="solo frame", actor="ui.dashboard")
+
+    attempted = main_module._drain_manual_tx(
+        threading.Event(), conn, "voice", datetime.now(timezone.utc), _ctx(wav_dir=str(tmp_path)), 0.0
+    )
+
+    assert attempted == 0
+    assert len(pending_manual_tx(conn, "frame")) == 1
+
+
+def test_drain_manual_tx_drops_overlong_frame(tmp_path, _stub_frame_audio):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    enqueue_manual_tx(conn, kind="frame", text="x" * 400, actor="ui.dashboard")
+
+    main_module._drain_manual_tx(
+        threading.Event(), conn, "frame", datetime.now(timezone.utc), _ctx(wav_dir=str(tmp_path)), 0.0
+    )
+
+    assert pending_manual_tx(conn, "frame") == []
+    assert _stub_frame_audio == []  # never reached the render step
+    assert "beacon.manual.dropped_too_long" in _audit_types(conn)
+
+
+def test_drain_manual_tx_deletes_row_even_when_transmitter_fails(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    enqueue_manual_tx(conn, kind="voice", text="hola", actor="ui.dashboard")
+    ctx = _ctx(wav_dir=str(tmp_path), wav_transmitter=_RecordingWavTransmitter(result=False))
+
+    main_module._drain_manual_tx(
+        threading.Event(), conn, "voice", datetime.now(timezone.utc), ctx, 0.0
+    )
+
+    assert pending_manual_tx(conn, "voice") == []
+    assert "beacon.manual.transmit_failed" in _audit_types(conn)
 
 
 # --- content_ready -> schedule rows ---

@@ -135,6 +135,21 @@ dashboard's Enable/Disable button flips the `BEACON_ENABLED` settings flag, whic
 the running process re-reads every tick. Schedule rows keep being written even
 while disabled — only the transmit step checks the flag.
 
+## Manual transmission (one-shot)
+
+`beacon_manual_tx` (also owned by `adapters.storage`) holds messages an operator
+types into the dashboard's **Transmit now** action. Each row carries its own
+literal `text` and a `kind` (`voice` | `frame`) — there's no item to resolve and
+no `transmit_policy`. Every tick, `_drain_manual_tx` sends each row whose `kind`
+matches the active `BEACON_TYPE` (voice wrapped by `BEACON_MANUAL_VOICE_TEMPLATE`
+so the callsign is always spoken; frame straight through the AX.25 header), then
+deletes it — a manual send is attempted exactly once, on air or not, and never
+retried. Rows for the other kind wait until the operator switches mode. Gated by
+`BEACON_ENABLED` like the schedule drain: composed while disabled, sent once
+re-enabled. Audit events: `beacon.manual.enqueued` (written by the UI),
+`beacon.manual.transmitted` / `.transmit_failed` / `.dropped_too_long` /
+`.skipped_no_callsign`.
+
 ## Voice: TTS → WAV
 
 `src/beacon/voice.py`'s `synthesize_speech` turns resolved voice text into a WAV,
@@ -238,6 +253,7 @@ Env vars in `.env` at the repo root — also all editable live via `/config` →
 | `BEACON_TTS_PIPER_MODEL` | `storage/piper_voices/es_MX-claude-high.onnx` |
 | `BEACON_TTS_PIPER_BINARY` | `piper` |
 | `BEACON_TTS_WAV_DIR` | `storage/beacon_tts` (a relative path is resolved against the repo root, not `beacon/`, so the rendered clips land in the top-level `storage/` the dashboard also reads) |
+| `BEACON_MANUAL_VOICE_TEMPLATE` | `Aquí {callsign}. {text}` |
 | `BEACON_QUEUE_MAX_SIZE` | `200` |
 | `BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS` | `30` |
 | `BEACON_MQ_HOST`/`_PORT`/`_QOS`/`_RECONNECT_BACKOFF_SECONDS` | `localhost`/`1883`/`1`/`5` |

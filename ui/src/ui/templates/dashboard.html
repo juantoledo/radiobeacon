@@ -17,9 +17,54 @@
    outside #dashboard-content so the auto-refresh never tears it down
    mid-playback (see beacon-audio.js). #}
 <audio id="beacon-audio" preload="none"></audio>
+
+{# "Transmit now" modal — also outside #dashboard-content so an in-progress
+   compose survives a background refresh. Opened by the [data-open-dialog]
+   button in Quick controls (manual-tx.js). #}
+<dialog id="manual-tx-dialog" class="manual-tx-dialog">
+  <form method="post" action="/dashboard/transmit"
+        data-voice-max="{{ manual_voice_max_chars }}" data-frame-max="{{ manual_frame_max_bytes }}">
+    <h2>{{ icon('radio', 18) }} Transmit text now</h2>
+
+    <div class="segmented mtx-kind" role="group" aria-label="Transmission type">
+      {% for mode in ['voice', 'frame'] %}
+      <label class="{{ 'active' if beacon_type == mode else '' }}">
+        <input type="radio" name="kind" value="{{ mode }}" {{ 'checked' if beacon_type == mode else '' }}>
+        {{ mode }}
+      </label>
+      {% endfor %}
+    </div>
+    <p class="mtx-mode-note" hidden>
+      Beacon mode is <strong>{{ beacon_type }}</strong> — a message of the other type waits
+      queued until you switch mode.
+    </p>
+
+    <label class="mtx-label" for="manual-tx-text">Message</label>
+    <textarea id="manual-tx-text" name="text" rows="4" required
+              placeholder="Spoken aloud (voice) or sent as one AX.25 frame (frame). The callsign is added automatically."></textarea>
+    <div class="mtx-foot">
+      <span id="manual-tx-count" class="mono"></span>
+      <span id="manual-tx-over" class="mtx-over" hidden>over the limit</span>
+    </div>
+
+    {% if not beacon_enabled %}
+    <p class="banner-warn mtx-banner">⚠ Transmission is disabled — this message is queued and goes out when you enable the beacon.</p>
+    {% elif not running %}
+    <p class="banner-warn mtx-banner">⚠ The beacon process isn't running — this message is queued until it starts.</p>
+    {% else %}
+    <p class="banner mtx-banner">This message will be transmitted on air on the beacon's next tick.</p>
+    {% endif %}
+
+    <div class="mtx-actions">
+      <button type="button" class="btn secondary" data-close-dialog>Cancel</button>
+      <button type="submit" id="manual-tx-submit">{{ icon('radio', 15) }} Transmit</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 {% block scripts %}
 <script src="{{ static_url('beacon-audio.js') }}" defer></script>
+<script src="{{ static_url('manual-tx.js') }}" defer></script>
 {% if refresh_seconds %}
 <script src="{{ static_url('dashboard-refresh.js') }}" defer data-interval-ms="{{ refresh_seconds * 1000 }}"></script>
 {% endif %}

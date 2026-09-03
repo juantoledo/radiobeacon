@@ -614,6 +614,25 @@ _CREATE_BEACON_TX_SCHEDULE_KIND_INDEX = (
     "ON beacon_tx_schedule (kind);"
 )
 
+# beacon_manual_tx holds one-shot messages an operator types into the
+# dashboard's "Transmit now" action (ui.routers.manual_tx) for beacon/ to
+# put on air on its next tick (beacon.__main__._drain_manual_tx). Unlike
+# beacon_tx_schedule these carry their own literal `text` (there's no item
+# to resolve it from), have no transmit_policy (sent exactly once), and are
+# deleted the moment they've been attempted — success or failure. `kind`
+# ("voice" | "frame") is the beacon type the message was composed for; the
+# beacon only drains rows matching the currently-active BEACON_TYPE, so a
+# row for the other kind waits until the operator switches mode.
+_CREATE_BEACON_MANUAL_TX = """
+CREATE TABLE IF NOT EXISTS beacon_manual_tx (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    actor      TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 
 # (old_column, new_column): renames applied in order to databases created
 # before a given schema change.
@@ -744,6 +763,13 @@ def _ensure_beacon_tx_schedule_table(conn: sqlite3.Connection) -> None:
     _ensure_audit_log_table."""
     conn.execute(_CREATE_BEACON_TX_SCHEDULE)
     conn.execute(_CREATE_BEACON_TX_SCHEDULE_KIND_INDEX)
+
+
+def _ensure_beacon_manual_tx_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — the manual-tx
+    helpers below call this themselves, same pattern as
+    _ensure_beacon_tx_schedule_table."""
+    conn.execute(_CREATE_BEACON_MANUAL_TX)
 
 
 def _migrate_adapter_instances_config(conn: sqlite3.Connection) -> None:
@@ -883,6 +909,7 @@ def get_connection(
         _ensure_transmit_policies_table(conn)
         _ensure_transmit_policies_seeded(conn)
         _ensure_beacon_tx_schedule_table(conn)
+        _ensure_beacon_manual_tx_table(conn)
         _migrate_adapter_instances_config(conn)
         _backfill_senapred_ai_fallback_to_title(conn)
         conn.commit()
@@ -1382,6 +1409,65 @@ def delete_tx_schedule_other_kinds(conn: sqlite3.Connection, keep_kind: str) -> 
     cur = conn.execute("DELETE FROM beacon_tx_schedule WHERE kind != ?", (keep_kind,))
     conn.commit()
     return cur.rowcount
+
+
+# --- beacon_manual_tx: one-shot operator messages (see _CREATE_BEACON_MANUAL_TX) ---
+
+_BEACON_MANUAL_TX_COLUMNS = ("id", "kind", "text", "actor", "created_at")
+
+
+def enqueue_manual_tx(
+    conn: sqlite3.Connection, *, kind: str, text: str, actor: str
+) -> int:
+    """Queues one operator-typed message for beacon/ to transmit once on
+    its next tick. Records a beacon.manual.enqueued audit row. Returns the
+    new row id. Length limits are the caller's job (ui.routers.manual_tx
+    blocks an over-limit send in the browser); this only writes DB state,
+    so it stays callable from ui without a TTS dependency."""
+    _ensure_beacon_manual_tx_table(conn)
+    cur = conn.execute(
+        "INSERT INTO beacon_manual_tx (kind, text, actor) VALUES (?, ?, ?)",
+        (kind, text, actor),
+    )
+    conn.commit()
+    record_audit_event(
+        conn,
+        event_type="beacon.manual.enqueued",
+        actor=actor,
+        details={"kind": kind, "chars": len(text)},
+    )
+    return int(cur.lastrowid)
+
+
+def pending_manual_tx(conn: sqlite3.Connection, kind: str) -> list[dict[str, Any]]:
+    """Every queued manual message of this `kind`, oldest first."""
+    _ensure_beacon_manual_tx_table(conn)
+    rows = conn.execute(
+        f"SELECT {', '.join(_BEACON_MANUAL_TX_COLUMNS)} FROM beacon_manual_tx "
+        "WHERE kind = ? ORDER BY id",
+        (kind,),
+    ).fetchall()
+    return [dict(zip(_BEACON_MANUAL_TX_COLUMNS, row)) for row in rows]
+
+
+def delete_manual_tx(conn: sqlite3.Connection, id_: int) -> None:
+    """Removes one manual message — beacon calls this once it's been
+    attempted, whether it went on air or not (a manual send is never
+    retried)."""
+    _ensure_beacon_manual_tx_table(conn)
+    conn.execute("DELETE FROM beacon_manual_tx WHERE id = ?", (id_,))
+    conn.commit()
+
+
+def count_manual_tx_by_kind(conn: sqlite3.Connection) -> dict[str, int]:
+    """{kind: queued-message-count} for the dashboard."""
+    _ensure_beacon_manual_tx_table(conn)
+    return {
+        kind: count
+        for kind, count in conn.execute(
+            "SELECT kind, COUNT(*) FROM beacon_manual_tx GROUP BY kind"
+        )
+    }
 
 
 def _ensure_sources_table(conn: sqlite3.Connection) -> None:

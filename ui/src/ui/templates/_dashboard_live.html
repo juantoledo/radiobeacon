@@ -44,6 +44,18 @@
       {% endif %}
     </div>
   </div>
+  <div class="manual-tx-bar" data-cell="manual_tx_bar">
+    <button type="button" class="btn secondary" data-open-dialog="manual-tx-dialog"
+            {% if not is_beacon_configured() %}disabled title="Configure the beacon identity first"{% endif %}>
+      {{ icon('radio', 15) }} Transmit text now
+    </button>
+    {% if manual_tx_pending_total %}
+    <span class="badge badge-warn">{{ manual_tx_pending_total }} queued</span>
+    {% endif %}
+    {% if last_manual_transmit_at %}
+    <span class="muted">last manual tx <time datetime="{{ last_manual_transmit_at | iso_utc }}" data-ago>{{ last_manual_transmit_at | time_ago }}</time></span>
+    {% endif %}
+  </div>
 </section>
 
 <section class="status-strip">

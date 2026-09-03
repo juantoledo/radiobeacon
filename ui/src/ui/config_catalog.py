@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from adapters.beacon_defaults import (
     BEACON_ENABLED_DEFAULT,
+    BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
     BEACON_VOICE_MAX_CHARS_DEFAULT,
@@ -751,6 +752,19 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "point at storage shared by both.",
         "text",
         "storage/beacon_tts",
+        advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_MANUAL_VOICE_TEMPLATE",
+        "Beacon — Voice",
+        "Manual message template",
+        "Wraps text typed into the dashboard's \"Transmit now\" action for "
+        "the voice channel, so the callsign is always spoken. Placeholders: "
+        "{callsign}, {text} (an invalid one falls back to \"\"). The frame "
+        "channel needs no template — the callsign is already in the AX.25 "
+        "header.",
+        "text",
+        BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
         advanced=True,
     ),
     # --- Beacon — Watermark ---

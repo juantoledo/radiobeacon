@@ -25,6 +25,7 @@ from .routers import (  # noqa: E402
     dashboard,
     dev,
     items,
+    manual_tx,
     policies,
     quick_settings,
 )
@@ -46,6 +47,7 @@ app.mount(
 
 app.include_router(dashboard.router)
 app.include_router(quick_settings.router)
+app.include_router(manual_tx.router)
 app.include_router(beacon.router)
 app.include_router(items.router)
 app.include_router(adapters.router)

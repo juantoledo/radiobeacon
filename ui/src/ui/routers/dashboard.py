@@ -1,13 +1,14 @@
 import json
 import sqlite3
 
-from adapters.storage import get_setting
+from adapters.storage import count_manual_tx_by_kind, get_setting
 from fastapi import APIRouter, Depends, Request
 
 from .. import beacon_audio, queries
 from ..db import get_db
 from ..templating import templates
 from .beacon import _status_context
+from .manual_tx import frame_max_bytes, voice_max_chars
 
 router = APIRouter()
 
@@ -71,8 +72,14 @@ def _dashboard_context(conn: sqlite3.Connection) -> dict:
         ntp_offset = None
 
     recent_items = queries.recent_items(conn, limit=8)
+    manual_pending = count_manual_tx_by_kind(conn)
 
     return {
+        "manual_voice_max_chars": voice_max_chars(conn),
+        "manual_frame_max_bytes": frame_max_bytes(conn),
+        "manual_tx_pending": manual_pending,
+        "manual_tx_pending_total": sum(manual_pending.values()),
+        "last_manual_transmit_at": status.get("last_manual_transmit_at"),
         "counts": queries.dashboard_counts(conn),
         "sparkline": queries.items_sparkline(conn, days=14),
         "failed_24h": queries.failed_events_last_24h(conn),

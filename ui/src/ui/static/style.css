@@ -564,6 +564,66 @@ main {
   white-space: nowrap;
 }
 
+/* ---- manual "transmit now" --------------------------------------- */
+
+.manual-tx-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+}
+
+.manual-tx-dialog {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 0;
+  max-width: 34rem;
+  width: calc(100vw - 2rem);
+  background: var(--bg-raised);
+  color: var(--fg);
+  box-shadow: var(--shadow-lg, 0 12px 40px rgba(0, 0, 0, 0.35));
+}
+.manual-tx-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.manual-tx-dialog form { margin: 0; padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
+.manual-tx-dialog h2 { display: flex; align-items: center; gap: 0.4rem; margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+.mtx-kind { align-self: flex-start; }
+.mtx-kind label {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  cursor: pointer;
+  text-transform: capitalize;
+  font-size: var(--text-sm);
+}
+.mtx-kind label:first-of-type { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
+.mtx-kind label:last-of-type { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: none; }
+.mtx-kind label.active { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.mtx-kind input { position: absolute; opacity: 0; pointer-events: none; }
+.mtx-mode-note { margin: 0; font-size: var(--text-xs); color: var(--warn); }
+.mtx-label { font-size: var(--text-sm); font-weight: 550; }
+.manual-tx-dialog textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  padding: 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  resize: vertical;
+}
+.mtx-foot { display: flex; justify-content: space-between; font-size: var(--text-xs); color: var(--fg-muted); }
+.mtx-count-over { color: var(--danger); font-weight: 600; }
+.mtx-over { color: var(--danger); font-weight: 600; }
+.mtx-banner { margin: 0; font-size: var(--text-xs); }
+.mtx-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
+#manual-tx-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+
 /* ---- system status strip ------------------------------------------- */
 
 .status-strip {

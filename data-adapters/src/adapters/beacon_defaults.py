@@ -39,3 +39,13 @@ BEACON_WATERMARK_ENABLED_DEFAULT = "false"
 BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT = "600"
 BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT = "Estación {callsign}, transmisión automática. {date}."
 BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT = "{callsign} watermark {date}"
+
+# Manual transmission: a one-shot message an operator types into the
+# dashboard and sends immediately (see beacon.__main__._drain_manual_tx and
+# ui.routers.manual_tx). It has no item and no transmit_policy — it's sent
+# once, on the next tick, and dropped. This outer template wraps the typed
+# text for the voice channel so the callsign is always spoken; {callsign}
+# and {text} are the placeholders (rendered via adapters.templating.
+# safe_format). The frame channel needs no template — the callsign is
+# already in the AX.25 "{callsign}>{destination}:" header.
+BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT = "Aquí {callsign}. {text}"

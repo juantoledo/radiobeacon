@@ -72,6 +72,7 @@ sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 
 from adapters.beacon_defaults import (  # noqa: E402
     BEACON_ENABLED_DEFAULT,
+    BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
     BEACON_VOICE_MAX_CHARS_DEFAULT,
@@ -87,10 +88,12 @@ from adapters.storage import (  # noqa: E402
     DEFAULT_DB_PATH,
     add_tx_schedule_unit,
     count_tx_schedule_by_kind,
+    delete_manual_tx,
     delete_tx_schedule_other_kinds,
     due_tx_schedule_rows,
     get_connection,
     get_setting,
+    pending_manual_tx,
     record_audit_event,
     record_tx_schedule_sent,
     set_beacon_status,
@@ -593,6 +596,110 @@ def _transmit_watermark(conn, beacon_type: str, ctx: dict, now_dt: datetime) -> 
     return sent
 
 
+def _transmit_manual_unit(conn, row: dict, beacon_type: str, ctx: dict, now_dt: datetime) -> bool:
+    """Renders and transmits one operator-typed manual message
+    (beacon_manual_tx). No item, no transmit_policy — sent once. The row is
+    deleted by the caller regardless of the outcome."""
+    callsign = ctx["callsign"]
+    text = (row["text"] or "").strip()
+    if not callsign:
+        logger.warning("beacon: BEACON_CALLSIGN not configured, dropping manual transmission")
+        record_audit_event(
+            conn, event_type="beacon.manual.skipped_no_callsign", actor="beacon",
+            details={"kind": beacon_type},
+        )
+        return False
+    if not text:
+        return False
+
+    date_str = to_display_tz(now_dt, conn=conn).strftime(ctx["date_format"])
+    wav_path = Path(ctx["wav_dir"]) / f"manual-{row['id']}-{int(time.time())}.wav"
+
+    if beacon_type == "voice":
+        formatted = formatters.format_voice(
+            text, callsign=callsign, template=ctx["manual_voice_template"],
+            max_chars=ctx["voice_max_chars"], prefix="", suffix="", date=date_str,
+        )
+        if not formatted.text.strip():
+            logger.info("beacon: manual voice message rendered empty, dropping")
+            return False
+        if not voice.synthesize_speech(
+            formatted.text, out_path=wav_path, voice=ctx["tts_voice"],
+            engine=ctx["tts_engine"], piper_model=ctx["tts_piper_model"], piper_binary=ctx["tts_piper_binary"],
+        ):
+            record_audit_event(
+                conn, event_type="beacon.manual.transmit_failed", actor="beacon",
+                details={"kind": "voice", "reason": "tts_failed"},
+            )
+            return False
+        label = "manual voice"
+    elif beacon_type == "frame":
+        try:
+            formatted = formatters.format_frame(
+                text, callsign=callsign, destination=ctx["destination"],
+                prefix="", suffix="", date=date_str,
+            )
+        except formatters.FrameTooLongError as exc:
+            logger.error("beacon: manual frame too long, dropping: %s", exc)
+            record_audit_event(
+                conn, event_type="beacon.manual.dropped_too_long", actor="beacon",
+                details={"kind": "frame", "error": str(exc)},
+            )
+            return False
+        if not frame_audio.synthesize_frame_wav(
+            formatted.tnc2, out_path=wav_path,
+            gen_packets_binary=ctx["gen_packets_binary"], lead_silence_ms=ctx["frame_lead_silence_ms"],
+        ):
+            record_audit_event(
+                conn, event_type="beacon.manual.transmit_failed", actor="beacon",
+                details={"kind": "frame", "reason": "gen_packets_failed"},
+            )
+            return False
+        label = "manual frame"
+    else:
+        return False
+
+    try:
+        sent = ctx["wav_transmitter"].transmit(wav_path=wav_path, label=label)
+    except Exception:
+        logger.error("beacon: wav transmitter raised", exc_info=True)
+        sent = False
+
+    if sent:
+        record_audit_event(
+            conn, event_type="beacon.manual.transmitted", actor="beacon",
+            details={"kind": beacon_type, "chars": len(text)},
+        )
+        set_beacon_status(conn, "last_manual_transmit_at", utc_now().isoformat())
+    else:
+        record_audit_event(
+            conn, event_type="beacon.manual.transmit_failed", actor="beacon",
+            details={"kind": beacon_type},
+        )
+    return sent
+
+
+def _drain_manual_tx(
+    stop_event: threading.Event, conn, beacon_type: str, now_dt: datetime, ctx: dict,
+    inter_tx_delay: float,
+) -> int:
+    """Transmits every queued manual message for the active beacon_type,
+    oldest first, deleting each row once it's been attempted (a manual send
+    is one-shot — never retried, whether it went on air or not). Messages
+    composed for the other kind wait untouched until the operator switches
+    BEACON_TYPE. Returns the number attempted (mainly for tests)."""
+    attempted = 0
+    for row in pending_manual_tx(conn, beacon_type):
+        if stop_event.is_set():
+            break
+        if attempted > 0:
+            stop_event.wait(inter_tx_delay)
+        _transmit_manual_unit(conn, row, beacon_type, ctx, now_dt)
+        delete_manual_tx(conn, row["id"])
+        attempted += 1
+    return attempted
+
+
 # kind -> (conn, row, ctx) -> bool
 KIND_TRANSMITTERS = {
     "voice": _transmit_voice_unit,
@@ -728,6 +835,9 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 "watermark_frame_template": get_setting(
                     "BEACON_WATERMARK_FRAME_TEMPLATE", BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT, conn=conn
                 ),
+                "manual_voice_template": get_setting(
+                    "BEACON_MANUAL_VOICE_TEMPLATE", BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT, conn=conn
+                ),
                 "wav_transmitter": _build_wav_transmitter(conn),
             }
 
@@ -748,6 +858,7 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
             _write_heartbeat(conn, beacon_type)
 
             if enabled and beacon_type in KIND_TRANSMITTERS:
+                _drain_manual_tx(stop_event, conn, beacon_type, now_dt, ctx, inter_tx_delay)
                 _drain_kind(stop_event, conn, beacon_type, now_dt, ctx, inter_tx_delay)
 
             wake_event.wait(timeout=tick_seconds)

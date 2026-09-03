@@ -116,6 +116,25 @@ is the top-level `storage/` the `ui/` container already bind-mounts. In a
 split deployment (beacon on the host, UI in Docker) point it at a path
 both can see, or no button appears.
 
+### Transmit now (manual message)
+
+The **Transmit text now** button in Quick controls opens a modal to send a
+one-shot message: pick voice or frame, type the text (live character/byte
+counter, blocked past `BEACON_VOICE_MAX_CHARS` for voice or the AX.25 frame
+size for frame), hit Transmit. `POST /dashboard/transmit`
+(`ui/src/ui/routers/manual_tx.py`) validates and writes a row to
+`beacon_manual_tx`; the beacon renders and keys it on its next tick
+(`beacon.__main__._drain_manual_tx`). No TTS runs in the UI — it only
+writes DB state, same as every other action here.
+
+It's sent once and dropped — no repeat, no retry. Like the automatic
+beacon it only goes on air while `BEACON_ENABLED` is on; composed while
+it's off, the message queues and the modal says so. A message composed
+for the kind the beacon isn't currently in (`BEACON_TYPE`) waits until you
+switch mode. The callsign is always added (voice via
+`BEACON_MANUAL_VOICE_TEMPLATE`, frame via the AX.25 header). The modal
+needs JavaScript; the button is inert without it.
+
 ## No authentication
 
 This first version has no login system — it's meant to be reached only

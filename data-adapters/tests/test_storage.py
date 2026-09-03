@@ -592,6 +592,32 @@ def test_delete_tx_schedule_other_kinds_keeps_only_the_named_kind(tmp_path):
     assert delete_tx_schedule_other_kinds(conn, "frame") == 0
 
 
+def test_manual_tx_enqueue_pending_and_delete(tmp_path):
+    from adapters.storage import (
+        count_manual_tx_by_kind,
+        delete_manual_tx,
+        enqueue_manual_tx,
+        pending_manual_tx,
+    )
+
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    id1 = enqueue_manual_tx(conn, kind="voice", text="uno", actor="ui.dashboard")
+    enqueue_manual_tx(conn, kind="voice", text="dos", actor="ui.dashboard")
+    enqueue_manual_tx(conn, kind="frame", text="tres", actor="ui.dashboard")
+
+    voice_rows = pending_manual_tx(conn, "voice")
+    assert [r["text"] for r in voice_rows] == ["uno", "dos"]  # oldest first
+    assert [r["text"] for r in pending_manual_tx(conn, "frame")] == ["tres"]
+
+    assert count_manual_tx_by_kind(conn) == {"voice": 2, "frame": 1}
+
+    types = [r[0] for r in conn.execute("SELECT event_type FROM audit_log")]
+    assert types.count("beacon.manual.enqueued") == 3
+
+    delete_manual_tx(conn, id1)
+    assert [r["text"] for r in pending_manual_tx(conn, "voice")] == ["dos"]
+
+
 def test_schedule_retransmit_voice_mode_schedules_one_row(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     store_reading(conn, _make_reading())
