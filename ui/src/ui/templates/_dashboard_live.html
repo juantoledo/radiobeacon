@@ -4,6 +4,48 @@
    replacing the subtree, so only values that actually changed repaint. #}
 <div id="dashboard-content">
 
+{% set toggles = [
+  ('BEACON_ENABLED', beacon_enabled, 'radio', 'Beacon transmit', 'Puts scheduled content on air'),
+  ('ACTIONS_AI_ENABLED', ai_enabled, 'sparkles', 'AI summarization', 'Summarize items before transmit'),
+  ('BEACON_WATERMARK_ENABLED', watermark_enabled, 'clock', 'Periodic watermark', 'Station ID on its own timer'),
+  ('UI_DEV_TOOLS_ENABLED', dev_tools_enabled_now, 'developers', 'Developer tools', 'Raw item edit + SQL runner'),
+] %}
+<section class="panel quick-controls">
+  <div class="panel-head">
+    <h3>{{ icon('power', 17) }} Quick controls</h3>
+    <span class="muted">applied live — no restart needed</span>
+  </div>
+  <div class="toggle-grid" data-cell="quick_controls">
+    {% for key, on, ic, label, hint in toggles %}
+    <form method="post" action="/dashboard/toggle" class="toggle-form">
+      <input type="hidden" name="key" value="{{ key }}">
+      <input type="hidden" name="value" value="{{ 'false' if on else 'true' }}">
+      <button type="submit" class="switch {{ 'is-on' if on else '' }}" role="switch" aria-checked="{{ 'true' if on else 'false' }}">
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+        <span class="switch-text">
+          <span class="switch-label">{{ icon(ic, 15) }}{{ label }}</span>
+          <span class="switch-hint">{{ hint }}</span>
+        </span>
+      </button>
+    </form>
+    {% endfor %}
+    <div class="segmented" role="group" aria-label="Beacon mode">
+      <span class="segmented-label">{{ icon('activity', 15) }}Mode</span>
+      {% for mode in ['voice', 'frame'] %}
+      <form method="post" action="/dashboard/toggle">
+        <input type="hidden" name="key" value="BEACON_TYPE">
+        <input type="hidden" name="value" value="{{ mode }}">
+        <button type="submit" class="{{ 'active' if beacon_type == mode else '' }}"
+                {% if beacon_type == mode %}aria-current="true"{% endif %}>{{ mode }}</button>
+      </form>
+      {% endfor %}
+      {% if beacon_type_live and beacon_type_live != beacon_type %}
+      <span class="segmented-drift" title="The beacon process last reported transmitting as {{ beacon_type_live }}">↳ still {{ beacon_type_live }}</span>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
 <section class="status-strip">
   {# --- Beacon --- #}
   {% set beacon_state = 'ok' if (running and beacon_enabled) else 'warn' if beacon_enabled else 'idle' %}

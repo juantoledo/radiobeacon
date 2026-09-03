@@ -39,9 +39,13 @@ def _status_context(conn: sqlite3.Connection) -> dict:
         except ValueError:
             running = False
     enabled = get_setting("BEACON_ENABLED", "false", conn=conn).lower() == "true"
-    beacon_type = status.get("beacon_type") or get_setting(
-        "BEACON_TYPE", BEACON_TYPE_DEFAULT, conn=conn
-    )
+    # The configured mode is the operator's intent and what every control
+    # on the dashboard reflects — flipping BEACON_TYPE must show instantly,
+    # not wait for the beacon process to rewrite its telemetry (or never,
+    # if it isn't running). `beacon_type_live` keeps the last value the
+    # process actually reported, so the UI can flag drift between the two.
+    beacon_type = get_setting("BEACON_TYPE", BEACON_TYPE_DEFAULT, conn=conn)
+    beacon_type_live = status.get("beacon_type")
 
     try:
         queue_max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
@@ -63,6 +67,7 @@ def _status_context(conn: sqlite3.Connection) -> dict:
         "running": running,
         "beacon_enabled": enabled,
         "beacon_type": beacon_type,
+        "beacon_type_live": beacon_type_live,
         "queue_depth": queue_depth,
         "queue_bar": _queue_bar(queue_depth, queue_max_size),
         "queue_max_size": queue_max_size,

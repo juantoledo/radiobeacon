@@ -557,6 +557,12 @@ main {
   color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
+.segmented-drift {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--warn);
+  white-space: nowrap;
+}
 
 /* ---- system status strip ------------------------------------------- */
 

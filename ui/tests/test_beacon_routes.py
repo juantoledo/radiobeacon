@@ -255,6 +255,20 @@ def test_dashboard_reflects_beacon_enabled_state(client, conn):
     assert 'name="key" value="BEACON_ENABLED"' in response.text
 
 
+def test_dashboard_mode_switch_reflects_setting_not_stale_telemetry(client, conn):
+    # Beacon process last reported "frame"; operator switches the setting
+    # to "voice". The control (and the whole live region) must follow the
+    # setting immediately, and flag the drift.
+    set_beacon_status(conn, "beacon_type", "frame")
+    set_setting(conn, "BEACON_TYPE", "voice")
+
+    fragment = client.get("/", headers={"X-Auto-Refresh": "1"}).text
+
+    assert 'data-cell="quick_controls"' in fragment
+    assert '<dd data-cell="bp_type">voice</dd>' in fragment
+    assert "still frame" in fragment  # drift hint
+
+
 def test_dashboard_quick_toggle_flips_a_live_setting(client, conn):
     set_setting(conn, "ACTIONS_AI_ENABLED", "false")
 
