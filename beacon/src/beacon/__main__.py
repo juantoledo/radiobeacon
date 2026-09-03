@@ -668,13 +668,13 @@ def _transmit_manual_unit(conn, row: dict, beacon_type: str, ctx: dict, now_dt: 
     if sent:
         record_audit_event(
             conn, event_type="beacon.manual.transmitted", actor="beacon",
-            details={"kind": beacon_type, "chars": len(text)},
+            details={"kind": beacon_type, "chars": len(text), "manual_id": row["id"]},
         )
         set_beacon_status(conn, "last_manual_transmit_at", utc_now().isoformat())
     else:
         record_audit_event(
             conn, event_type="beacon.manual.transmit_failed", actor="beacon",
-            details={"kind": beacon_type},
+            details={"kind": beacon_type, "manual_id": row["id"]},
         )
     return sent
 

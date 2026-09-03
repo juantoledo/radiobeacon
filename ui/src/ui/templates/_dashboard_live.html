@@ -56,6 +56,23 @@
     <span class="muted">last manual tx <time datetime="{{ last_manual_transmit_at | iso_utc }}" data-ago>{{ last_manual_transmit_at | time_ago }}</time></span>
     {% endif %}
   </div>
+  <div class="manual-clips" data-cell="manual_clips">
+    {% if manual_clips %}
+    <span class="manual-clips-label muted">Recent manual transmissions</span>
+    <ul class="feed feed--manual">
+      {% for clip in manual_clips %}
+      <li>
+        <button type="button" class="feed-play" data-audio-url="/dashboard/manual-audio/{{ clip.name }}" aria-label="Play manual transmission audio">
+          <span class="fp-play">{{ icon('play', 14) }}</span>
+          <span class="fp-stop">{{ icon('stop', 14) }}</span>
+        </button>
+        <span class="feed-title mono">manual #{{ clip.manual_id }}</span>
+        <time class="feed-time" datetime="{{ clip.at | iso_utc }}" data-ago>{{ clip.at | time_ago }}</time>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
 </section>
 
 <section class="status-strip">

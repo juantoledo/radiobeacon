@@ -14,9 +14,10 @@ from urllib.parse import urlencode
 from adapters.ax25 import max_frame_content_bytes
 from adapters.beacon_defaults import BEACON_TYPE_DEFAULT, BEACON_VOICE_MAX_CHARS_DEFAULT
 from adapters.storage import enqueue_manual_tx, get_setting
-from fastapi import APIRouter, Depends, Form
-from starlette.responses import RedirectResponse
+from fastapi import APIRouter, Depends, Form, HTTPException
+from starlette.responses import FileResponse, RedirectResponse
 
+from .. import beacon_audio
 from ..beacon import is_beacon_configured
 from ..db import get_db
 
@@ -75,3 +76,14 @@ def dashboard_transmit(
 
     enqueue_manual_tx(conn, kind=kind, text=text, actor="ui.dashboard")
     return _redirect("msg", f"{kind} message queued — the beacon sends it on its next tick")
+
+
+@router.get("/dashboard/manual-audio/{name}")
+def manual_audio(name: str, conn: sqlite3.Connection = Depends(get_db)):
+    """Streams one rendered manual-transmission clip for the dashboard's
+    'Recent manual transmissions' play buttons. 404 for an unknown name
+    (or one that isn't a manual-<id>-<ts>.wav)."""
+    clip = beacon_audio.manual_clip_path(conn, name)
+    if clip is None:
+        raise HTTPException(status_code=404, detail="no such manual transmission clip")
+    return FileResponse(clip, media_type="audio/wav", filename=clip.name)

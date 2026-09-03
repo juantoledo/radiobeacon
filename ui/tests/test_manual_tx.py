@@ -1,9 +1,12 @@
-"""Dashboard "Transmit now" — POST /dashboard/transmit + the modal."""
+"""Dashboard "Transmit now" — POST /dashboard/transmit + the modal +
+playback of the rendered manual clips."""
 from adapters.storage import (
     count_manual_tx_by_kind,
     pending_manual_tx,
     set_setting,
 )
+
+from ui import beacon_audio
 
 
 def _configure_beacon(conn):
@@ -91,3 +94,50 @@ def test_dashboard_shows_queued_count(client, conn):
     client.post("/dashboard/transmit", data={"kind": "voice", "text": "uno"})
     body = client.get("/").text
     assert "1 queued" in body
+
+
+# --- playback of rendered manual clips ---
+
+
+def test_recent_manual_clips_newest_first(conn, tmp_path):
+    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
+    (tmp_path / "manual-1-1788400000.wav").write_bytes(b"RIFF-old")
+    (tmp_path / "manual-2-1788409999.wav").write_bytes(b"RIFF-new")
+    (tmp_path / "watermark-1788400001.wav").write_bytes(b"RIFF")  # ignored
+
+    clips = beacon_audio.recent_manual_clips(conn)
+    assert [c["name"] for c in clips] == ["manual-2-1788409999.wav", "manual-1-1788400000.wav"]
+    assert clips[0]["manual_id"] == 2
+    assert clips[0]["at"].endswith("+00:00")
+
+
+def test_manual_clip_path_rejects_bad_names(conn, tmp_path):
+    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
+    assert beacon_audio.manual_clip_path(conn, "../secret.wav") is None
+    assert beacon_audio.manual_clip_path(conn, "csn-1-2.wav") is None
+    assert beacon_audio.manual_clip_path(conn, "manual-1-2.wav") is None  # no file on disk
+
+
+def test_manual_audio_route_serves_and_404s(client, conn, tmp_path):
+    _configure_beacon(conn)
+    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
+    (tmp_path / "manual-7-1788400000.wav").write_bytes(b"RIFFmanual-bytes")
+
+    ok = client.get("/dashboard/manual-audio/manual-7-1788400000.wav")
+    assert ok.status_code == 200
+    assert ok.headers["content-type"] == "audio/wav"
+    assert ok.content == b"RIFFmanual-bytes"
+
+    assert client.get("/dashboard/manual-audio/manual-9-1788400000.wav").status_code == 404
+    assert client.get("/dashboard/manual-audio/etc-passwd.wav").status_code == 404
+
+
+def test_dashboard_lists_recent_manual_clips_with_play_buttons(client, conn, tmp_path):
+    _configure_beacon(conn)
+    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
+    (tmp_path / "manual-3-1788400000.wav").write_bytes(b"RIFF")
+
+    body = client.get("/").text
+    assert "Recent manual transmissions" in body
+    assert 'data-audio-url="/dashboard/manual-audio/manual-3-1788400000.wav"' in body
+    assert "manual #3" in body

@@ -1,5 +1,6 @@
-"""Locating the WAV clips the beacon renders for voice transmissions so the
-dashboard can play them back in the browser.
+"""Locating the WAV clips the beacon renders (per-item voice bulletins and
+one-shot manual transmissions) so the dashboard can play them back in the
+browser.
 
 The beacon writes one WAV per voice unit into BEACON_TTS_WAV_DIR, named
 ``{source}-{item_id}-{unix_ts}.wav`` (frame/packet clips get an extra
@@ -12,6 +13,7 @@ Path comes from iterating the directory itself.
 """
 import re
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from adapters.storage import get_setting
@@ -22,6 +24,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # the unix timestamp. A frame clip's remainder is ``{chunk_index}-{ts}``,
 # which this rejects.
 _VOICE_REMAINDER = re.compile(r"\d+\.wav\Z")
+
+# Manual one-shot clips: ``manual-{beacon_manual_tx.id}-{unix_ts}.wav`` (see
+# beacon.__main__._transmit_manual_unit). Both voice and frame manual sends
+# use this name — the file alone can't say which, so the dashboard just
+# offers every one for playback.
+_MANUAL_CLIP = re.compile(r"\Amanual-(\d+)-(\d+)\.wav\Z")
 
 
 def wav_dir(conn: sqlite3.Connection) -> Path:
@@ -81,3 +89,41 @@ def items_with_voice_clips(
         ):
             out.add(key)
     return out
+
+
+def recent_manual_clips(conn: sqlite3.Connection, limit: int = 5) -> list[dict]:
+    """The most recently rendered manual-transmission clips, newest first:
+    ``{"name", "manual_id", "at"}`` (``at`` = the file's mtime as an ISO
+    UTC string, the closest stand-in for when it went on air)."""
+    try:
+        entries = [
+            entry
+            for entry in wav_dir(conn).iterdir()
+            if entry.is_file() and _MANUAL_CLIP.match(entry.name)
+        ]
+    except OSError:
+        return []
+    entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+    clips = []
+    for entry in entries[:limit]:
+        match = _MANUAL_CLIP.match(entry.name)
+        clips.append(
+            {
+                "name": entry.name,
+                "manual_id": int(match.group(1)),
+                "at": datetime.fromtimestamp(
+                    entry.stat().st_mtime, tz=timezone.utc
+                ).isoformat(),
+            }
+        )
+    return clips
+
+
+def manual_clip_path(conn: sqlite3.Connection, name: str) -> Path | None:
+    """Resolve one ``manual-<id>-<ts>.wav`` name (from recent_manual_clips)
+    to a file on disk, or None. Rejects anything not matching that exact
+    shape, so a path segment can't escape the wav dir."""
+    if not _MANUAL_CLIP.match(name or ""):
+        return None
+    path = wav_dir(conn) / name
+    return path if path.is_file() else None

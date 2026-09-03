@@ -135,6 +135,13 @@ switch mode. The callsign is always added (voice via
 `BEACON_MANUAL_VOICE_TEMPLATE`, frame via the AX.25 header). The modal
 needs JavaScript; the button is inert without it.
 
+Once the beacon has rendered a manual message, a **Recent manual
+transmissions** list appears under the button (last ~5, newest first) with
+a play button per clip — same shared player as the bulletin audio, served
+from `GET /dashboard/manual-audio/{name}` (`manual-<id>-<ts>.wav` files in
+`BEACON_TTS_WAV_DIR`). Both voice and frame manual clips are listed; a
+frame one plays as AFSK tones.
+
 ## No authentication
 
 This first version has no login system — it's meant to be reached only

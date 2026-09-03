@@ -79,6 +79,7 @@ def _dashboard_context(conn: sqlite3.Connection) -> dict:
         "manual_frame_max_bytes": frame_max_bytes(conn),
         "manual_tx_pending": manual_pending,
         "manual_tx_pending_total": sum(manual_pending.values()),
+        "manual_clips": beacon_audio.recent_manual_clips(conn),
         "last_manual_transmit_at": status.get("last_manual_transmit_at"),
         "counts": queries.dashboard_counts(conn),
         "sparkline": queries.items_sparkline(conn, days=14),

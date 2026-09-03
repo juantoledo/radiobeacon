@@ -47,10 +47,12 @@
   audio.addEventListener("ended", stop);
   audio.addEventListener("error", stop);
 
-  // The feed's innerHTML is swapped on every auto-refresh; re-mark the
-  // active button (if its row is still there) once the new nodes land.
-  var feed = document.querySelector('[data-cell="feed_items"]');
-  if (feed && "MutationObserver" in window) {
-    new MutationObserver(syncButtons).observe(feed, { childList: true });
+  // Cells inside #dashboard-content (the Items feed, the Recent manual
+  // transmissions list) have their innerHTML swapped on every auto-refresh;
+  // re-mark the active button (if its row is still there) once the new
+  // nodes land.
+  var live = document.getElementById("dashboard-content");
+  if (live && "MutationObserver" in window) {
+    new MutationObserver(syncButtons).observe(live, { childList: true, subtree: true });
   }
 })();
