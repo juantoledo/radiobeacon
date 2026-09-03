@@ -141,11 +141,36 @@ def dashboard_counts(conn: sqlite3.Connection) -> dict[str, int]:
             "SELECT COUNT(*) FROM items WHERE captured_at >= datetime('now', '-1 day')"
         ).fetchone()[0],
         "total_audit_events": conn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0],
+        "events_last_24h": conn.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE recorded_at >= datetime('now', '-1 day')"
+        ).fetchone()[0],
         "in_flight_dispatches": conn.execute(
             "SELECT COUNT(*) FROM trigger_dispatches"
         ).fetchone()[0],
         "total_policies": conn.execute("SELECT COUNT(*) FROM transmit_policies").fetchone()[0],
     }
+
+
+def items_sparkline(conn: sqlite3.Connection, days: int = 14) -> list[dict]:
+    """Item ingest count per calendar day (UTC) for the last `days` days,
+    oldest first, gap-filled with zeros — feeds the dashboard's inline
+    sparkline. Buckets on captured_at (this repo's ingestion clock), which
+    is SQLite-native `datetime('now')` text, so the whole bucket/compare
+    stays in SQL for the same format-mismatch reason dashboard_counts does."""
+    rows = conn.execute(
+        "SELECT date(captured_at) AS d, COUNT(*) AS n FROM items "
+        "WHERE captured_at >= datetime('now', ?) GROUP BY d",
+        (f"-{days - 1} days",),
+    ).fetchall()
+    by_day = {r["d"]: r["n"] for r in rows}
+    today = conn.execute("SELECT date('now')").fetchone()[0]
+    start = conn.execute("SELECT date('now', ?)", (f"-{days - 1} days",)).fetchone()[0]
+    out: list[dict] = []
+    cur = start
+    while cur <= today:
+        out.append({"day": cur, "count": by_day.get(cur, 0)})
+        cur = conn.execute("SELECT date(?, '+1 day')", (cur,)).fetchone()[0]
+    return out
 
 
 def recent_items(conn: sqlite3.Connection, limit: int = 10) -> list[sqlite3.Row]:
@@ -160,6 +185,35 @@ def recent_audit_events(conn: sqlite3.Connection, limit: int = 10) -> list[sqlit
     return conn.execute(
         "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,)
     ).fetchall()
+
+
+def latest_event_at(conn: sqlite3.Connection, *event_types: str) -> str | None:
+    """recorded_at of the most recent audit_log row matching any of
+    event_types (or any row at all if none given) — a cheap "when did X
+    last happen" probe for the dashboard's status tiles."""
+    if event_types:
+        placeholders = ",".join("?" for _ in event_types)
+        row = conn.execute(
+            f"SELECT recorded_at FROM audit_log WHERE event_type IN ({placeholders}) "
+            "ORDER BY id DESC LIMIT 1",
+            event_types,
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT recorded_at FROM audit_log ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    return row[0] if row else None
+
+
+def failed_events_last_24h(conn: sqlite3.Connection) -> int:
+    """Count of audit rows in the last 24h for a failure event — the repo
+    writes both `*.transmit_failed`/`*.dispatch_failed` and the dot form
+    `action.ai.failed`, so match `failed` anywhere in the type. Surfaced
+    on the dashboard as a pipeline-health warning banner."""
+    return conn.execute(
+        "SELECT COUNT(*) FROM audit_log "
+        "WHERE recorded_at >= datetime('now', '-1 day') AND event_type LIKE '%failed%'"
+    ).fetchone()[0]
 
 
 def distinct_sources(conn: sqlite3.Connection) -> list[str]:

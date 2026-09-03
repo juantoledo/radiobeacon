@@ -42,6 +42,16 @@ def test_dashboard_includes_auto_refresh_script_when_enabled(client, conn):
     assert 'data-interval-ms="5000"' in response.text
 
 
+def test_dashboard_live_fragment_is_partial_html(client):
+    full = client.get("/").text
+    fragment = client.get("/", headers={"X-Auto-Refresh": "1"}).text
+
+    assert 'id="dashboard-content"' in fragment
+    assert "<!doctype html>" not in fragment.lower()
+    assert "<!doctype html>" in full.lower()
+    assert 'data-cell="kpi_items"' in fragment
+
+
 def test_dashboard_omits_auto_refresh_script_when_disabled(client, conn):
     set_setting(conn, "UI_DASHBOARD_REFRESH_SECONDS", "0")
 

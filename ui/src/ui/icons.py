@@ -74,6 +74,24 @@ _ICONS: dict[str, str] = {
     ),
     "close": ('<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>'),
     "arrow-right": ('<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>'),
+    "power": ('<path d="M12 3v9"/><path d="M6.6 6.6a9 9 0 1 0 10.8 0"/>'),
+    "check": ('<polyline points="20 6 9 17 4 12"/>'),
+    "alert": (
+        '<path d="M12 3 2 20h20L12 3Z"/>'
+        '<line x1="12" y1="10" x2="12" y2="14"/>'
+        '<line x1="12" y1="17.5" x2="12" y2="17.5"/>'
+    ),
+    "rss": ('<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.5"/>'),
+    "sparkles": (
+        '<path d="M12 3l1.8 4.6L18 9l-4.2 1.4L12 15l-1.8-4.6L6 9l4.2-1.4L12 3Z"/>'
+        '<path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14Z"/>'
+    ),
+    "clock": ('<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/>'),
+    "radio": (
+        '<circle cx="12" cy="12" r="2"/>'
+        '<path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 16.2a6 6 0 0 0 0-8.4"/>'
+        '<path d="M5 5a10 10 0 0 0 0 14M19 19a10 10 0 0 0 0-14"/>'
+    ),
 }
 
 

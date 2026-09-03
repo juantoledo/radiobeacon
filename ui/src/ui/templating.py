@@ -2,7 +2,7 @@
 every router — kept separate from app.py so routers don't have to import
 the composition root (which would be circular, since app.py imports the
 routers)."""
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from adapters.storage import DEFAULT_DB_PATH, get_connection, get_setting
@@ -152,6 +152,54 @@ def _display_dt(context, value: str | None) -> str:
 
 
 templates.env.filters["display_dt"] = _display_dt
+
+
+def _parse_utc(value: str | None) -> datetime | None:
+    """Parses either timestamp shape this repo stores — Python's
+    offset-suffixed ISO 8601 (fetched_at, source_date_time, beacon_status
+    heartbeats) or SQLite's own offset-less datetime('now') (captured_at,
+    recorded_at) — into an aware UTC datetime. See _display_dt for the same
+    dual-format handling."""
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def _iso_utc(value: str | None) -> str:
+    """Normalizes a stored timestamp to a `Z`-suffixed UTC ISO string for a
+    `<time datetime=...>` attribute — the machine-readable anchor the
+    dashboard's client-side "3m ago" ticker counts from."""
+    dt = _parse_utc(value)
+    return "" if dt is None else dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _time_ago(value: str | None) -> str:
+    """Compact relative time ("just now", "3m ago", "5h ago", "2d ago") —
+    the no-JS fallback text inside the dashboard's <time> elements, which
+    dashboard-refresh.js then keeps current in the browser."""
+    dt = _parse_utc(value)
+    if dt is None:
+        return "—"
+    seconds = (datetime.now(timezone.utc) - dt).total_seconds()
+    if seconds < 0:
+        return "just now"
+    if seconds < 45:
+        return "just now"
+    if seconds < 3600:
+        return f"{round(seconds / 60)}m ago"
+    if seconds < 86400:
+        return f"{round(seconds / 3600)}h ago"
+    return f"{round(seconds / 86400)}d ago"
+
+
+templates.env.filters["iso_utc"] = _iso_utc
+templates.env.filters["time_ago"] = _time_ago
 
 
 def _policy_badge_class(name: str | None) -> str:

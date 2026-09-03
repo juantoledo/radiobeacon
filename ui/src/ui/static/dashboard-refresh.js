@@ -1,61 +1,129 @@
-// Polls this page on an interval and swaps in the freshly-rendered
-// #dashboard-content in place — no full page reload/flicker, no SPA
-// framework, no build step. Polling (not push) because there's no
-// cross-process DB change notification to hook into: data-adapters and
-// dispatcher write storage/radiobeacon.db from their own separate
-// processes/connections, so the browser re-asking the server "what does
-// the dashboard look like now" is the same mechanism every other
-// consumer of that file already uses, just client-side.
+// Dashboard live updates. Polls this page for a small server-rendered
+// fragment (the #dashboard-content live region — routers/dashboard.py
+// returns just that when X-Auto-Refresh is set) and patches each
+// [data-cell] in place. Only cells whose HTML actually changed repaint,
+// so there's no full-subtree swap, no flicker, no lost scroll position,
+// and the Activity tab / any :hover survives a refresh. Plain
+// fetch/DOMParser, no framework, no build step.
+//
+// Also runs a once-a-second ticker that keeps every <time data-ago>
+// element ("3m ago") current between fetches, and drives the
+// "updated Ns ago" text in the header.
 (function () {
   "use strict";
 
   var script = document.currentScript;
   var intervalMs = parseInt(script.dataset.intervalMs, 10);
-  if (!intervalMs || intervalMs <= 0) return;
 
-  var target = document.getElementById("dashboard-content");
+  var root = document.getElementById("dashboard-content");
   var statusEl = document.getElementById("refresh-status");
-  if (!target) return;
+  if (!root) return;
 
-  var timer = null;
+  var lastUpdate = Date.now();
+  var pollTimer = null;
 
-  function setStatus(text) {
-    if (statusEl) statusEl.textContent = text;
+  // ---- relative time -----------------------------------------------------
+
+  function formatAgo(ms) {
+    var s = Math.round(ms / 1000);
+    if (s < 0) s = 0;
+    if (s < 45) return "just now";
+    if (s < 3600) return Math.round(s / 60) + "m ago";
+    if (s < 86400) return Math.round(s / 3600) + "h ago";
+    return Math.round(s / 86400) + "d ago";
   }
 
-  function scheduleNext() {
-    clearTimeout(timer);
-    timer = setTimeout(refresh, intervalMs);
+  function tickRelativeTimes(scope) {
+    var now = Date.now();
+    (scope || document).querySelectorAll("time[data-ago][datetime]").forEach(function (el) {
+      var t = Date.parse(el.getAttribute("datetime"));
+      if (!isNaN(t)) el.textContent = formatAgo(now - t);
+    });
+  }
+
+  function tickStatus() {
+    if (!statusEl) return;
+    var s = Math.round((Date.now() - lastUpdate) / 1000);
+    statusEl.textContent = s < 3 ? "updated just now" : "updated " + formatAgo(Date.now() - lastUpdate);
+  }
+
+  // ---- cell patching ----------------------------------------------------
+
+  function patch(nextRoot) {
+    var changed = 0;
+    nextRoot.querySelectorAll("[data-cell]").forEach(function (nextCell) {
+      var name = nextCell.getAttribute("data-cell");
+      var cur = root.querySelector('[data-cell="' + CSS.escape(name) + '"]');
+      if (!cur) return;
+      if (cur.innerHTML.trim() !== nextCell.innerHTML.trim()) {
+        cur.innerHTML = nextCell.innerHTML;
+        cur.classList.remove("cell-flash");
+        // reflow so re-adding the class restarts the animation
+        void cur.offsetWidth;
+        cur.classList.add("cell-flash");
+        changed++;
+      }
+      // width-style cells (the queue bar) carry their value in an attribute
+      if (nextCell.style.cssText && nextCell.style.cssText !== cur.style.cssText) {
+        cur.style.cssText = nextCell.style.cssText;
+      }
+    });
+    return changed;
   }
 
   function refresh() {
-    // Don't burn requests on a backgrounded tab — catch up immediately
-    // when it becomes visible again instead (see the listener below).
     if (document.hidden) return;
-
-    fetch(window.location.pathname, { headers: { "X-Auto-Refresh": "1" } })
+    fetch(window.location.pathname + window.location.search, {
+      headers: { "X-Auto-Refresh": "1" },
+    })
       .then(function (res) {
         if (!res.ok) throw new Error("HTTP " + res.status);
         return res.text();
       })
       .then(function (html) {
-        var next = new DOMParser()
-          .parseFromString(html, "text/html")
-          .getElementById("dashboard-content");
-        if (next) target.replaceChildren.apply(target, next.childNodes);
-        setStatus("Updated just now");
+        var next = new DOMParser().parseFromString(html, "text/html").getElementById("dashboard-content");
+        if (next) {
+          patch(next);
+          tickRelativeTimes(root);
+        }
+        lastUpdate = Date.now();
+        tickStatus();
       })
       .catch(function () {
-        // Best-effort: leave the current view in place and retry next
-        // tick — a transient failure here must never break the page.
-        setStatus("Update failed — retrying");
+        if (statusEl) statusEl.textContent = "update failed — retrying";
       })
-      .finally(scheduleNext);
+      .finally(function () {
+        clearTimeout(pollTimer);
+        if (intervalMs > 0) pollTimer = setTimeout(refresh, intervalMs);
+      });
   }
+
+  // ---- activity feed tabs (static, no fetch) ---------------------------
+
+  document.querySelectorAll("[data-feed-tab]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var want = btn.getAttribute("data-feed-tab");
+      document.querySelectorAll("[data-feed-tab]").forEach(function (b) {
+        var on = b === btn;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      document.querySelectorAll("[data-feed]").forEach(function (feed) {
+        feed.hidden = feed.getAttribute("data-feed") !== want;
+      });
+    });
+  });
+
+  // ---- wire up --------------------------------------------------------
 
   document.addEventListener("visibilitychange", function () {
     if (!document.hidden) refresh();
   });
 
-  scheduleNext();
+  setInterval(function () {
+    tickRelativeTimes(document);
+    tickStatus();
+  }, 1000);
+
+  if (intervalMs > 0) pollTimer = setTimeout(refresh, intervalMs);
 })();

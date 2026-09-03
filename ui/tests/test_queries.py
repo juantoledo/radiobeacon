@@ -203,6 +203,38 @@ def test_dashboard_counts(conn):
     assert counts["total_policies"] == 1
 
 
+def test_dashboard_counts_events_last_24h(conn):
+    record_audit_event(conn, event_type="item.stored", actor="test", source="csn", item_id="1")
+
+    assert queries.dashboard_counts(conn)["events_last_24h"] == 1
+
+
+def test_items_sparkline_shape_and_today_bucket(conn):
+    _insert_item(conn, "csn", "1")
+    _insert_item(conn, "csn", "2")
+
+    spark = queries.items_sparkline(conn, days=14)
+
+    assert len(spark) == 14
+    assert [p["count"] for p in spark[:-1]] == [0] * 13
+    assert spark[-1]["count"] == 2
+
+
+def test_latest_event_at_filters_by_type(conn):
+    record_audit_event(conn, event_type="item.stored", actor="t", source="csn", item_id="1")
+    record_audit_event(conn, event_type="action.ai.executed", actor="t", source="csn", item_id="1")
+
+    assert queries.latest_event_at(conn, "action.ai.executed") is not None
+    assert queries.latest_event_at(conn, "beacon.voice.transmitted") is None
+
+
+def test_failed_events_last_24h(conn):
+    record_audit_event(conn, event_type="action.ai.failed", actor="t", source="csn", item_id="1")
+    record_audit_event(conn, event_type="item.stored", actor="t", source="csn", item_id="1")
+
+    assert queries.failed_events_last_24h(conn) == 1
+
+
 def test_recent_items_orders_newest_first_and_respects_limit(conn):
     for i in range(3):
         _insert_item(conn, "csn", str(i))

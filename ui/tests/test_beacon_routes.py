@@ -212,9 +212,10 @@ def test_dashboard_shows_pending_transmits_for_active_type(client, conn):
 
     response = client.get("/")
 
-    # Only the active type's depth is shown; max defaults to 200 when unset.
-    assert '3<span class="muted"> / 200</span>' in response.text
-    assert '1<span class="muted"> / 200</span>' not in response.text
+    # Only the active type's depth is shown in the Queue status tile; max
+    # defaults to 200 when unset.
+    assert '3 <span class="muted">/ 200</span>' in response.text
+    assert '1 <span class="muted">/ 200</span>' not in response.text
 
 
 def test_dashboard_shows_beacon_type(client, conn):
@@ -225,7 +226,7 @@ def test_dashboard_shows_beacon_type(client, conn):
     response = client.get("/")
 
     assert "frame" in response.text
-    assert '2<span class="muted"> / 200</span>' in response.text
+    assert '2 <span class="muted">/ 200</span>' in response.text
 
 
 def test_beacon_enable_action_sets_flag_and_redirects(client, conn):
@@ -249,7 +250,34 @@ def test_dashboard_reflects_beacon_enabled_state(client, conn):
 
     response = client.get("/")
 
-    assert ">Disable beacon<" in response.text  # button offers the opposite action
+    # Beacon side panel badge + the quick-control switch reflect the state.
+    assert '<span class="badge badge-success">enabled</span>' in response.text
+    assert 'name="key" value="BEACON_ENABLED"' in response.text
+
+
+def test_dashboard_quick_toggle_flips_a_live_setting(client, conn):
+    set_setting(conn, "ACTIONS_AI_ENABLED", "false")
+
+    response = client.post(
+        "/dashboard/toggle",
+        data={"key": "ACTIONS_AI_ENABLED", "value": "true"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert get_setting("ACTIONS_AI_ENABLED", conn=conn) == "true"
+
+
+def test_dashboard_quick_toggle_rejects_key_not_on_allowlist(client, conn):
+    response = client.post(
+        "/dashboard/toggle",
+        data={"key": "ANTHROPIC_API_KEY", "value": "leaked"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "error=" in response.headers["location"]
+    assert get_setting("ANTHROPIC_API_KEY", "", conn=conn) == ""
 
 
 def test_beacon_group_settings_appear_in_config(client):

@@ -6,116 +6,51 @@
   {% if refresh_seconds %}
   <span class="live-badge">
     <span class="pulse-dot" aria-hidden="true"></span>
-    Live · every {{ refresh_seconds }}s · <span id="refresh-status">just loaded</span>
+    Live · <span id="refresh-status">updated just now</span>
   </span>
   {% endif %}
 </div>
 
-<div id="dashboard-content">
-<div class="card-row">
-  <div class="card"><div class="card-icon">{{ icon('items', 18) }}</div><div class="value">{{ counts.total_items }}</div><div class="label">Items</div></div>
-  <div class="card"><div class="card-icon">{{ icon('audit', 18) }}</div><div class="value">{{ counts.items_last_24h }}</div><div class="label">Items · 24h</div></div>
-  <div class="card"><div class="card-icon">{{ icon('database', 18) }}</div><div class="value">{{ counts.total_audit_events }}</div><div class="label">Audit events</div></div>
-  <div class="card"><div class="card-icon">{{ icon('beacon', 18) }}</div><div class="value">{{ counts.in_flight_dispatches }}</div><div class="label">In-flight</div></div>
-  <div class="card"><div class="card-icon">{{ icon('policies', 18) }}</div><div class="value">{{ counts.total_policies }}</div><div class="label">Policies</div></div>
-</div>
-
-<div class="page-header">
-  <h2 style="margin-top:0;">Beacon</h2>
-  <div class="header-badges">
-    {% if beacon_enabled %}<span class="badge badge-success">enabled</span>{% else %}<span class="badge badge-neutral">disabled</span>{% endif %}
-    {% if running %}<span class="badge badge-success">running</span>{% else %}<span class="badge badge-warn">not running</span>{% endif %}
-    {% if not is_beacon_configured() %}<span class="badge badge-warn">identity not set</span>{% endif %}
+{% set toggles = [
+  ('BEACON_ENABLED', beacon_enabled, 'radio', 'Beacon transmit', 'Puts scheduled content on air'),
+  ('ACTIONS_AI_ENABLED', ai_enabled, 'sparkles', 'AI summarization', 'Summarize items before transmit'),
+  ('BEACON_WATERMARK_ENABLED', watermark_enabled, 'clock', 'Periodic watermark', 'Station ID on its own timer'),
+  ('UI_DEV_TOOLS_ENABLED', dev_tools_enabled_now, 'developers', 'Developer tools', 'Raw item edit + SQL runner'),
+] %}
+<section class="panel quick-controls">
+  <div class="panel-head">
+    <h3>{{ icon('power', 17) }} Quick controls</h3>
+    <span class="muted">applied live — no restart needed</span>
   </div>
-</div>
-
-{% if beacon_enabled and not running %}
-<p class="banner-warn">⚠ Beacon is enabled but the process doesn't appear to be running (no recent heartbeat) — check that <code>beacon/start.sh</code> is up.</p>
-{% endif %}
-
-<form class="action" method="post" action="/beacon/{{ 'disable' if beacon_enabled else 'enable' }}">
-  <button type="submit" class="{{ 'danger' if beacon_enabled else '' }}">{{ 'Disable beacon' if beacon_enabled else 'Enable beacon' }}</button>
-  {% if not is_beacon_configured() %}<span class="meta-line" style="margin:0;">Set up <a href="/config/beacon-identity">beacon identity</a> first.</span>{% endif %}
-</form>
-
-<div class="card-row">
-  <div class="card">
-    <div class="card-icon">{{ icon('beacon', 18) }}</div>
-    <div class="value">{{ beacon_type }}</div>
-    <div class="label">Beacon type</div>
-  </div>
-  <div class="card">
-    <div class="card-icon">{{ icon('activity', 18) }}</div>
-    <div class="value">{{ queue_depth }}<span class="muted"> / {{ queue_max_size }}</span></div>
-    <div class="label">Pending transmits</div>
-    <div class="queue-bar"><div class="queue-bar-fill {{ queue_bar.fill_class }}" style="width: {{ queue_bar.pct }}%;"></div></div>
-  </div>
-  <div class="card">
-    <div class="card-icon">{{ icon('audit', 18) }}</div>
-    <div class="value">{{ last_transmit_at | display_dt if last_transmit_at else '—' }}</div>
-    <div class="label">Last transmit</div>
-  </div>
-</div>
-
-<p class="meta-line">
-  {% if status.get('last_ntp_checked_at') %}
-    NTP offset {{ status.get('last_ntp_offset_seconds', '?') }}s at {{ status.get('last_ntp_checked_at') | display_dt }}
-  {% else %}
-    NTP: not checked yet
-  {% endif %}
-</p>
-
-<div class="dash-columns">
-<section>
-<div class="page-header"><h2>Recent items</h2><a href="/items">View all {{ icon('arrow-right', 14) }}</a></div>
-<div class="table-wrap cards">
-<table>
-  <thead><tr><th>Source</th><th>Item</th><th class="wrap">Title</th><th>Type</th><th>Policy</th><th>Date</th></tr></thead>
-  <tbody>
-    {% for item in recent_items %}
-    <tr>
-      <td data-label="Source">{{ item.source }}</td>
-      <td data-label="Item" class="mono"><a href="/items/{{ item.source }}/{{ item.item_id }}">{{ item.item_id }}</a></td>
-      <td data-label="Title" class="wrap">{{ item.extracted_title or "—" }}</td>
-      <td data-label="Type">{{ item.type or "" }}</td>
-      <td data-label="Policy">{% if item.transmit_policy %}<span class="{{ item.transmit_policy | policy_badge }}">{{ item.transmit_policy }}</span>{% endif %}</td>
-      <td data-label="Date" class="muted">{{ item.source_date_time | display_dt }}</td>
-    </tr>
-    {% else %}
-    <tr class="empty-row"><td colspan="6">No items yet.</td></tr>
+  <div class="toggle-grid">
+    {% for key, on, ic, label, hint in toggles %}
+    <form method="post" action="/dashboard/toggle" class="toggle-form">
+      <input type="hidden" name="key" value="{{ key }}">
+      <input type="hidden" name="value" value="{{ 'false' if on else 'true' }}">
+      <button type="submit" class="switch {{ 'is-on' if on else '' }}" role="switch" aria-checked="{{ 'true' if on else 'false' }}">
+        <span class="switch-track"><span class="switch-thumb"></span></span>
+        <span class="switch-text">
+          <span class="switch-label">{{ icon(ic, 15) }}{{ label }}</span>
+          <span class="switch-hint">{{ hint }}</span>
+        </span>
+      </button>
+    </form>
     {% endfor %}
-  </tbody>
-</table>
-</div>
+    <div class="segmented" role="group" aria-label="Beacon mode">
+      <span class="segmented-label">{{ icon('activity', 15) }}Mode</span>
+      {% for mode in ['voice', 'frame'] %}
+      <form method="post" action="/dashboard/toggle">
+        <input type="hidden" name="key" value="BEACON_TYPE">
+        <input type="hidden" name="value" value="{{ mode }}">
+        <button type="submit" class="{{ 'active' if beacon_type == mode else '' }}"
+                {{ 'aria-current=true' if beacon_type == mode else '' }}>{{ mode }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </div>
 </section>
 
-<section>
-<div class="page-header"><h2>Recent audit events</h2><a href="/audit">Full log {{ icon('arrow-right', 14) }}</a></div>
-<div class="table-wrap cards">
-<table>
-  <thead><tr><th>Event</th><th>Actor</th><th>Source</th><th>Item</th><th>Recorded</th></tr></thead>
-  <tbody>
-    {% for event in recent_audit_events %}
-    <tr>
-      <td data-label="Event"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
-      <td data-label="Actor" class="muted">{{ event.actor }}</td>
-      <td data-label="Source">{{ event.source or "" }}</td>
-      <td data-label="Item" class="mono">
-        {% if event.source and event.item_id %}
-          <a href="/items/{{ event.source }}/{{ event.item_id }}">{{ event.item_id }}</a>
-        {% else %}{{ event.item_id or "" }}{% endif %}
-      </td>
-      <td data-label="Recorded" class="muted">{{ event.recorded_at | display_dt }}</td>
-    </tr>
-    {% else %}
-    <tr class="empty-row"><td colspan="5">No audit events yet.</td></tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
-</section>
-</div>
-</div>
+{% include "_dashboard_live.html" %}
 {% endblock %}
 {% block scripts %}
 {% if refresh_seconds %}
