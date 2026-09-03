@@ -448,6 +448,37 @@ def fetch(config):
 '''
 
 
+# Per-adapter override of the global ACTIONS_AI_PROMPT (see
+# adapters.actions_defaults.AI_PROMPT_DEFAULT) — SENAPRED reports are
+# official emergency bulletins, so the default summarization prompt is
+# tuned to strip exact figures (never inventing a rounder-sounding number
+# in their place) in favor of qualitative language, matching how the
+# beacon voice channel is meant to sound. Overridable via
+# ADAPTERS_SENAPRED_AI_PROMPT, same as this seed's other ADAPTERS_SENAPRED_*
+# knobs; only takes effect on a fresh install (see
+# _ensure_adapter_instances_seeded) — an existing adapter_instances.senapred
+# row keeps whatever ai_prompt it already has.
+_SENAPRED_AI_PROMPT_DEFAULT = (
+    "Resume el siguiente reporte de SENAPRED en un máximo de 3 oraciones, "
+    "siguiendo estas reglas: No incluyas ninguna cifra numérica ni sus "
+    "equivalentes en palabras (ej. evita tanto \"20 mm\" como \"veinte "
+    "milímetros\"); usa términos cualitativos como \"varias\", \"algunas\", "
+    "\"varios grados bajo cero\", etc.\n"
+    "Céntrate solo en los hechos principales: qué evento ocurrió, qué "
+    "región/comunas fueron afectadas, qué tipo de daños o condiciones se "
+    "registraron (de forma cualitativa), el estado de rutas (si aplica), "
+    "el retorno gradual de establecimientos educacionales (si aplica), y "
+    "las alertas vigentes (tipo de alerta, zona y motivo).\n"
+    "Usa un tono informativo y neutro, tipo titular de noticia.\n"
+    "Redacta en prosa, no en formato de tabla ni de lista, ni markdown.\n"
+    "Cuando menciones unidades de medida (temperatura, precipitación, "
+    "viento, etc.), refiérete a ellas de forma cualitativa sin especificar "
+    "cantidad (ej. \"temperaturas bajo cero\", \"precipitaciones\", "
+    "\"nevadas\", \"vientos fuertes\").\n\n"
+    "Texto a resumir: {extracted_contents}"
+)
+
+
 def _build_senapred_code(
     identity_pool_id: str,
     cognito_region: str,
@@ -508,6 +539,7 @@ _SEED_ADAPTER_INSTANCES = (
             # summarizer's provider call fails — actions.ai then stores the
             # title as the summary instead of letting the item hard-stop.
             "ai_fallback_to_title": True,
+            "ai_prompt": get("ADAPTERS_SENAPRED_AI_PROMPT", _SENAPRED_AI_PROMPT_DEFAULT),
             "code": _build_senapred_code(
                 identity_pool_id=get(
                     "ADAPTERS_SENAPRED_IDENTITY_POOL_ID",
