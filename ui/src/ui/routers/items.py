@@ -7,9 +7,9 @@ from dispatcher.mq_publisher import PUBLISHED_EVENT_TYPES
 from dispatcher.override import override_item, rearm_item
 from adapters.transmit_policy import list_policies
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from starlette.responses import RedirectResponse
+from starlette.responses import FileResponse, RedirectResponse
 
-from .. import queries
+from .. import beacon_audio, queries
 from ..beacon import is_beacon_configured
 from ..db import get_db
 from ..templating import templates
@@ -100,6 +100,21 @@ def item_detail_page(
             "replayable_event_types": PUBLISHED_EVENT_TYPES,
         },
     )
+
+
+@router.get("/items/{source}/{item_id}/audio")
+def item_audio(
+    source: str,
+    item_id: str,
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    """The WAV the beacon last rendered for this item's voice transmission,
+    streamed for in-browser playback (the dashboard's per-item play
+    button). 404 when nothing has been rendered for it yet."""
+    clip = beacon_audio.latest_voice_clip(conn, source, item_id)
+    if clip is None:
+        raise HTTPException(status_code=404, detail="no rendered voice audio for this item")
+    return FileResponse(clip, media_type="audio/wav", filename=clip.name)
 
 
 @router.post("/items/{source}/{item_id}/override")

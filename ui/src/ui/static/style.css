@@ -760,6 +760,32 @@ a.feed-main:hover .feed-title { color: var(--accent); }
 .feed-time { flex-shrink: 0; font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; }
 .feed-empty { color: var(--fg-muted); padding: var(--space-5) 0; text-align: center; }
 
+/* Per-item play button (Activity feed) — compact icon button, not the
+   default filled button. */
+.feed-play {
+  flex-shrink: 0;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.28rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+}
+.feed-play:hover {
+  background: var(--bg-subtle);
+  border-color: var(--fg-faint);
+  color: var(--accent);
+  box-shadow: none;
+}
+.feed-play .icon { display: block; }
+.feed-play .fp-stop { display: none; }
+.feed-play.is-playing { color: var(--accent); border-color: var(--accent); }
+.feed-play.is-playing .fp-play { display: none; }
+.feed-play.is-playing .fp-stop { display: inline-flex; }
+
 /* ---- beacon side panel ---------------------------------------- */
 
 .stat-list { margin: 0; display: flex; flex-direction: column; }

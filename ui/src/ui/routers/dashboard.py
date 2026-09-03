@@ -4,7 +4,7 @@ import sqlite3
 from adapters.storage import get_setting
 from fastapi import APIRouter, Depends, Request
 
-from .. import queries
+from .. import beacon_audio, queries
 from ..db import get_db
 from ..templating import templates
 from .beacon import _status_context
@@ -70,11 +70,14 @@ def _dashboard_context(conn: sqlite3.Connection) -> dict:
     except ValueError:
         ntp_offset = None
 
+    recent_items = queries.recent_items(conn, limit=8)
+
     return {
         "counts": queries.dashboard_counts(conn),
         "sparkline": queries.items_sparkline(conn, days=14),
         "failed_24h": queries.failed_events_last_24h(conn),
-        "recent_items": queries.recent_items(conn, limit=8),
+        "recent_items": recent_items,
+        "items_with_audio": beacon_audio.items_with_voice_clips(conn, recent_items),
         "recent_audit_events": queries.recent_audit_events(conn, limit=8),
         "ingest": _ingest_health(conn),
         "ai_enabled": ai_enabled,

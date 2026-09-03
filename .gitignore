@@ -5,6 +5,7 @@ storage/*.db-wal
 storage/*.db-shm
 beacon/storage/beacon_tts/*.wav
 beacon/storage/piper_voices/
+storage/beacon_tts/
 __pycache__/
 *.pyc
 .pytest_cache/

@@ -110,6 +110,16 @@ BEACON_MQ_RECONNECT_BACKOFF_SECONDS = int(get_setting("BEACON_MQ_RECONNECT_BACKO
 VALID_BEACON_TYPES = ("voice", "frame")
 
 
+def _resolve_wav_dir(raw: str) -> str:
+    """Anchor a relative BEACON_TTS_WAV_DIR at the repo root rather than the
+    beacon process's cwd (which is beacon/). The default therefore lands in
+    the top-level storage/ directory the ui/ container also bind-mounts, so
+    the dashboard can serve the rendered clips back (see
+    ui.beacon_audio). An absolute path is used verbatim."""
+    path = Path(raw).expanduser()
+    return str(path if path.is_absolute() else REPO_ROOT / path)
+
+
 def _resolve_beacon_type(conn) -> str:
     value = (get_setting("BEACON_TYPE", BEACON_TYPE_DEFAULT, conn=conn) or "").strip().lower()
     if value not in VALID_BEACON_TYPES:
@@ -701,7 +711,9 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 "frame_suffix": get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or "",
                 "voice_prefix": get_setting("BEACON_VOICE_PREFIX", BEACON_VOICE_PREFIX_DEFAULT, conn=conn) or "",
                 "voice_suffix": get_setting("BEACON_VOICE_SUFFIX", BEACON_VOICE_SUFFIX_DEFAULT, conn=conn) or "",
-                "wav_dir": get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn),
+                "wav_dir": _resolve_wav_dir(
+                    get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
+                ),
                 "tts_voice": get_setting("BEACON_TTS_VOICE", "es", conn=conn),
                 "tts_engine": get_setting("BEACON_TTS_ENGINE", "piper", conn=conn),
                 "tts_piper_model": get_setting(

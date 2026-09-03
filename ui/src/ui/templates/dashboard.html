@@ -12,8 +12,14 @@
 </div>
 
 {% include "_dashboard_live.html" %}
+
+{# One shared player for the Activity feed's per-item play buttons — kept
+   outside #dashboard-content so the auto-refresh never tears it down
+   mid-playback (see beacon-audio.js). #}
+<audio id="beacon-audio" preload="none"></audio>
 {% endblock %}
 {% block scripts %}
+<script src="{{ static_url('beacon-audio.js') }}" defer></script>
 {% if refresh_seconds %}
 <script src="{{ static_url('dashboard-refresh.js') }}" defer data-interval-ms="{{ refresh_seconds * 1000 }}"></script>
 {% endif %}

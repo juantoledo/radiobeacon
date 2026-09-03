@@ -744,7 +744,11 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "BEACON_TTS_WAV_DIR",
         "Beacon — Voice",
         "TTS output directory",
-        "Where synthesized WAV files are written before playback.",
+        "Where the beacon writes synthesized WAV files before transmitting. "
+        "A relative path is resolved against the repo root (not beacon/); the "
+        "dashboard reads this same directory to play a bulletin's voice clip "
+        "back in the browser, so in a split host/container deployment it must "
+        "point at storage shared by both.",
         "text",
         "storage/beacon_tts",
         advanced=True,

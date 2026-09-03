@@ -92,6 +92,8 @@ _ICONS: dict[str, str] = {
         '<path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 16.2a6 6 0 0 0 0-8.4"/>'
         '<path d="M5 5a10 10 0 0 0 0 14M19 19a10 10 0 0 0 0-14"/>'
     ),
+    "play": ('<polygon points="7 4 20 12 7 20 7 4" fill="currentColor"/>'),
+    "stop": ('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>'),
 }
 
 

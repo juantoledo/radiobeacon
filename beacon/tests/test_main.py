@@ -176,6 +176,18 @@ def test_resolve_beacon_type_falls_back_on_garbage(tmp_path):
     assert main_module._resolve_beacon_type(conn) == "voice"
 
 
+# --- BEACON_TTS_WAV_DIR resolution ---
+
+
+def test_resolve_wav_dir_anchors_relative_path_at_repo_root():
+    resolved = main_module._resolve_wav_dir("storage/beacon_tts")
+    assert resolved == str(main_module.REPO_ROOT / "storage" / "beacon_tts")
+
+
+def test_resolve_wav_dir_keeps_absolute_path(tmp_path):
+    assert main_module._resolve_wav_dir(str(tmp_path)) == str(tmp_path)
+
+
 # --- content_ready -> schedule rows ---
 
 

@@ -168,6 +168,12 @@
             {% if item.type %}<span class="muted">{{ item.type }}</span>{% endif %}
           </span>
         </a>
+        {% if (item.source, item.item_id) in items_with_audio %}
+        <button type="button" class="feed-play" data-audio-url="/items/{{ item.source }}/{{ item.item_id }}/audio" aria-label="Play bulletin audio">
+          <span class="fp-play">{{ icon('play', 14) }}</span>
+          <span class="fp-stop">{{ icon('stop', 14) }}</span>
+        </button>
+        {% endif %}
         <time class="feed-time" datetime="{{ item.source_date_time | iso_utc }}" data-ago>{{ item.source_date_time | time_ago }}</time>
       </li>
       {% else %}

@@ -99,6 +99,23 @@ active type's `*_queue_depth`, `last_{voice,frame}_transmit_at`), written
 every tick by `beacon/src/beacon/__main__.py::_write_heartbeat`. The
 "running" badge tracks whether `process_heartbeat_at` is recent.
 
+### Play a bulletin's audio
+
+Rows in the dashboard's Activity → Items feed show a small play button
+when the beacon has already rendered a voice clip for that item. It
+streams the WAV from `GET /items/{source}/{item_id}/audio` and plays it
+through one shared `<audio>` element (`ui/src/ui/static/beacon-audio.js`),
+so you can hear exactly what went on air without a radio. Only spoken
+(voice) clips are offered — frame/packet clips are AFSK modem tones, not
+speech.
+
+The clips come straight from `BEACON_TTS_WAV_DIR` (`ui.beacon_audio`), the
+directory the beacon writes into. A relative value there is resolved
+against the repo root by both processes, so the default `storage/beacon_tts`
+is the top-level `storage/` the `ui/` container already bind-mounts. In a
+split deployment (beacon on the host, UI in Docker) point it at a path
+both can see, or no button appears.
+
 ## No authentication
 
 This first version has no login system — it's meant to be reached only
