@@ -8,6 +8,16 @@ BEACON_ENABLED_DEFAULT = "false"
 BEACON_TYPE_DEFAULT = "voice"  # "voice" | "frame"
 BEACON_QUEUE_MAX_SIZE_DEFAULT = "200"
 
+# How long a beacon_tx_schedule row may sit unsent before the transmit loop
+# drops it instead of putting it on air (see
+# beacon.__main__._purge_stale_rows). Measured against the row's `updated_at`
+# — the last time it was enqueued, rearmed, or transmitted — so a deliberate
+# rearm / the ui's "Re-transmit" refreshes the clock. The point: turning
+# transmit off overnight must not dump a stale backlog on air when it comes
+# back. Checked every tick regardless of BEACON_ENABLED. "0" disables the
+# check. Does not touch beacon_manual_tx (one-shot operator messages).
+BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT = "21600"  # 6 hours
+
 # Voice content templates (see beacon.formatters.format_voice). The outer
 # template is a bare {text} passthrough — all the framing lives in the
 # prefix/suffix, which wrap the resolved summary with a spoken-Spanish

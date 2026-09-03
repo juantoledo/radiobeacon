@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from adapters.beacon_defaults import (
     BEACON_ENABLED_DEFAULT,
     BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
+    BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
     BEACON_VOICE_MAX_CHARS_DEFAULT,
@@ -832,6 +833,21 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "items — no restart needed.",
         "int",
         BEACON_QUEUE_MAX_SIZE_DEFAULT,
+    ),
+    SettingSpec(
+        "BEACON_MAX_QUEUED_AGE_SECONDS",
+        "Beacon — Queue",
+        "Max queued age (s)",
+        "A scheduled transmission that has waited this long without going on "
+        "air is dropped unsent (audited as beacon.tx.skipped_stale) instead "
+        "of transmitted — so turning transmit off overnight doesn't dump a "
+        "stale backlog on air when it comes back. Measured from the row's "
+        "last enqueue/rearm/send, so a deliberate Re-transmit resets the "
+        "clock. Checked every tick whether or not the beacon is enabled. "
+        "\"0\" disables the check. Does not affect manual \"Transmit now\" "
+        "messages. Default 21600 (6 h).",
+        "int",
+        BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT,
     ),
     SettingSpec(
         "BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS",

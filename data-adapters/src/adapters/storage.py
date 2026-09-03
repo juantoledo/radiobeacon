@@ -3,7 +3,7 @@ import json
 import logging
 import os
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from string import Template
@@ -1332,6 +1332,43 @@ def due_tx_schedule_rows(conn: sqlite3.Connection, kind: str) -> list[dict[str, 
         (kind,),
     ).fetchall()
     return [_tx_schedule_row_to_dict(row) for row in rows]
+
+
+def delete_stale_tx_schedule(
+    conn: sqlite3.Connection,
+    kind: str,
+    *,
+    max_age_seconds: int,
+    now_iso: str,
+) -> list[dict[str, Any]]:
+    """Drops every beacon_tx_schedule row of this `kind` that has sat unsent
+    longer than `max_age_seconds`, measured against `updated_at` (the last
+    time the row was enqueued, rearmed, or transmitted). Returns the deleted
+    rows so the caller can audit each; a no-op returning [] when
+    `max_age_seconds <= 0`. `now_iso` is the caller's "now" (utc_now()),
+    passed in for testability. Same policy-agnostic style as
+    due_tx_schedule_rows — staleness is a wall-clock concern, unrelated to
+    transmit_policy repeat/interval."""
+    if max_age_seconds <= 0:
+        return []
+    _ensure_beacon_tx_schedule_table(conn)
+    # SQLite writes created_at/updated_at as `datetime('now')` -> the naive
+    # UTC "%Y-%m-%d %H:%M:%S" string this cutoff must match to compare.
+    cutoff = (
+        datetime.fromisoformat(now_iso) - timedelta(seconds=max_age_seconds)
+    ).strftime("%Y-%m-%d %H:%M:%S")
+    stale = conn.execute(
+        f"SELECT {', '.join(_BEACON_TX_SCHEDULE_COLUMNS)} FROM beacon_tx_schedule "
+        "WHERE kind = ? AND updated_at < ? ORDER BY created_at, rowid",
+        (kind, cutoff),
+    ).fetchall()
+    if stale:
+        conn.execute(
+            "DELETE FROM beacon_tx_schedule WHERE kind = ? AND updated_at < ?",
+            (kind, cutoff),
+        )
+        conn.commit()
+    return [_tx_schedule_row_to_dict(row) for row in stale]
 
 
 def record_tx_schedule_sent(

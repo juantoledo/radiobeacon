@@ -248,6 +248,7 @@ def _event_badge_class(event_type: str | None) -> str:
         "item.policy_drifted",
         "item.dev_edited",
         "item.dispatch_state_reset",
+        "beacon.tx.skipped_stale",
     ):
         return "badge badge-warn"
     if event_type in ("item.dispatched", "item.discovered", "item.stored", "item.created"):

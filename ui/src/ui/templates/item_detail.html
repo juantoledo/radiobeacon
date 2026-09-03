@@ -85,7 +85,7 @@
           <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Replay</button>
         </form>
         {% endif %}
-        {% if event.event_type.startswith('beacon.voice.') or event.event_type.startswith('beacon.frame.') or event.event_type == 'beacon.tx.retired' %}
+        {% if event.event_type.startswith('beacon.voice.') or event.event_type.startswith('beacon.frame.') or event.event_type in ('beacon.tx.retired', 'beacon.tx.skipped_stale') %}
         <form method="post" action="/items/{{ item.source }}/{{ item.item_id }}/retransmit">
           <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Re-transmit</button>
         </form>

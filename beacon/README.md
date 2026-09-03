@@ -123,6 +123,12 @@ CREATE TABLE beacon_tx_schedule (
 - **Every attempt counts** — `sent_count` increments whether the render + spool
   hand-off succeeded or not, so a persistently failing link still retires the
   row.
+- **Stale rows age out** — every tick (regardless of `BEACON_ENABLED`),
+  `_purge_stale_rows` deletes any row whose `updated_at` (last enqueue / rearm /
+  send) is older than `BEACON_MAX_QUEUED_AGE_SECONDS` (default `21600` = 6h,
+  `0` disables), recording `beacon.tx.skipped_stale` per row. This is what keeps
+  turning transmit off overnight from dumping a stale backlog on air the next
+  morning. `beacon_manual_tx` is not affected.
 - **Rearm / policy change** — a fresh `item.content_ready` (new CloudEvent id)
   PK-upserts each row back to `sent_count = 0`, `last_transmitted_at = NULL`.
 - **Kind-generic** — `KIND_TRANSMITTERS` maps a kind to its
@@ -133,7 +139,10 @@ CREATE TABLE beacon_tx_schedule (
 Not real OS process control. `beacon` runs as a fifth long-lived process. The
 dashboard's Enable/Disable button flips the `BEACON_ENABLED` settings flag, which
 the running process re-reads every tick. Schedule rows keep being written even
-while disabled — only the transmit step checks the flag.
+while disabled — only the transmit step checks the flag. They don't pile up
+forever, though: the staleness purge (`BEACON_MAX_QUEUED_AGE_SECONDS`, see
+"Transmit schedule" above) runs while disabled too, so re-enabling after a long
+off period replays only what's still fresh, not the whole overnight backlog.
 
 ## Manual transmission (one-shot)
 
@@ -255,6 +264,7 @@ Env vars in `.env` at the repo root — also all editable live via `/config` →
 | `BEACON_TTS_WAV_DIR` | `storage/beacon_tts` (a relative path is resolved against the repo root, not `beacon/`, so the rendered clips land in the top-level `storage/` the dashboard also reads) |
 | `BEACON_MANUAL_VOICE_TEMPLATE` | `Aquí {callsign}. {text}` |
 | `BEACON_QUEUE_MAX_SIZE` | `200` |
+| `BEACON_MAX_QUEUED_AGE_SECONDS` | `21600` (`0` disables) |
 | `BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS` | `30` |
 | `BEACON_MQ_HOST`/`_PORT`/`_QOS`/`_RECONNECT_BACKOFF_SECONDS` | `localhost`/`1883`/`1`/`5` |
 | `BEACON_CONTENT_READY_SUBSCRIBE_TOPIC` | `radiobeacon/events/item.content_ready` |

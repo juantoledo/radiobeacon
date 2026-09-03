@@ -592,6 +592,50 @@ def test_delete_tx_schedule_other_kinds_keeps_only_the_named_kind(tmp_path):
     assert delete_tx_schedule_other_kinds(conn, "frame") == 0
 
 
+def _backdate_tx_row(conn, source, item_id, kind, ref, updated_at):
+    conn.execute(
+        "UPDATE beacon_tx_schedule SET updated_at = ? "
+        "WHERE source = ? AND item_id = ? AND kind = ? AND ref = ?",
+        (updated_at, source, item_id, kind, ref),
+    )
+    conn.commit()
+
+
+def test_delete_stale_tx_schedule_drops_only_rows_older_than_cutoff(tmp_path):
+    from adapters.storage import add_tx_schedule_unit, delete_stale_tx_schedule
+
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    add_tx_schedule_unit(conn, "csn", "old", "voice", "", "informational", "e1")
+    add_tx_schedule_unit(conn, "csn", "fresh", "voice", "", "informational", "e2")
+    add_tx_schedule_unit(conn, "csn", "other", "frame", "0", "informational", "e3")
+    _backdate_tx_row(conn, "csn", "old", "voice", "", "2026-09-03 00:00:00")
+    _backdate_tx_row(conn, "csn", "fresh", "voice", "", "2026-09-03 11:55:00")
+    _backdate_tx_row(conn, "csn", "other", "frame", "0", "2026-09-03 00:00:00")
+
+    now_iso = "2026-09-03T12:00:00+00:00"
+    dropped = delete_stale_tx_schedule(conn, "voice", max_age_seconds=3600, now_iso=now_iso)
+
+    assert [r["item_id"] for r in dropped] == ["old"]
+    assert dropped[0]["kind"] == "voice"
+    remaining = {
+        (r[0], r[1]) for r in conn.execute("SELECT item_id, kind FROM beacon_tx_schedule")
+    }
+    assert remaining == {("fresh", "voice"), ("other", "frame")}
+
+
+def test_delete_stale_tx_schedule_noop_when_disabled(tmp_path):
+    from adapters.storage import add_tx_schedule_unit, delete_stale_tx_schedule
+
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    add_tx_schedule_unit(conn, "csn", "old", "voice", "", "informational", "e1")
+    _backdate_tx_row(conn, "csn", "old", "voice", "", "2020-01-01 00:00:00")
+
+    assert delete_stale_tx_schedule(
+        conn, "voice", max_age_seconds=0, now_iso="2026-09-03T12:00:00+00:00"
+    ) == []
+    assert conn.execute("SELECT COUNT(*) FROM beacon_tx_schedule").fetchone()[0] == 1
+
+
 def test_manual_tx_enqueue_pending_and_delete(tmp_path):
     from adapters.storage import (
         count_manual_tx_by_kind,

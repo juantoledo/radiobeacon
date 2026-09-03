@@ -596,6 +596,76 @@ def test_drain_kind_is_generic_over_kinds(tmp_path):
         del main_module.KIND_TRANSMITTERS["telemetry"]
 
 
+# --- _purge_stale_rows ---
+
+
+def _backdate_tx_row(conn, source, item_id, kind, ref, updated_at):
+    conn.execute(
+        "UPDATE beacon_tx_schedule SET updated_at = ? "
+        "WHERE source = ? AND item_id = ? AND kind = ? AND ref = ?",
+        (updated_at, source, item_id, kind, ref),
+    )
+    conn.commit()
+
+
+def test_purge_stale_rows_drops_aged_row_and_audits(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    add_tx_schedule_unit(conn, "csn", "old", "voice", "", "informational", "e1")
+    add_tx_schedule_unit(conn, "csn", "fresh", "voice", "", "informational", "e2")
+    _backdate_tx_row(conn, "csn", "old", "voice", "", "2026-09-03 00:00:00")
+
+    now_dt = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+    dropped = main_module._purge_stale_rows(conn, "voice", 3600, now_dt)
+
+    assert dropped == 1
+    assert _count(conn, "voice") == 1
+    assert conn.execute(
+        "SELECT COUNT(*) FROM beacon_tx_schedule WHERE item_id = 'fresh'"
+    ).fetchone()[0] == 1
+    ev = conn.execute(
+        "SELECT source, item_id, details FROM audit_log WHERE event_type = 'beacon.tx.skipped_stale'"
+    ).fetchall()
+    assert len(ev) == 1
+    assert (ev[0][0], ev[0][1]) == ("csn", "old")
+    assert json.loads(ev[0][2])["max_age_seconds"] == 3600
+
+
+def test_purge_stale_rows_noop_when_age_limit_zero(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    add_tx_schedule_unit(conn, "csn", "old", "voice", "", "informational", "e1")
+    _backdate_tx_row(conn, "csn", "old", "voice", "", "2020-01-01 00:00:00")
+
+    assert main_module._purge_stale_rows(
+        conn, "voice", 0, datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+    ) == 0
+    assert _count(conn, "voice") == 1
+
+
+def test_purge_stale_rows_spares_a_rearmed_row(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "informational", "e1")
+    _backdate_tx_row(conn, "csn", "1", "voice", "", "2026-09-03 00:00:00")
+    # a genuine rearm (new event id) refreshes updated_at to now
+    add_tx_schedule_unit(conn, "csn", "1", "voice", "", "informational", "e2")
+
+    now_dt = datetime.now(timezone.utc)
+    assert main_module._purge_stale_rows(conn, "voice", 3600, now_dt) == 0
+    assert _count(conn, "voice") == 1
+
+
+def test_purge_stale_rows_leaves_manual_tx_untouched(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    mid = enqueue_manual_tx(conn, kind="voice", text="hold me", actor="ui.dashboard")
+    conn.execute(
+        "UPDATE beacon_manual_tx SET created_at = '2020-01-01 00:00:00' WHERE id = ?", (mid,)
+    )
+    conn.commit()
+
+    main_module._purge_stale_rows(conn, "voice", 3600, datetime.now(timezone.utc))
+
+    assert [r["text"] for r in pending_manual_tx(conn, "voice")] == ["hold me"]
+
+
 # --- _format_source_date_time ---
 
 

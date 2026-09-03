@@ -73,6 +73,7 @@ sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
 from adapters.beacon_defaults import (  # noqa: E402
     BEACON_ENABLED_DEFAULT,
     BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
+    BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT,
     BEACON_QUEUE_MAX_SIZE_DEFAULT,
     BEACON_TYPE_DEFAULT,
     BEACON_VOICE_MAX_CHARS_DEFAULT,
@@ -89,6 +90,7 @@ from adapters.storage import (  # noqa: E402
     add_tx_schedule_unit,
     count_tx_schedule_by_kind,
     delete_manual_tx,
+    delete_stale_tx_schedule,
     delete_tx_schedule_other_kinds,
     due_tx_schedule_rows,
     get_connection,
@@ -761,6 +763,41 @@ def _record_retired(conn, row: dict, kind: str) -> None:
     )
 
 
+def _purge_stale_rows(conn, kind: str, max_age_seconds: int, now_dt: datetime) -> int:
+    """Drops beacon_tx_schedule rows of `kind` that have waited longer than
+    BEACON_MAX_QUEUED_AGE_SECONDS without going on air (measured against
+    `updated_at`), recording a beacon.tx.skipped_stale audit event per row.
+    Runs every tick regardless of BEACON_ENABLED so a long disabled window
+    doesn't leave a stale backlog to dump on air when it's re-enabled.
+    Returns the number dropped. A no-op when max_age_seconds <= 0."""
+    stale = delete_stale_tx_schedule(
+        conn, kind, max_age_seconds=max_age_seconds, now_iso=now_dt.isoformat()
+    )
+    for row in stale:
+        try:
+            age_seconds = int(
+                (now_dt - datetime.fromisoformat(row["updated_at"]).replace(
+                    tzinfo=timezone.utc
+                )).total_seconds()
+            )
+        except (ValueError, TypeError):
+            age_seconds = None
+        record_audit_event(
+            conn, event_type="beacon.tx.skipped_stale", actor="beacon",
+            source=row["source"], item_id=row["item_id"],
+            details={
+                "kind": kind, "ref": row["ref"], "updated_at": row["updated_at"],
+                "age_seconds": age_seconds, "max_age_seconds": max_age_seconds,
+            },
+        )
+    if stale:
+        logger.info(
+            "beacon: dropped %d stale %s transmit row(s) (older than %ds, unsent)",
+            len(stale), kind, max_age_seconds,
+        )
+    return len(stale)
+
+
 def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event) -> None:
     conn = get_connection(DEFAULT_DB_PATH)
     try:
@@ -800,6 +837,11 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
             )
             inter_tx_delay = float(get_setting("BEACON_INTER_TX_DELAY_SECONDS", "2", conn=conn))
+            max_queued_age = int(
+                get_setting(
+                    "BEACON_MAX_QUEUED_AGE_SECONDS", BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT, conn=conn
+                )
+            )
             watermark_enabled = get_setting(
                 "BEACON_WATERMARK_ENABLED", BEACON_WATERMARK_ENABLED_DEFAULT, conn=conn
             ).lower() == "true"
@@ -856,6 +898,12 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 last_watermark_at = now
 
             _write_heartbeat(conn, beacon_type)
+
+            # Independent of BEACON_ENABLED: content that queued up while
+            # transmit was off still ages out, so re-enabling doesn't replay
+            # a stale overnight backlog.
+            if beacon_type in KIND_TRANSMITTERS:
+                _purge_stale_rows(conn, beacon_type, max_queued_age, now_dt)
 
             if enabled and beacon_type in KIND_TRANSMITTERS:
                 _drain_manual_tx(stop_event, conn, beacon_type, now_dt, ctx, inter_tx_delay)
