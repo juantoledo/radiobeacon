@@ -4,7 +4,7 @@
    context. #}
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>Section</th><th>Created</th><th>Updated</th><th>Skipped</th><th>Warned</th></tr></thead>
+  <thead><tr><th>{{ t('config.import_summary.col_section') }}</th><th>{{ t('config.import_summary.col_created') }}</th><th>{{ t('config.import_summary.col_updated') }}</th><th>{{ t('config.import_summary.col_skipped') }}</th><th>{{ t('config.import_summary.col_warned') }}</th></tr></thead>
   <tbody>
     {% for section, c in summary.counts().items() %}
     <tr>
@@ -22,7 +22,7 @@
 {% if summary.results | length %}
 {% set has_skipped = summary.results | map(attribute='action') | select('equalto', 'skipped') | list | length %}
 {% if has_skipped %}
-<h3>Skipped</h3>
+<h3>{{ t('config.import_summary.skipped_heading') }}</h3>
 <ul>
   {% for r in summary.results %}
   {% if r.action == 'skipped' %}
@@ -34,7 +34,7 @@
 
 {% set has_warnings = summary.results | map(attribute='warnings') | select | list | length %}
 {% if has_warnings %}
-<h3>Warnings</h3>
+<h3>{{ t('config.import_summary.warnings_heading') }}</h3>
 <ul>
   {% for r in summary.results %}
   {% for w in r.warnings %}

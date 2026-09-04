@@ -439,6 +439,18 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "log",
         advanced=True,
     ),
+    SettingSpec(
+        "UI_DEFAULT_LOCALE",
+        "UI",
+        "Default language",
+        "Fallback UI language when a visitor's browser doesn't send a "
+        "recognized Accept-Language and they haven't chosen one yet. A "
+        "visitor's own choice (the EN/ES toggle) always overrides this, "
+        "stored in a per-browser cookie. Applies live — no restart needed.",
+        "select",
+        "en",
+        choices=("en", "es"),
+    ),
     # --- Beacon — Identity ---
     # The operator profile a listener actually hears/reads — required,
     # DB-only (env_fallback=False: a stray BEACON_CALLSIGN env var must

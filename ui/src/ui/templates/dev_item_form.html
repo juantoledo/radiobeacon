@@ -1,13 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{% if mode == "edit" %}Edit item (dev){% else %}New item (dev){% endif %}{% endblock %}
+{% block title %}{% if mode == "edit" %}{{ t('dev_item_form.edit_title') }}{% else %}{{ t('dev_item_form.new_title') }}{% endif %}{% endblock %}
 {% block content %}
-<a class="crumb" href="/dev">&larr; Back to Developers</a>
-<div class="page-header"><h1>{% if mode == "edit" %}Edit item{% else %}New item{% endif %}</h1></div>
+<a class="crumb" href="/dev">&larr; {{ t('dev_item_form.back_to_developers') }}</a>
+<div class="page-header"><h1>{% if mode == "edit" %}{{ t('dev_item_form.edit_heading') }}{% else %}{{ t('dev_item_form.new_heading') }}{% endif %}</h1></div>
 
 <p class="banner-warn">
-  ⚠ This writes directly to <code>items</code>, bypassing the normal
-  adapter pipeline. Every save/create here is its own audit_log event
-  (actor <code>ui.dev</code>).
+  ⚠ {{ t('dev_item_form.write_warning') | safe }}
 </p>
 
 <form method="post" action="{% if mode == 'edit' %}/dev/items/{{ item.source }}/{{ item.item_id }}{% else %}/dev/items{% endif %}">
@@ -19,7 +17,7 @@
         {% if mode == "edit" %}
         <input type="text" value="{{ item.source }}" readonly>
         {% else %}
-        <input id="source" name="source" type="text" required placeholder="e.g. csn">
+        <input id="source" name="source" type="text" required placeholder="{{ t('dev_item_form.source_placeholder') }}">
         {% endif %}
       </td>
     </tr>
@@ -78,29 +76,26 @@
                  value="{{ (item.source_date_time if item else suggested_source_date_time) or '' }}"></td>
     </tr>
   </table>
-  <button type="submit">{% if mode == "edit" %}Save{% else %}Create{% endif %}</button>
+  <button type="submit">{% if mode == "edit" %}{{ t('common.save') }}{% else %}{{ t('dev_item_form.create_button') }}{% endif %}</button>
 </form>
 
 {% if mode == "edit" %}
-<h2>Dispatcher state</h2>
+<h2>{{ t('dev_item_form.dispatcher_state_heading') }}</h2>
 <form class="action" method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/reset-dispatch">
   {{ csrf_field() }}
-  <label for="consumer">Reset dispatch state for consumer</label>
+  <label for="consumer">{{ t('dev_item_form.reset_dispatch_label') }}</label>
   <input id="consumer" name="consumer" type="text" value="{{ default_consumer }}">
-  <button type="submit" class="secondary">Reset</button>
+  <button type="submit" class="secondary">{{ t('dev_item_form.reset_button') }}</button>
 </form>
 <p class="muted" style="font-size: 0.82rem;">
-  Clears this item's in-flight/tracked delivery state for the given
-  consumer without re-arming it — different from Rearm on the item's own
-  page, which schedules an immediate redelivery. Use this to clear stuck
-  or incorrect state while debugging.
+  {{ t('dev_item_form.reset_dispatch_help') }}
 </p>
 
-<h2>Delete</h2>
+<h2>{{ t('dev_item_form.delete_heading') }}</h2>
 <form method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/delete"
-      onsubmit="return confirm('Delete {{ item.source }}/{{ item.item_id }}? This cannot be undone.');">
+      onsubmit="return confirm('{{ t('dev_item_form.delete_confirm', source=item.source, item_id=item.item_id) }}');">
   {{ csrf_field() }}
-  <button type="submit" class="danger">Delete this item</button>
+  <button type="submit" class="danger">{{ t('dev_item_form.delete_item_button') }}</button>
 </form>
 {% endif %}
 {% endblock %}

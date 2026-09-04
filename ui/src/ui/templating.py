@@ -14,6 +14,7 @@ from markupsafe import Markup
 from . import config
 from .beacon import is_beacon_configured
 from .config_catalog import NAV_CATEGORY_ORDER, category_slug
+from .i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, translate
 from .icons import render_icon
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -54,6 +55,46 @@ def _csrf_field(context) -> Markup:
 
 
 templates.env.globals["csrf_field"] = _csrf_field
+
+
+@pass_context
+def _locale_global(context) -> str:
+    """`{{ locale() }}` — the active request's resolved language ("en"/"es").
+    i18n.LocaleMiddleware already resolved the cookie/Accept-Language half
+    onto request.state.locale (or left it None); when neither named a
+    supported locale, falls back to the DB-backed UI_DEFAULT_LOCALE setting
+    using the same per-request db_conn-reuse idiom as
+    _beacon_configured_global/_dev_tools_enabled_global above — middleware
+    runs before get_db, so it can't reuse request.state.db_conn itself,
+    which is why this DB fallback lives here instead."""
+    request = context["request"]
+    explicit = getattr(request.state, "locale", None)
+    if explicit in SUPPORTED_LOCALES:
+        return explicit
+    conn = getattr(request.state, "db_conn", None)
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        default_locale = get_setting("UI_DEFAULT_LOCALE", DEFAULT_LOCALE, conn=conn)
+    finally:
+        if owns_conn:
+            conn.close()
+    return default_locale if default_locale in SUPPORTED_LOCALES else DEFAULT_LOCALE
+
+
+templates.env.globals["locale"] = _locale_global
+
+
+@pass_context
+def _t(context, key: str, *, default: str | None = None, **kwargs) -> str:
+    """`{{ t('nav.dashboard') }}` — looks up `key` in the active locale's
+    translation dict (see i18n.translate for the fallback chain: locale ->
+    English -> `default` -> the raw key)."""
+    return translate(key, _locale_global(context), default=default, **kwargs)
+
+
+templates.env.globals["t"] = _t
 
 # Icon per /config tab — purely presentational, keyed by category name (see
 # NAV_CATEGORY_ORDER) plus the one non-catalog tab, Policies.

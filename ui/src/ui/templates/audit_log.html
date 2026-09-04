@@ -1,35 +1,35 @@
 {% extends "base.html" %}
-{% block title %}Audit log{% endblock %}
+{% block title %}{{ t('audit_log.title') }}{% endblock %}
 {% block content %}
-<div class="page-header"><h1>Audit log</h1><span class="muted">{{ total }} total</span></div>
+<div class="page-header"><h1>{{ t('audit_log.title') }}</h1><span class="muted">{{ t('audit_log.total_count', n=total) }}</span></div>
 
 <form class="filters" method="get" action="/audit">
   <input type="text" name="event_type" placeholder="event_type" value="{{ filters.event_type }}">
   <input type="text" name="source" placeholder="source" value="{{ filters.source }}">
   <input type="text" name="item_id" placeholder="item_id" value="{{ filters.item_id }}">
-  <button type="submit">Filter</button>
-  <a class="btn secondary" href="/audit">Clear</a>
+  <button type="submit">{{ t('audit_log.filter') }}</button>
+  <a class="btn secondary" href="/audit">{{ t('audit_log.clear') }}</a>
 </form>
 
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>Event</th><th>Actor</th><th>Source</th><th>Item</th><th class="wrap">Details</th><th>Recorded</th></tr></thead>
+  <thead><tr><th>{{ t('audit_log.event_column') }}</th><th>{{ t('audit_log.actor_column') }}</th><th>{{ t('audit_log.source_column') }}</th><th>{{ t('audit_log.item_column') }}</th><th class="wrap">{{ t('audit_log.details_column') }}</th><th>{{ t('audit_log.recorded_column') }}</th></tr></thead>
   <tbody>
     {% for event in events %}
     <tr>
-      <td data-label="Event"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
-      <td data-label="Actor" class="muted">{{ event.actor }}</td>
-      <td data-label="Source">{{ event.source or "" }}</td>
-      <td data-label="Item" class="mono">
+      <td data-label="{{ t('audit_log.event_column') }}"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
+      <td data-label="{{ t('audit_log.actor_column') }}" class="muted">{{ event.actor }}</td>
+      <td data-label="{{ t('audit_log.source_column') }}">{{ event.source or "" }}</td>
+      <td data-label="{{ t('audit_log.item_column') }}" class="mono">
         {% if event.source and event.item_id %}
           <a href="/items/{{ event.source }}/{{ event.item_id }}">{{ event.item_id }}</a>
         {% else %}{{ event.item_id or "" }}{% endif %}
       </td>
-      <td data-label="Details" class="wrap muted mono">{{ event.details or "" }}</td>
-      <td data-label="Recorded" class="muted">{{ event.recorded_at | display_dt }}</td>
+      <td data-label="{{ t('audit_log.details_column') }}" class="wrap muted mono">{{ event.details or "" }}</td>
+      <td data-label="{{ t('audit_log.recorded_column') }}" class="muted">{{ event.recorded_at | display_dt }}</td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="6">No audit events match these filters.</td></tr>
+    <tr class="empty-row"><td colspan="6">{{ t('audit_log.empty_state') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

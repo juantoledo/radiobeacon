@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import UI_ALLOWED_HOSTS
+from .i18n import LocaleMiddleware
 from .security import (
     CrossOriginGuardMiddleware,
     CsrfCookieMiddleware,
@@ -25,6 +26,7 @@ from .routers import (
     dashboard,
     dev,
     items,
+    locale,
     manual_tx,
     policies,
     quick_settings,
@@ -44,6 +46,7 @@ app = FastAPI(title="radiobeacon-ui", dependencies=[Depends(verify_csrf)])
 # allow-list (DNS-rebinding guard) runs first, then the cross-origin POST
 # guard, then the CSRF-cookie issuer.
 app.add_middleware(CsrfCookieMiddleware)
+app.add_middleware(LocaleMiddleware)
 app.add_middleware(CrossOriginGuardMiddleware, allowed_hosts=UI_ALLOWED_HOSTS)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=UI_ALLOWED_HOSTS)
 app.mount(
@@ -53,6 +56,7 @@ app.mount(
 )
 
 app.include_router(dashboard.router)
+app.include_router(locale.router)
 app.include_router(quick_settings.router)
 app.include_router(manual_tx.router)
 app.include_router(beacon.router)

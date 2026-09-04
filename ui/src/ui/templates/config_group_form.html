@@ -2,7 +2,7 @@
 {% block title %}{{ group }}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-{% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; Back to {{ group.split(' — ')[0] }}</a>{% endif %}
+{% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; {{ t('config.group_form.back_to', name=group.split(' — ')[0]) }}</a>{% endif %}
 <div class="page-header"><h1>{{ group }}</h1></div>
 
 {% include "_config_group_form_body.html" %}
@@ -19,7 +19,7 @@
     wiring.forEach(function (el) {
       if (el.value !== el.dataset.original) changed = true;
     });
-    if (changed && !confirm("This changes MQTT topic/event wiring — a mistake here can silently break a pipeline. Save anyway?")) {
+    if (changed && !confirm({{ t('config.group_form.wiring_confirm') | tojson }})) {
       event.preventDefault();
     }
   });
@@ -41,7 +41,7 @@
     btn.addEventListener("click", function () {
       var spec = (input.value || "").trim();
       msg.textContent = "";
-      if (!spec) { msg.textContent = "Tone disabled (field is empty)."; return; }
+      if (!spec) { msg.textContent = {{ t('config.group_form.tone_disabled') | tojson }}; return; }
       btn.disabled = true;
       fetch("/config/tone-preview?spec=" + encodeURIComponent(spec))
         .then(function (res) {

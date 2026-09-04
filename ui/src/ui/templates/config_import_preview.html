@@ -1,42 +1,33 @@
 {% extends "base.html" %}
-{% block title %}Preview import{% endblock %}
+{% block title %}{{ t('config.import_preview.title') }}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-<a class="crumb" href="/config/import-export">&larr; Back to Import / Export</a>
-<div class="page-header"><h1>Preview import</h1></div>
+<a class="crumb" href="/config/import-export">&larr; {{ t('config.import_export.back_to_import_export') }}</a>
+<div class="page-header"><h1>{{ t('config.import_preview.title') }}</h1></div>
 
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
 
 <p class="meta-line">
-  Nothing has been written yet — this is a dry run. Review below, then
-  confirm to actually apply it. Existing settings/adapters/policies/sources
-  sharing a key with the file will be overwritten; nothing already on this
-  install that's absent from the file is touched.
+  {{ t('config.import_preview.intro') }}
 </p>
 
 {% include "_config_import_summary_table.html" %}
 
 {% if skipped_custom_count %}
 <p class="banner-warn">
-  ⚠ {{ skipped_custom_count }} CUSTOM adapter(s) in this file will be
-  <strong>skipped</strong> — enable <a href="/config/ui">UI Dev tools</a> on
-  this install to import them. Their Python code is never read or executed
-  either way.
+  ⚠ {{ t('config.import_preview.skipped_warning', count=skipped_custom_count, link='<a href="/config/ui">' ~ t('config.import_preview.ui_dev_tools_link') ~ '</a>') | safe }}
 </p>
 {% endif %}
 
 {% if custom_previews %}
 <div class="banner-warn">
   <p>
-    ⚠ This file contains <strong>{{ custom_previews | length }}</strong>
-    CUSTOM adapter(s) — operator-authored Python, executed with no
-    sandboxing on every poll once imported. Review each one below before
-    confirming.
+    ⚠ {{ t('config.import_preview.custom_warning', count=(custom_previews | length)) | safe }}
   </p>
   {% for c in custom_previews %}
   <p><strong class="mono">{{ c.source }}</strong></p>
   <pre class="contents mono">{{ c.code_preview }}{% if c.truncated %}
-… (truncated — the full code is what will actually be stored){% endif %}</pre>
+{{ t('config.import_preview.truncated_note') }}{% endif %}</pre>
   {% endfor %}
 </div>
 {% endif %}
@@ -47,17 +38,15 @@
 
   {% if custom_previews %}
   <p><label><input type="checkbox" name="confirm_custom_code" required>
-    I have reviewed the Python code above and accept the risk of executing
-    operator-authored code with no sandboxing.</label></p>
+    {{ t('config.import_preview.confirm_custom_code_label') }}</label></p>
   {% endif %}
 
   {% if needs_overwrite_confirm %}
   <p><label><input type="checkbox" name="confirm_overwrite" required>
-    I understand this will overwrite existing settings/adapters/policies/sources
-    sharing a name with this file.</label></p>
-  <p><button type="submit">Confirm import</button></p>
+    {{ t('config.import_preview.confirm_overwrite_label') }}</label></p>
+  <p><button type="submit">{{ t('config.import_preview.confirm_button') }}</button></p>
   {% else %}
-  <p class="muted">Nothing in this file would create or update anything on this install.</p>
+  <p class="muted">{{ t('config.import_preview.nothing_to_apply') }}</p>
   {% endif %}
 </form>
 {% endblock %}

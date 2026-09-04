@@ -4,7 +4,7 @@
 {%- set vals = sparkline | map(attribute='count') | list -%}
 {%- set peak = vals | max -%}
 <svg class="spark" viewBox="0 0 {{ (vals | length) * 8 - 2 }} 32" preserveAspectRatio="none"
-     role="img" aria-label="Items per day over the last {{ vals | length }} days">
+     role="img" aria-label="{{ t('config.sparkline.aria_label', days=(vals | length)) }}">
   {%- for point in sparkline -%}
   {%- set h = 2 if not peak else (2 + (point.count / peak) * 30) -%}
   <rect x="{{ loop.index0 * 8 }}" y="{{ 32 - h }}" width="6" height="{{ '%.1f'|format(h) }}" rx="1">
@@ -12,4 +12,4 @@
   </rect>
   {%- endfor -%}
 </svg>
-<span class="spark-caption">{{ vals | sum }} total · peak {{ peak }}/day</span>
+<span class="spark-caption">{{ t('config.sparkline.caption', total=(vals | sum), peak=peak) }}</span>

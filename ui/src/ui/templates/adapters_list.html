@@ -1,58 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Adapters{% endblock %}
+{% block title %}{{ t('adapters_list.title') }}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-<div class="page-header"><h1>Adapters</h1></div>
+<div class="page-header"><h1>{{ t('adapters_list.title') }}</h1></div>
 
 <div class="page-header">
-  <h3>General</h3>
-  <a class="btn secondary" href="/config/adapters-general">Edit</a>
+  <h3>{{ t('adapters_list.general_heading') }}</h3>
+  <a class="btn secondary" href="/config/adapters-general">{{ t('adapters_list.edit') }}</a>
 </div>
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>Key</th><th>Value</th><th>Source</th></tr></thead>
+  <thead><tr><th>{{ t('adapters_list.key_column') }}</th><th>{{ t('adapters_list.value_column') }}</th><th>{{ t('adapters_list.source_column') }}</th></tr></thead>
   <tbody>
     {% for f in general_fields %}
     <tr>
-      <td data-label="Key" class="mono">{{ f.spec.key }}</td>
-      <td data-label="Value" class="wrap">{{ f.value }}</td>
-      <td data-label="Source">{% if f.overridden %}<span class="badge badge-success">overridden in DB</span>{% else %}<span class="badge badge-neutral">env / default</span>{% endif %}</td>
+      <td data-label="{{ t('adapters_list.key_column') }}" class="mono">{{ f.spec.key }}</td>
+      <td data-label="{{ t('adapters_list.value_column') }}" class="wrap">{{ f.value }}</td>
+      <td data-label="{{ t('adapters_list.source_column') }}">{% if f.overridden %}<span class="badge badge-success">{{ t('adapters_list.overridden_in_db') }}</span>{% else %}<span class="badge badge-neutral">{{ t('adapters_list.env_or_default') }}</span>{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>
 </table>
 </div>
 
-<div class="page-header"><h3>Sources</h3><a class="btn" href="/config/adapters/new">+ New adapter</a></div>
+<div class="page-header"><h3>{{ t('adapters_list.sources_heading') }}</h3><a class="btn" href="/config/adapters/new">+ {{ t('adapters_list.new_adapter') }}</a></div>
 
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>Source</th><th>Type</th><th>Enabled</th><th>Interval (s)</th><th>Last fetch</th><th></th></tr></thead>
+  <thead><tr><th>{{ t('adapters_list.source_column') }}</th><th>{{ t('adapters_list.type_column') }}</th><th>{{ t('adapters_list.enabled_column') }}</th><th>{{ t('adapters_list.interval_column') }}</th><th>{{ t('adapters_list.last_fetch_column') }}</th><th></th></tr></thead>
   <tbody>
     {% for row in rows %}
     <tr>
-      <td data-label="Source"><strong>{{ row.source }}</strong></td>
-      <td data-label="Type"><span class="badge badge-neutral">{{ row.adapter_type }}</span></td>
-      <td data-label="Enabled">{% if row.enabled %}<span class="badge badge-success">on</span>{% else %}<span class="badge badge-neutral">off</span>{% endif %}</td>
-      <td data-label="Interval (s)">{{ row.interval_seconds or "default" }}</td>
-      <td data-label="Last fetch" class="muted">
+      <td data-label="{{ t('adapters_list.source_column') }}"><strong>{{ row.source }}</strong></td>
+      <td data-label="{{ t('adapters_list.type_column') }}"><span class="badge badge-neutral">{{ row.adapter_type }}</span></td>
+      <td data-label="{{ t('adapters_list.enabled_column') }}">{% if row.enabled %}<span class="badge badge-success">{{ t('adapters_list.on') }}</span>{% else %}<span class="badge badge-neutral">{{ t('adapters_list.off') }}</span>{% endif %}</td>
+      <td data-label="{{ t('adapters_list.interval_column') }}">{{ row.interval_seconds or t('adapters_list.default_value') }}</td>
+      <td data-label="{{ t('adapters_list.last_fetch_column') }}" class="muted">
         {% if row.last_fetch %}
-          {% if row.last_fetch.ok %}<span class="badge badge-success">ok</span>{% else %}<span class="badge badge-warn">error</span>{% endif %}
+          {% if row.last_fetch.ok %}<span class="badge badge-success">{{ t('adapters_list.ok') }}</span>{% else %}<span class="badge badge-warn">{{ t('adapters_list.error') }}</span>{% endif %}
           {{ row.last_fetch.recorded_at }}
         {% else %}
-          never
+          {{ t('adapters_list.never') }}
         {% endif %}
       </td>
       <td class="actions-cell">
-        <a class="btn secondary" href="/config/adapters/{{ row.source }}/edit">Edit</a>
+        <a class="btn secondary" href="/config/adapters/{{ row.source }}/edit">{{ t('adapters_list.edit') }}</a>
         <form method="post" action="/config/adapters/{{ row.source }}/delete">
           {{ csrf_field() }}
-          <button type="submit" class="danger">Delete</button>
+          <button type="submit" class="danger">{{ t('adapters_list.delete') }}</button>
         </form>
       </td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="6">No adapters configured.</td></tr>
+    <tr class="empty-row"><td colspan="6">{{ t('adapters_list.empty_state') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

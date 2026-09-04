@@ -2,32 +2,27 @@
 {% block title %}{{ group }}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-{% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; Back to {{ group.split(' — ')[0] }}</a>{% endif %}
+{% set conf_filename = 'svxlink.conf' if kind == 'svxlink' else 'direwolf.conf' %}
+{% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; {{ t('config.group_form.back_to', name=group.split(' — ')[0]) }}</a>{% endif %}
 <div class="page-header"><h1>{{ group }}</h1></div>
 
 {% include "_config_group_form_body.html" %}
 
-<div class="page-header"><h3>{{ 'svxlink.conf' if kind == 'svxlink' else 'direwolf.conf' }} editor</h3></div>
+<div class="page-header"><h3>{{ t('config.rf_conf.editor_heading', filename=conf_filename) }}</h3></div>
 
 {% if not editor_enabled %}
 <p class="meta-line">
-  Disabled. Set <span class="mono">BEACON_RF_CONF_EDITOR_ENABLED</span> to
-  <span class="mono">true</span> above to edit
-  {{ 'svxlink.conf' if kind == 'svxlink' else 'direwolf.conf' }} from here.
+  {{ t('config.rf_conf.editor_disabled', var='<span class="mono">BEACON_RF_CONF_EDITOR_ENABLED</span>', val='<span class="mono">true</span>', filename=conf_filename) | safe }}
 </p>
 {% elif conf_content is none %}
 <p class="banner-warn">⚠ {{ conf_error }}</p>
 {% else %}
 <p class="banner-warn">
-  ⚠ This dashboard has no login. Anyone who can reach it can overwrite
-  <span class="mono">{{ conf_path }}</span>. A timestamped
-  <span class="mono">.bak</span> is written on every save. Nothing is
-  restarted — after saving, run
-  <span class="mono">{{ restart_cmd }}</span> on the host.
+  ⚠ {{ t('config.rf_conf.no_login_warning', conf_path='<span class="mono">' ~ (conf_path | e) ~ '</span>', restart_cmd='<span class="mono">' ~ (restart_cmd | e) ~ '</span>') | safe }}
 </p>
 {% if conf_error %}<p class="meta-line">{{ conf_error }}</p>{% endif %}
 {% if not conf_writable %}
-<p class="banner-warn">✗ The UI process can't write <span class="mono">{{ conf_path }}</span> — this is read-only.</p>
+<p class="banner-warn">✗ {{ t('config.rf_conf.read_only_warning', conf_path='<span class="mono">' ~ (conf_path | e) ~ '</span>') | safe }}</p>
 {% endif %}
 <form method="post" action="/config/{{ slug }}/conf">
   {{ csrf_field() }}
@@ -35,7 +30,7 @@
   <textarea class="sql-box" name="content" spellcheck="false"
             {% if not conf_writable %}readonly{% endif %}>{{ conf_content }}</textarea>
   <p>
-    <button type="submit" {% if not conf_writable %}disabled{% endif %}>Save {{ 'svxlink.conf' if kind == 'svxlink' else 'direwolf.conf' }}</button>
+    <button type="submit" {% if not conf_writable %}disabled{% endif %}>{{ t('config.rf_conf.save_button', filename=conf_filename) }}</button>
   </p>
 </form>
 {% endif %}

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}{% if mode == "edit" %}Edit adapter{% else %}New adapter{% endif %}{% endblock %}
+{% block title %}{% if mode == "edit" %}{{ t('adapter_form.title.edit') }}{% else %}{{ t('adapter_form.title.new') }}{% endif %}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-<a class="crumb" href="/config/adapters">&larr; Back to adapters</a>
-<div class="page-header"><h1>{% if mode == "edit" %}Edit adapter: {{ source }}{% else %}New adapter{% endif %}</h1></div>
+<a class="crumb" href="/config/adapters">&larr; {{ t('adapter_form.nav.back_to_adapters') }}</a>
+<div class="page-header"><h1>{% if mode == "edit" %}{{ t('adapter_form.heading.edit', source=source) }}{% else %}{{ t('adapter_form.heading.new') }}{% endif %}</h1></div>
 
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
 
@@ -12,92 +12,75 @@
   <input type="hidden" name="mode" value="{{ mode }}">
   <table class="form-table">
     <tr>
-      <th><label for="source">Source</label></th>
+      <th><label for="source">{{ t('adapter_form.field.source_label') }}</label></th>
       <td>
         <input id="source" name="source" type="text" required
-               placeholder="e.g. csn, senapred, my-new-source"
+               placeholder="{{ t('adapter_form.field.source_placeholder') }}"
                value="{{ source }}" {% if mode == "edit" %}readonly{% endif %}>
-        <div class="meta-line">Internal key — same one used in items.source. Cannot be changed after creation.</div>
+        <div class="meta-line">{{ t('adapter_form.help.source') }}</div>
       </td>
     </tr>
     <tr>
-      <th><label for="display_name">Display name</label></th>
+      <th><label for="display_name">{{ t('adapter_form.field.display_name_label') }}</label></th>
       <td><input id="display_name" name="display_name" type="text" value="{{ display_name }}"
-                 placeholder="Shown as {source_name} in templates"></td>
+                 placeholder="{{ t('adapter_form.field.display_name_placeholder') }}"></td>
     </tr>
     <tr>
-      <th><label for="site_url">Site URL</label></th>
+      <th><label for="site_url">{{ t('adapter_form.field.site_url_label') }}</label></th>
       <td><input id="site_url" name="site_url" type="text" value="{{ site_url }}"
-                 placeholder="Shown as {source_url} in templates"></td>
+                 placeholder="{{ t('adapter_form.field.site_url_placeholder') }}"></td>
     </tr>
     <tr>
-      <th><label for="adapter_type">Type</label></th>
+      <th><label for="adapter_type">{{ t('adapter_form.field.type_label') }}</label></th>
       <td>
         <select id="adapter_type" name="adapter_type">
-          <option value="api" {% if adapter_type == "api" %}selected{% endif %}>API — calls an HTTP endpoint, maps the JSON response via config</option>
-          <option value="custom" {% if adapter_type == "custom" %}selected{% endif %}>CUSTOM — a Python code snippet you write, executed on every poll</option>
-          <option value="aiprompt" {% if adapter_type == "aiprompt" %}selected{% endif %}>AI PROMPT — generates an item by calling an LLM on a schedule</option>
+          <option value="api" {% if adapter_type == "api" %}selected{% endif %}>{{ t('adapter_form.option.type_api') }}</option>
+          <option value="custom" {% if adapter_type == "custom" %}selected{% endif %}>{{ t('adapter_form.option.type_custom') }}</option>
+          <option value="aiprompt" {% if adapter_type == "aiprompt" %}selected{% endif %}>{{ t('adapter_form.option.type_aiprompt') }}</option>
         </select>
       </td>
     </tr>
     <tr>
-      <th><label for="enabled">Enabled</label></th>
-      <td><label><input id="enabled" name="enabled" type="checkbox" {% if enabled %}checked{% endif %}> Poll this instance</label></td>
+      <th><label for="enabled">{{ t('adapter_form.field.enabled_label') }}</label></th>
+      <td><label><input id="enabled" name="enabled" type="checkbox" {% if enabled %}checked{% endif %}> {{ t('adapter_form.field.enabled_checkbox_label') }}</label></td>
     </tr>
     <tr>
-      <th><label for="interval_seconds">Poll interval (s)</label></th>
+      <th><label for="interval_seconds">{{ t('adapter_form.field.interval_label') }}</label></th>
       <td>
         <input id="interval_seconds" name="interval_seconds" type="number" min="1" value="{{ interval_seconds }}"
-               placeholder="blank = ADAPTERS_DEFAULT_INTERVAL_SECONDS">
+               placeholder="{{ t('adapter_form.field.interval_placeholder') }}">
       </td>
     </tr>
     <tr>
-      <th><label for="ai_prompt">AI prompt override</label></th>
+      <th><label for="ai_prompt">{{ t('adapter_form.field.ai_prompt_label') }}</label></th>
       <td>
         <textarea id="ai_prompt" name="ai_prompt" rows="8"
                   placeholder="{{ ai_prompt_default }}">{{ ai_prompt }}</textarea>
-        <div class="meta-line">Optional. <code>str.format</code> template used by the AI
-          summarizer for this source only. Any of the item's mapped adapter attributes
-          can be referenced as a placeholder — <code>{source}</code>, <code>{item_id}</code>,
-          <code>{extracted_title}</code>, <code>{extracted_contents}</code>, <code>{summary}</code>,
-          <code>{url}</code>, <code>{event_key}</code>, <code>{type}</code>, <code>{subtype}</code>,
-          <code>{transmit_policy}</code>, <code>{source_date_time}</code>, <code>{fetched_at}</code>,
-          <code>{captured_at}</code>, <code>{rawdata}</code>, plus the source's display name and
-          site URL as <code>{source_name}</code> / <code>{source_url}</code> — an unknown
-          placeholder just renders blank. Leave blank to use the current default (shown greyed above): the global
-          <code>ACTIONS_AI_PROMPT</code> if set, otherwise the built-in prompt.</div>
+        <div class="meta-line">{{ t('adapter_form.help.ai_prompt') | safe }}</div>
       </td>
     </tr>
     <tr>
-      <th><label for="ai_fallback_to_title">On AI failure</label></th>
+      <th><label for="ai_fallback_to_title">{{ t('adapter_form.field.ai_fallback_label') }}</label></th>
       <td>
         <label><input id="ai_fallback_to_title" name="ai_fallback_to_title" type="checkbox"
                       {% if ai_fallback_to_title %}checked{% endif %}>
-          Use the item title when AI summarization fails or is disabled</label>
-        <div class="meta-line">When the AI summarizer can't run: <strong>(a)</strong> the provider
-          call fails (network error, bad API key, rate limit…) — if checked, the item's
-          <code>title</code> is stored as the summary and the pipeline continues; if unchecked
-          (the default), the failure stops the item, nothing is published for it and no
-          <code>action.ai.executed</code> audit row is written. <strong>(b)</strong> AI is
-          disabled globally (<code>ACTIONS_AI_ENABLED</code> not <code>true</code>) — if checked,
-          the item's <code>title</code> is stored as the summary instead of the full extracted
-          contents. Does not affect the content-already-short or bad-provider skips, which always
-          copy the extracted contents verbatim.</div>
+          {{ t('adapter_form.field.ai_fallback_checkbox_label') }}</label>
+        <div class="meta-line">{{ t('adapter_form.help.ai_fallback') | safe }}</div>
       </td>
     </tr>
   </table>
 
   <fieldset id="api-fields">
-    <div class="page-header"><h2>API configuration</h2></div>
+    <div class="page-header"><h2>{{ t('adapter_form.section.api_configuration') }}</h2></div>
 
-    <h3>1. Connection</h3>
+    <h3>{{ t('adapter_form.section.connection') }}</h3>
     <table class="form-table">
       <tr>
-        <th><label for="url">URL</label></th>
+        <th><label for="url">{{ t('adapter_form.field.url_label') }}</label></th>
         <td><input id="url" name="url" type="text" value="{{ api_fields.url }}" placeholder="https://api.example.com/..."></td>
       </tr>
       <tr>
-        <th><label for="method">Method</label></th>
+        <th><label for="method">{{ t('adapter_form.field.method_label') }}</label></th>
         <td>
           <select id="method" name="method">
             {% for m in ("GET", "POST", "PUT", "PATCH", "DELETE") %}
@@ -107,87 +90,84 @@
         </td>
       </tr>
       <tr>
-        <th><label for="items_path">Items path</label></th>
+        <th><label for="items_path">{{ t('adapter_form.field.items_path_label') }}</label></th>
         <td>
           <input id="items_path" name="items_path" type="text" value="{{ api_fields.items_path }}"
-                 placeholder="blank = response root is the list, e.g. result.items">
+                 placeholder="{{ t('adapter_form.field.items_path_placeholder') }}">
         </td>
       </tr>
       <tr>
-        <th><label for="body">Body</label></th>
+        <th><label for="body">{{ t('adapter_form.field.body_label') }}</label></th>
         <td><textarea id="body" name="body">{{ api_fields.body }}</textarea>
-          <div class="meta-line">Raw request body, sent as-is (e.g. for POST/PUT).</div>
+          <div class="meta-line">{{ t('adapter_form.help.body') }}</div>
         </td>
       </tr>
     </table>
 
-    <h3>Headers</h3>
+    <h3>{{ t('adapter_form.section.headers') }}</h3>
     <div class="table-wrap">
       <table class="kv-table">
-        <thead><tr><th>Key</th><th>Value</th><th></th></tr></thead>
+        <thead><tr><th>{{ t('adapter_form.table.key_header') }}</th><th>{{ t('adapter_form.table.value_header') }}</th><th></th></tr></thead>
         <tbody id="headers-body">
           {% for row in api_fields.headers %}
           <tr>
             <td><input type="text" name="header_key" value="{{ row.key }}"></td>
             <td><input type="text" name="header_value" value="{{ row.value }}"></td>
-            <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">Remove</button></td>
+            <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">{{ t('adapter_form.button.remove') }}</button></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <button type="button" class="secondary" onclick="addKvRow('headers-body', 'header_key', 'header_value')">+ Add header</button>
+    <button type="button" class="secondary" onclick="addKvRow('headers-body', 'header_key', 'header_value')">{{ t('adapter_form.button.add_header') }}</button>
 
-    <h3>Query parameters</h3>
+    <h3>{{ t('adapter_form.section.query_parameters') }}</h3>
     <div class="table-wrap">
       <table class="kv-table">
-        <thead><tr><th>Key</th><th>Value</th><th></th></tr></thead>
+        <thead><tr><th>{{ t('adapter_form.table.key_header') }}</th><th>{{ t('adapter_form.table.value_header') }}</th><th></th></tr></thead>
         <tbody id="params-body">
           {% for row in api_fields.query_params %}
           <tr>
             <td><input type="text" name="param_key" value="{{ row.key }}"></td>
             <td><input type="text" name="param_value" value="{{ row.value }}"></td>
-            <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">Remove</button></td>
+            <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">{{ t('adapter_form.button.remove') }}</button></td>
           </tr>
           {% endfor %}
         </tbody>
       </table>
     </div>
-    <button type="button" class="secondary" onclick="addKvRow('params-body', 'param_key', 'param_value')">+ Add parameter</button>
+    <button type="button" class="secondary" onclick="addKvRow('params-body', 'param_key', 'param_value')">{{ t('adapter_form.button.add_parameter') }}</button>
 
-    <h3>2. Preview a sample response</h3>
+    <h3>{{ t('adapter_form.section.preview') }}</h3>
     <p class="meta-line">
-      Calls the endpoint with the connection settings above — no mapping needed yet — so you can see the
-      real field names before configuring the mapping below, instead of guessing them blind.
+      {{ t('adapter_form.help.preview_intro') }}
     </p>
-    <button type="submit" formaction="/config/adapters/sample" formnovalidate class="secondary">Fetch sample response</button>
+    <button type="submit" formaction="/config/adapters/sample" formnovalidate class="secondary">{{ t('adapter_form.button.fetch_sample') }}</button>
     {% if sample_response %}
 
     {% if sample_response.is_list %}
-    <p class="meta-line"><span class="badge badge-success">list</span> Items path resolves to a list of {{ sample_response.total_count }} item(s) — this is what "Test fetch" will iterate over.</p>
+    <p class="meta-line"><span class="badge badge-success">{{ t('adapter_form.badge.list') }}</span> {{ t('adapter_form.sample.resolves_to_list', count=sample_response.total_count, test_fetch=t('adapter_form.button.test_fetch')) }}</p>
     {% elif sample_response.items_path_resolved %}
-    <p class="banner-warn">⚠ Items path resolves to a single value, not a list — pick one of the detected lists below, or leave it pointed at one of them.</p>
+    <p class="banner-warn">⚠ {{ t('adapter_form.sample.resolves_to_single_value') }}</p>
     {% else %}
-    <p class="banner-warn">⚠ Items path doesn't exist in this response. Pick one of the detected lists below.</p>
+    <p class="banner-warn">⚠ {{ t('adapter_form.sample.items_path_missing') }}</p>
     {% endif %}
 
     {% if sample_response.candidates %}
-    <p class="meta-line">Detected list(s) in this response — click to use one as the items path:</p>
+    <p class="meta-line">{{ t('adapter_form.sample.detected_lists_intro') }}</p>
     <p>
       {% for c in sample_response.candidates %}
       <button type="button" class="secondary use-items-path-btn"
               data-path="{{ c.path }}"
               title="{{ c.sample_keys | join(', ') }}">
-        {{ c.path if c.path else "(root)" }} — {{ c.count }} item{{ "s" if c.count != 1 else "" }}
+        {{ t('adapter_form.sample.candidate_count', path=(c.path if c.path else t('adapter_form.mapping.root_label')), count=c.count, plural=("s" if c.count != 1 else "")) }}
       </button>
       {% endfor %}
     </p>
     {% endif %}
 
     <p class="meta-line">
-      Showing {{ sample_response.count }} of {{ sample_response.total_count }} item(s) at the current items path.
-      Drag a field name — from the list below or straight out of the JSON — onto a mapping row's value box,
-      or click one to drop it into whichever value box you last clicked.
+      {{ t('adapter_form.sample.showing_items', count=sample_response.count, total_count=sample_response.total_count) }}
     </p>
     {% if sample_response.field_names %}
     <p>
@@ -204,19 +184,13 @@
       {% endfor %}
     </datalist>
 
-    <h3>3. Field mapping</h3>
+    <h3>{{ t('adapter_form.section.mapping') }}</h3>
     <p class="meta-line">
-      How each item's contract field is built from one raw response item (see the sample above). The
-      template box is a free-form construction — <code>{Fecha}</code> alone is a raw passthrough, plain
-      text with no braces is a constant, and anything else — <code>Sismo M{Magnitud} - {RefGeografica}</code>
-      — combines several raw fields into one string. It can also use <code>{uuid}</code> for a stable,
-      content-derived id when a source has no natural one, and <code>{source_name}</code> /
-      <code>{source_url}</code> for this source's display name and site URL. Drag a field name — from the
-      list or the JSON below — onto a box to insert it, or click one to drop it where you last clicked.
+      {{ t('adapter_form.help.mapping_intro') | safe }}
     </p>
     <div class="table-wrap">
       <table class="kv-table">
-        <thead><tr><th>Field</th><th>Template</th><th>Date format<br><span class="muted">(only for a bare {field})</span></th></tr></thead>
+        <thead><tr><th>{{ t('adapter_form.table.field_header') }}</th><th>{{ t('adapter_form.table.template_header') }}</th><th>{{ t('adapter_form.table.mapping_date_format_header') | safe }}</th></tr></thead>
         <tbody>
           {% for name in mapped_fields %}
           {% set row = api_fields.mapping[name] %}
@@ -224,11 +198,11 @@
             <td class="field-name"><span class="mapped-indicator"></span>{{ name }}</td>
             <td>
               <input type="text" name="map_{{ name }}_template" value="{{ row.template }}" list="sample-field-names"
-                     class="mapping-value-input field-drop-target" placeholder="e.g. {Fecha}, a constant, or Sismo M{Magnitud} - {RefGeografica}">
+                     class="mapping-value-input field-drop-target" placeholder="{{ t('adapter_form.field.mapping_template_placeholder') }}">
             </td>
             <td>
               <input type="text" name="map_{{ name }}_date_format" value="{{ row.date_format }}"
-                     placeholder="e.g. %Y-%m-%d %H:%M:%S">
+                     placeholder="{{ t('adapter_form.field.mapping_date_format_placeholder') }}">
             </td>
           </tr>
           {% endfor %}
@@ -236,135 +210,117 @@
       </table>
     </div>
 
-    <h3>4. Date parsing (source_date_time)</h3>
+    <h3>{{ t('adapter_form.section.date_parsing') }}</h3>
     <table class="form-table">
       <tr>
-        <th><label for="date_field">Date field</label></th>
+        <th><label for="date_field">{{ t('adapter_form.field.date_field_label') }}</label></th>
         <td><input id="date_field" name="date_field" type="text" value="{{ api_fields.date_field }}" list="sample-field-names" class="field-drop-target"></td>
       </tr>
       <tr>
-        <th><label for="date_format">Date format</label></th>
+        <th><label for="date_format">{{ t('adapter_form.field.date_format_label') }}</label></th>
         <td><input id="date_format" name="date_format" type="text" value="{{ api_fields.date_format }}"
-                   placeholder="strptime format, e.g. %Y-%m-%d %H:%M:%S — blank = ISO 8601"></td>
+                   placeholder="{{ t('adapter_form.field.date_format_placeholder') }}"></td>
       </tr>
       <tr>
-        <th><label for="source_timezone">Source timezone</label></th>
+        <th><label for="source_timezone">{{ t('adapter_form.field.source_timezone_label') }}</label></th>
         <td><input id="source_timezone" name="source_timezone" type="text" value="{{ api_fields.source_timezone }}"
-                   placeholder="IANA name, e.g. America/Santiago — only needed if the date field is naive"></td>
+                   placeholder="{{ t('adapter_form.field.source_timezone_placeholder') }}"></td>
       </tr>
     </table>
 
-    <h3>5. Transmit policy</h3>
+    <h3>{{ t('adapter_form.section.transmit_policy') }}</h3>
     <table class="form-table">
       <tr>
-        <th><label for="api_transmit_policy">Transmit policy</label></th>
+        <th><label for="api_transmit_policy">{{ t('adapter_form.field.transmit_policy_label') }}</label></th>
         <td>
           <select id="api_transmit_policy" name="transmit_policy">
             {% for p in policies %}
             <option value="{{ p[0] }}" {% if api_fields.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
             {% endfor %}
           </select>
-          <div class="meta-line">How often / how far apart beacon airs each mapped item —
-            a named row from <a href="/config/policies">Transmit policies</a>.</div>
+          <div class="meta-line">{{ t('adapter_form.help.api_transmit_policy') | safe }}</div>
         </td>
       </tr>
     </table>
   </fieldset>
 
   <fieldset id="custom-fields">
-    <div class="page-header"><h2>Python code</h2></div>
+    <div class="page-header"><h2>{{ t('adapter_form.section.python_code') }}</h2></div>
     <p class="meta-line">
-      Must define <code>def fetch(config: dict) -> list[dict]</code>, returning dicts with an <code>id</code> key
-      (title, contents, url, event_key, type, subtype, transmit_policy, source_date_time, raw are optional).
-      Executed as trusted admin code — no sandboxing.
+      {{ t('adapter_form.help.python_code') | safe }}
     </p>
     <textarea id="code" name="code" class="code-editor" rows="20" spellcheck="false">{{ custom_fields.code }}</textarea>
   </fieldset>
 
   <fieldset id="aiprompt-fields">
-    <div class="page-header"><h2>AI prompt configuration</h2></div>
+    <div class="page-header"><h2>{{ t('adapter_form.section.aiprompt_configuration') }}</h2></div>
     <p class="meta-line">
-      This adapter asks the LLM provider configured under
-      <a href="/config/actions-ai">Actions&nbsp;—&nbsp;AI</a> (the same
-      <code>ACTIONS_AI_PROVIDER</code> / model / API-key settings the summarizer uses — no
-      per-adapter overrides) to produce one fresh item at each occurrence of the cron
-      schedule below, for content that must be re-generated every cycle, like a weather
-      report. It calls the model <strong>at most once per cron occurrence per prompt</strong>
-      (the item id is keyed to both), so set the adapter poll interval well below the cron
-      period; between occurrences every poll is a cheap no-op. Editing the prompt below
-      regenerates on the next poll rather than waiting for the next occurrence.
+      {{ t('adapter_form.help.aiprompt_intro') | safe }}
     </p>
     <table class="form-table">
       <tr>
-        <th><label for="aip_prompt">Prompt</label></th>
+        <th><label for="aip_prompt">{{ t('adapter_form.field.aip_prompt_label') }}</label></th>
         <td>
           <textarea id="aip_prompt" name="aip_prompt" rows="6"
-                    placeholder="e.g. Write one surprising fact about amateur radio in two sentences.">{{ aiprompt_fields.prompt }}</textarea>
-          <div class="meta-line">Required. <code>str.format</code> template — <code>{date}</code>,
-            <code>{datetime}</code>, <code>{source_name}</code>, <code>{source_url}</code> are
-            substituted; an unknown placeholder renders blank.</div>
+                    placeholder="{{ t('adapter_form.field.aip_prompt_placeholder') }}">{{ aiprompt_fields.prompt }}</textarea>
+          <div class="meta-line">{{ t('adapter_form.help.aip_prompt_format') | safe }}</div>
         </td>
       </tr>
       <tr>
-        <th><label for="aip_cron">Cron schedule</label></th>
+        <th><label for="aip_cron">{{ t('adapter_form.field.aip_cron_label') }}</label></th>
         <td>
           <input id="aip_cron" name="aip_cron" type="text" value="{{ aiprompt_fields.cron }}"
-                 placeholder="e.g. 0 6 * * *  (every day at 06:00)">
-          <div class="meta-line">Required. Standard 5-field cron expression — a fresh item is
-            generated at each occurrence. Evaluated in the display timezone
-            (<code>DISPLAY_TIMEZONE</code>).</div>
+                 placeholder="{{ t('adapter_form.field.aip_cron_placeholder') }}">
+          <div class="meta-line">{{ t('adapter_form.help.aip_cron') | safe }}</div>
         </td>
       </tr>
       <tr>
-        <th><label for="aip_transmit_policy">Transmit policy</label></th>
+        <th><label for="aip_transmit_policy">{{ t('adapter_form.field.transmit_policy_label') }}</label></th>
         <td>
           <select id="aip_transmit_policy" name="aip_transmit_policy">
             {% for p in policies %}
             <option value="{{ p[0] }}" {% if aiprompt_fields.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
             {% endfor %}
           </select>
-          <div class="meta-line">How each generated item is aired — usually
-            <code>{{ default_policy_name }}</code> ("air once"), since the content is replaced
-            at the next occurrence rather than repeated.</div>
+          <div class="meta-line">{{ t('adapter_form.help.aip_transmit_policy', policy_name=(default_policy_name | e)) | safe }}</div>
         </td>
       </tr>
       <tr>
-        <th><label for="aip_title_template">Title template</label></th>
+        <th><label for="aip_title_template">{{ t('adapter_form.field.aip_title_template_label') }}</label></th>
         <td><input id="aip_title_template" name="aip_title_template" type="text"
                    value="{{ aiprompt_fields.title_template }}"
-                   placeholder="optional, e.g. Fact of the day — {date}"></td>
+                   placeholder="{{ t('adapter_form.field.aip_title_template_placeholder') }}"></td>
       </tr>
       <tr>
-        <th><label for="aip_type">Type</label></th>
+        <th><label for="aip_type">{{ t('adapter_form.field.type_label') }}</label></th>
         <td><input id="aip_type" name="aip_type" type="text" value="{{ aiprompt_fields.type }}"
-                   placeholder="optional -> items.type"></td>
+                   placeholder="{{ t('adapter_form.field.aip_type_placeholder') }}"></td>
       </tr>
       <tr>
-        <th><label for="aip_subtype">Subtype</label></th>
+        <th><label for="aip_subtype">{{ t('adapter_form.field.subtype_label') }}</label></th>
         <td><input id="aip_subtype" name="aip_subtype" type="text" value="{{ aiprompt_fields.subtype }}"
-                   placeholder="optional -> items.subtype"></td>
+                   placeholder="{{ t('adapter_form.field.aip_subtype_placeholder') }}"></td>
       </tr>
       <tr>
-        <th><label for="aip_event_key_template">Event key template</label></th>
+        <th><label for="aip_event_key_template">{{ t('adapter_form.field.aip_event_key_template_label') }}</label></th>
         <td><input id="aip_event_key_template" name="aip_event_key_template" type="text"
                    value="{{ aiprompt_fields.event_key_template }}"
-                   placeholder="optional str.format template — blank = the item id"></td>
+                   placeholder="{{ t('adapter_form.field.aip_event_key_template_placeholder') }}"></td>
       </tr>
     </table>
     <p class="meta-line">
-      "Test fetch" below <strong>does make one real LLM call</strong> (and does not store the
-      result), the same way an API adapter's test fetch hits the real endpoint.
+      {{ t('adapter_form.help.aip_test_fetch_note', test_fetch=t('adapter_form.button.test_fetch')) | safe }}
     </p>
   </fieldset>
 
-  <button type="submit">Save</button>
-  <button type="submit" formaction="/config/adapters/test" formnovalidate class="secondary">Test fetch</button>
+  <button type="submit">{{ t('common.save') }}</button>
+  <button type="submit" formaction="/config/adapters/test" formnovalidate class="secondary">{{ t('adapter_form.button.test_fetch') }}</button>
 </form>
 
 {% if test_result %}
-<div class="page-header"><h2>Test result</h2></div>
+<div class="page-header"><h2>{{ t('adapter_form.section.test_result') }}</h2></div>
 {% if test_result.ok %}
-<p class="meta-line">Fetched {{ test_result.total }} item(s) — showing up to 5, every mapped contract field.</p>
+<p class="meta-line">{{ t('adapter_form.test_result.fetched_summary', total=test_result.total) }}</p>
 <div class="table-wrap">
 <table>
   <thead><tr>
@@ -385,7 +341,7 @@
       <td>{{ item.source_date_time or "" }}</td>
       <td>
         <details>
-          <summary class="muted">view</summary>
+          <summary class="muted">{{ t('adapter_form.action.view') }}</summary>
           <pre class="contents mono json-preview">{{ item.raw_html }}</pre>
         </details>
       </td>
@@ -395,7 +351,7 @@
 </table>
 </div>
 {% else %}
-<p class="banner-warn">⚠ Fetch failed: {{ test_result.error }}</p>
+<p class="banner-warn">⚠ {{ t('adapter_form.test_result.fetch_failed_prefix') }} {{ test_result.error }}</p>
 {% endif %}
 {% endif %}
 {% endblock %}
@@ -420,7 +376,7 @@
     var removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "secondary remove-row-btn";
-    removeBtn.textContent = "Remove";
+    removeBtn.textContent = "{{ t('adapter_form.button.remove') }}";
     removeBtn.addEventListener("click", function () { tr.remove(); });
     removeTd.appendChild(removeBtn);
     tr.appendChild(keyTd);

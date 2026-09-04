@@ -1,0 +1,22 @@
+{
+  "nav.dashboard": "Dashboard",
+  "nav.items": "Items",
+  "nav.config": "Config",
+  "nav.audit_log": "Audit log",
+  "nav.developers": "Developers",
+  "common.skip_to_content": "Skip to content",
+  "common.open_navigation": "Open navigation",
+  "common.close_navigation": "Close navigation",
+  "common.beacon_identity_set": "beacon identity set",
+  "common.configure_beacon_identity": "configure beacon identity",
+  "common.beacon_not_configured_warning": "Beacon identity not configured — {link}. Browsing is unaffected; the Override/Rearm actions on item pages are blocked until this is done.",
+  "common.set_it_up": "set it up",
+  "common.language": "Language",
+  "common.save": "Save",
+  "config.leave_unchanged": "leave unchanged to keep current value",
+  "config.not_set": "(not set)",
+  "config.preview": "Preview",
+  "config.reset_to_env_default": "Reset to env/default",
+  "settings.UI_DEFAULT_LOCALE.label": "Default language",
+  "settings.UI_DEFAULT_LOCALE.description": "Fallback UI language when a visitor's browser doesn't send a recognized Accept-Language and they haven't chosen one yet. A visitor's own choice (the EN/ES toggle) always overrides this, stored in a per-browser cookie. Applies live — no restart needed."
+}

@@ -1,0 +1,56 @@
+{
+  "config.category.banner_warning": "Los cambios surten efecto de inmediato para Actions (la configuración se relee por cada mensaje) y en el siguiente reinicio del proceso para Dispatcher, MQ e infraestructura de Beacon (la configuración se lee una sola vez al iniciar el proceso). Este panel no tiene inicio de sesión — cualquiera con acceso de red puede cambiar el comportamiento del pipeline en vivo y las credenciales de los proveedores.",
+  "config.category.section_general": "General",
+  "config.category.section_advanced_note": "avanzado, se cambia rara vez",
+  "config.category.col_group": "Grupo",
+  "config.category.col_settings": "Ajustes",
+  "config.category.setting_singular": "{count} ajuste",
+  "config.category.setting_plural": "{count} ajustes",
+  "config.category.overridden_badge": "{count} anulado(s)",
+  "config.category.badge_wiring": "cableado",
+  "config.category.badge_advanced": "avanzado",
+
+  "config.group_form.back_to": "Volver a {name}",
+  "config.group_form.wiring_confirm": "Esto cambia el cableado de temas/eventos de MQTT — un error aquí puede romper un pipeline sin previo aviso. ¿Guardar de todos modos?",
+  "config.group_form.tone_disabled": "Tono desactivado (el campo está vacío).",
+
+  "config.import_export.title": "Importar / Exportar configuración",
+  "config.import_export.intro": "Una instantánea JSON de todo lo que hay bajo {config_code} — anulaciones de ajustes, políticas de transmisión, nombres de fuentes y todas las definiciones de adaptadores. Los secretos ({key1}, {key2}) nunca se incluyen. La importación solo crea o actualiza por nombre/fuente — nunca elimina nada ya presente en esta instalación que no esté en el archivo.",
+  "config.import_export.export_title": "Exportar",
+  "config.import_export.export_desc": "Descargar la configuración actual como archivo JSON.",
+  "config.import_export.import_heading": "Importar",
+  "config.import_export.import_desc": "Sube un archivo generado por Exportar arriba (o por {script_code}) para previsualizar los cambios antes de escribir nada — no se aplica nada hasta que confirmes en la siguiente página.",
+  "config.import_export.preview_button": "Previsualizar importación",
+  "config.import_export.back_to_import_export": "Volver a Importar / Exportar",
+
+  "config.import_preview.title": "Vista previa de importación",
+  "config.import_preview.intro": "Todavía no se ha escrito nada — esto es una simulación. Revisa lo siguiente y luego confirma para aplicarlo de verdad. Los ajustes/adaptadores/políticas/fuentes existentes que compartan clave con el archivo se sobrescribirán; nada de lo que ya existe en esta instalación y no está en el archivo se toca.",
+  "config.import_preview.skipped_warning": "{count} adaptador(es) CUSTOM en este archivo se <strong>omitirán</strong> — activa {link} en esta instalación para importarlos. Su código Python nunca se lee ni se ejecuta de todas formas.",
+  "config.import_preview.ui_dev_tools_link": "Herramientas de desarrollo de la UI",
+  "config.import_preview.custom_warning": "Este archivo contiene <strong>{count}</strong> adaptador(es) CUSTOM — Python escrito por el operador, ejecutado sin aislamiento (sandboxing) en cada sondeo una vez importado. Revisa cada uno abajo antes de confirmar.",
+  "config.import_preview.truncated_note": "… (truncado — el código completo es lo que realmente se almacenará)",
+  "config.import_preview.confirm_custom_code_label": "He revisado el código Python de arriba y acepto el riesgo de ejecutar código escrito por el operador sin aislamiento (sandboxing).",
+  "config.import_preview.confirm_overwrite_label": "Entiendo que esto sobrescribirá los ajustes/adaptadores/políticas/fuentes existentes que compartan nombre con este archivo.",
+  "config.import_preview.confirm_button": "Confirmar importación",
+  "config.import_preview.nothing_to_apply": "Nada en este archivo crearía o actualizaría algo en esta instalación.",
+
+  "config.import_result.title": "Importación completada",
+  "config.import_result.applied_banner": "Importación aplicada — los ajustes/adaptadores/políticas/fuentes marcados como \"creado\" o \"actualizado\" abajo ya están en vivo; no se tocó nada más en esta instalación.",
+
+  "config.import_summary.col_section": "Sección",
+  "config.import_summary.col_created": "Creados",
+  "config.import_summary.col_updated": "Actualizados",
+  "config.import_summary.col_skipped": "Omitidos",
+  "config.import_summary.col_warned": "Con avisos",
+  "config.import_summary.skipped_heading": "Omitidos",
+  "config.import_summary.warnings_heading": "Avisos",
+
+  "config.rf_conf.editor_heading": "Editor de {filename}",
+  "config.rf_conf.editor_disabled": "Desactivado. Configura {var} en {val} arriba para editar {filename} desde aquí.",
+  "config.rf_conf.no_login_warning": "Este panel no tiene inicio de sesión. Cualquiera que pueda acceder a él puede sobrescribir {conf_path}. Se escribe un <span class=\"mono\">.bak</span> con marca de tiempo en cada guardado. No se reinicia nada — después de guardar, ejecuta {restart_cmd} en el host.",
+  "config.rf_conf.read_only_warning": "El proceso de la UI no puede escribir {conf_path} — es de solo lectura.",
+  "config.rf_conf.save_button": "Guardar {filename}",
+
+  "config.sparkline.aria_label": "Elementos por día en los últimos {days} días",
+  "config.sparkline.caption": "{total} total · máximo {peak}/día"
+}

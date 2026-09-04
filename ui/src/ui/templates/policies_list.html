@@ -1,29 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Policies{% endblock %}
+{% block title %}{{ t('policies_list.title') }}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-<div class="page-header"><h1>Dispatch policies</h1><a class="btn" href="/config/policies/new">+ New policy</a></div>
+<div class="page-header"><h1>{{ t('policies_list.heading') }}</h1><a class="btn" href="/config/policies/new">+ {{ t('policies_list.new_policy') }}</a></div>
 
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>Name</th><th>repeat_times</th><th>interval_seconds</th><th class="wrap">Description</th><th></th></tr></thead>
+  <thead><tr><th>{{ t('policies_list.name_column') }}</th><th>repeat_times</th><th>interval_seconds</th><th class="wrap">{{ t('policies_list.description_column') }}</th><th></th></tr></thead>
   <tbody>
     {% for name, repeat_times, interval_seconds, description in policies %}
     <tr>
-      <td data-label="Name"><span class="{{ name | policy_badge }}">{{ name }}</span></td>
+      <td data-label="{{ t('policies_list.name_column') }}"><span class="{{ name | policy_badge }}">{{ name }}</span></td>
       <td data-label="repeat_times">{{ repeat_times }}</td>
       <td data-label="interval_seconds">{{ interval_seconds }}</td>
-      <td data-label="Description" class="wrap muted">{{ description or "" }}</td>
+      <td data-label="{{ t('policies_list.description_column') }}" class="wrap muted">{{ description or "" }}</td>
       <td class="actions-cell">
-        <a class="btn secondary" href="/config/policies/{{ name }}/edit">Edit</a>
+        <a class="btn secondary" href="/config/policies/{{ name }}/edit">{{ t('policies_list.edit') }}</a>
         <form method="post" action="/config/policies/{{ name }}/delete">
           {{ csrf_field() }}
-          <button type="submit" class="danger">Delete</button>
+          <button type="submit" class="danger">{{ t('policies_list.delete') }}</button>
         </form>
       </td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="5">No policies defined.</td></tr>
+    <tr class="empty-row"><td colspan="5">{{ t('policies_list.empty_state') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

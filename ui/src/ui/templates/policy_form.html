@@ -1,15 +1,15 @@
 {% extends "base.html" %}
-{% block title %}{% if mode == "edit" %}Edit policy{% else %}New policy{% endif %}{% endblock %}
+{% block title %}{% if mode == "edit" %}{{ t('policy_form.edit_title') }}{% else %}{{ t('policy_form.new_title') }}{% endif %}{% endblock %}
 {% block content %}
 {% include "_config_nav.html" %}
-<a class="crumb" href="/config/policies">&larr; Back to policies</a>
-<div class="page-header"><h1>{% if mode == "edit" %}Edit policy{% else %}New policy{% endif %}</h1></div>
+<a class="crumb" href="/config/policies">&larr; {{ t('policy_form.back_to_policies') }}</a>
+<div class="page-header"><h1>{% if mode == "edit" %}{{ t('policy_form.edit_title') }}{% else %}{{ t('policy_form.new_title') }}{% endif %}</h1></div>
 
 <form method="post" action="/config/policies">
   {{ csrf_field() }}
   <table class="form-table">
     <tr>
-      <th><label for="name">Name</label></th>
+      <th><label for="name">{{ t('policy_form.name_label') }}</label></th>
       <td>
         <input id="name" name="name" type="text" required
                value="{{ policy[0] if policy else '' }}"
@@ -27,11 +27,11 @@
                  value="{{ policy[2] if policy else 0 }}"></td>
     </tr>
     <tr>
-      <th><label for="description">Description</label></th>
+      <th><label for="description">{{ t('policy_form.description_label') }}</label></th>
       <td><input id="description" name="description" type="text"
                  value="{{ policy[3] if policy and policy[3] else '' }}"></td>
     </tr>
   </table>
-  <button type="submit">Save</button>
+  <button type="submit">{{ t('common.save') }}</button>
 </form>
 {% endblock %}

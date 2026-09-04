@@ -15,6 +15,26 @@
   var script = document.currentScript;
   var intervalMs = parseInt(script.dataset.intervalMs, 10);
 
+  // Translated strings for the relative-time ticker and the "updated ..."
+  // header text, rendered server-side by dashboard.html onto this same
+  // <script> tag (same data-attribute convention as data-interval-ms
+  // above). Falls back to English if the attribute is somehow missing.
+  var i18n;
+  try {
+    i18n = JSON.parse(script.dataset.i18n || "{}");
+  } catch (e) {
+    i18n = {};
+  }
+  i18n = {
+    just_now: i18n.just_now || "just now",
+    minutes_ago: i18n.minutes_ago || "{n}m ago",
+    hours_ago: i18n.hours_ago || "{n}h ago",
+    days_ago: i18n.days_ago || "{n}d ago",
+    updated_just_now: i18n.updated_just_now || "updated just now",
+    updated_ago: i18n.updated_ago || "updated {ago}",
+    update_failed: i18n.update_failed || "update failed — retrying",
+  };
+
   var root = document.getElementById("dashboard-content");
   var statusEl = document.getElementById("refresh-status");
   if (!root) return;
@@ -27,10 +47,10 @@
   function formatAgo(ms) {
     var s = Math.round(ms / 1000);
     if (s < 0) s = 0;
-    if (s < 45) return "just now";
-    if (s < 3600) return Math.round(s / 60) + "m ago";
-    if (s < 86400) return Math.round(s / 3600) + "h ago";
-    return Math.round(s / 86400) + "d ago";
+    if (s < 45) return i18n.just_now;
+    if (s < 3600) return i18n.minutes_ago.replace("{n}", Math.round(s / 60));
+    if (s < 86400) return i18n.hours_ago.replace("{n}", Math.round(s / 3600));
+    return i18n.days_ago.replace("{n}", Math.round(s / 86400));
   }
 
   function tickRelativeTimes(scope) {
@@ -44,7 +64,7 @@
   function tickStatus() {
     if (!statusEl) return;
     var s = Math.round((Date.now() - lastUpdate) / 1000);
-    statusEl.textContent = s < 3 ? "updated just now" : "updated " + formatAgo(Date.now() - lastUpdate);
+    statusEl.textContent = s < 3 ? i18n.updated_just_now : i18n.updated_ago.replace("{ago}", formatAgo(Date.now() - lastUpdate));
   }
 
   // ---- cell patching ----------------------------------------------------
@@ -90,7 +110,7 @@
         tickStatus();
       })
       .catch(function () {
-        if (statusEl) statusEl.textContent = "update failed — retrying";
+        if (statusEl) statusEl.textContent = i18n.update_failed;
       })
       .finally(function () {
         clearTimeout(pollTimer);

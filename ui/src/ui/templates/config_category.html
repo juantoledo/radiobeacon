@@ -5,39 +5,36 @@
 <div class="page-header"><h1>{{ category }}</h1></div>
 
 <p class="banner-warn">
-  ⚠ Changes take effect immediately for Actions (config is re-read per message)
-  and on next process restart for Dispatcher, MQ, and Beacon infra (config is
-  read once at process start). This dashboard has no login — anyone with
-  network access to it can change live pipeline behavior and provider credentials.
+  ⚠ {{ t('config.category.banner_warning') }}
 </p>
 
 {% if sections | length > 1 %}
 <nav class="section-jump">
-  {% for s in sections %}<a href="#section-{{ s.slug }}">{{ s.label or "General" }}</a>{% endfor %}
+  {% for s in sections %}<a href="#section-{{ s.slug }}">{{ s.label or t('config.category.section_general') }}</a>{% endfor %}
 </nav>
 {% endif %}
 
 {% for s in sections %}
 {% if s.collapsed %}
 <details class="config-section" id="section-{{ s.slug }}">
-  <summary>{{ s.label }} <span class="muted">— advanced, rarely changed</span></summary>
+  <summary>{{ s.label }} <span class="muted">— {{ t('config.category.section_advanced_note') }}</span></summary>
 {% else %}
 <section class="config-section" id="section-{{ s.slug }}">
   {% if s.label %}<h2>{{ s.label }}</h2>{% endif %}
 {% endif %}
   <div class="table-wrap cards">
   <table>
-    <thead><tr><th>Group</th><th>Settings</th><th></th></tr></thead>
+    <thead><tr><th>{{ t('config.category.col_group') }}</th><th>{{ t('config.category.col_settings') }}</th><th></th></tr></thead>
     <tbody>
       {% for g in s.groups %}
       <tr>
         <td data-label="Group"><a href="/config/{{ g.slug }}">{{ g.name }}</a></td>
         <td data-label="Settings">
-          {{ g.count }} setting{{ "s" if g.count != 1 }}
-          {% if g.overridden %} · <span class="badge badge-success">{{ g.overridden }} overridden</span>{% endif %}
+          {{ t('config.category.setting_singular' if g.count == 1 else 'config.category.setting_plural', count=g.count) }}
+          {% if g.overridden %} · <span class="badge badge-success">{{ t('config.category.overridden_badge', count=g.overridden) }}</span>{% endif %}
         </td>
         <td>
-          {% if g.has_wiring %}<span class="badge badge-warn">wiring</span>{% elif g.advanced %}<span class="badge badge-neutral">advanced</span>{% endif %}
+          {% if g.has_wiring %}<span class="badge badge-warn">{{ t('config.category.badge_wiring') }}</span>{% elif g.advanced %}<span class="badge badge-neutral">{{ t('config.category.badge_advanced') }}</span>{% endif %}
         </td>
       </tr>
       {% endfor %}

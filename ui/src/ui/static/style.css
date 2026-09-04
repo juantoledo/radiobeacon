@@ -262,6 +262,25 @@ code, pre, .mono {
 }
 .sidebar-foot-warn:hover { text-decoration: none; color: var(--warn); }
 
+.locale-switcher {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: var(--space-2);
+}
+.locale-switcher button {
+  flex: 1;
+  padding: 0.25rem 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+.locale-switcher button:hover { background: var(--bg-subtle); color: var(--fg); }
+.locale-switcher button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg, #fff); }
+
 .nav-close, .nav-toggle {
   display: none;
   align-items: center;

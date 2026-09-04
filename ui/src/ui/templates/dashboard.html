@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}{{ t('dashboard.title') }}{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>Dashboard</h1>
+  <h1>{{ t('dashboard.title') }}</h1>
   {% if refresh_seconds %}
   <span class="live-badge">
     <span class="pulse-dot" aria-hidden="true"></span>
-    Live · <span id="refresh-status">updated just now</span>
+    {{ t('dashboard.live_label') }} · <span id="refresh-status">{{ t('dashboard.updated_just_now') }}</span>
   </span>
   {% endif %}
 </div>
@@ -23,42 +23,42 @@
    button in Quick controls (manual-tx.js). #}
 <dialog id="manual-tx-dialog" class="manual-tx-dialog">
   <form method="post" action="/dashboard/transmit"
-        data-voice-max="{{ manual_voice_max_chars }}" data-frame-max="{{ manual_frame_max_bytes }}">
+        data-voice-max="{{ manual_voice_max_chars }}" data-frame-max="{{ manual_frame_max_bytes }}"
+        data-i18n='{{ {"count_chars": t("manual_tx.count_chars"), "count_bytes": t("manual_tx.count_bytes")} | tojson }}'>
     {{ csrf_field() }}
-    <h2>{{ icon('radio', 18) }} Transmit text now</h2>
+    <h2>{{ icon('radio', 18) }} {{ t('dashboard.transmit_now_title') }}</h2>
 
-    <div class="segmented mtx-kind" role="group" aria-label="Transmission type">
+    <div class="segmented mtx-kind" role="group" aria-label="{{ t('dashboard.transmission_type') }}">
       {% for mode in ['voice', 'frame'] %}
       <label class="{{ 'active' if beacon_type == mode else '' }}">
         <input type="radio" name="kind" value="{{ mode }}" {{ 'checked' if beacon_type == mode else '' }}>
-        {{ mode }}
+        {{ t('dashboard.mode_' ~ mode) }}
       </label>
       {% endfor %}
     </div>
     <p class="mtx-mode-note" hidden>
-      Beacon mode is <strong>{{ beacon_type }}</strong> — a message of the other type waits
-      queued until you switch mode.
+      {{ t('dashboard.mode_note', mode='<strong>' ~ t('dashboard.mode_' ~ beacon_type) ~ '</strong>') | safe }}
     </p>
 
-    <label class="mtx-label" for="manual-tx-text">Message</label>
+    <label class="mtx-label" for="manual-tx-text">{{ t('dashboard.message_label') }}</label>
     <textarea id="manual-tx-text" name="text" rows="4" required
-              placeholder="Spoken aloud (voice) or sent as one AX.25 frame (frame). The callsign is added automatically."></textarea>
+              placeholder="{{ t('dashboard.message_placeholder') }}"></textarea>
     <div class="mtx-foot">
       <span id="manual-tx-count" class="mono"></span>
-      <span id="manual-tx-over" class="mtx-over" hidden>over the limit</span>
+      <span id="manual-tx-over" class="mtx-over" hidden>{{ t('dashboard.over_the_limit') }}</span>
     </div>
 
     {% if not beacon_enabled %}
-    <p class="banner-warn mtx-banner">⚠ Transmission is disabled — this message is queued and goes out when you enable the beacon.</p>
+    <p class="banner-warn mtx-banner">⚠ {{ t('dashboard.tx_disabled_banner') }}</p>
     {% elif not running %}
-    <p class="banner-warn mtx-banner">⚠ The beacon process isn't running — this message is queued until it starts.</p>
+    <p class="banner-warn mtx-banner">⚠ {{ t('dashboard.beacon_not_running_banner') }}</p>
     {% else %}
-    <p class="banner mtx-banner">This message will be transmitted on air on the beacon's next tick.</p>
+    <p class="banner mtx-banner">{{ t('dashboard.tx_ready_banner') }}</p>
     {% endif %}
 
     <div class="mtx-actions">
-      <button type="button" class="btn secondary" data-close-dialog>Cancel</button>
-      <button type="submit" id="manual-tx-submit">{{ icon('radio', 15) }} Transmit</button>
+      <button type="button" class="btn secondary" data-close-dialog>{{ t('dashboard.cancel') }}</button>
+      <button type="submit" id="manual-tx-submit">{{ icon('radio', 15) }} {{ t('dashboard.transmit_button') }}</button>
     </div>
   </form>
 </dialog>
@@ -67,6 +67,7 @@
 <script src="{{ static_url('beacon-audio.js') }}" defer></script>
 <script src="{{ static_url('manual-tx.js') }}" defer></script>
 {% if refresh_seconds %}
-<script src="{{ static_url('dashboard-refresh.js') }}" defer data-interval-ms="{{ refresh_seconds * 1000 }}"></script>
+<script src="{{ static_url('dashboard-refresh.js') }}" defer data-interval-ms="{{ refresh_seconds * 1000 }}"
+        data-i18n='{{ ({"just_now": t("dashboard.just_now"), "minutes_ago": t("dashboard.minutes_ago"), "hours_ago": t("dashboard.hours_ago"), "days_ago": t("dashboard.days_ago"), "updated_just_now": t("dashboard.updated_just_now"), "updated_ago": t("dashboard.updated_ago"), "update_failed": t("dashboard.update_failed")} | tojson) }}'></script>
 {% endif %}
 {% endblock %}

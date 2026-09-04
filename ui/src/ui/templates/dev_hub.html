@@ -1,55 +1,52 @@
 {% extends "base.html" %}
-{% block title %}Developers{% endblock %}
+{% block title %}{{ t('dev_hub.title') }}{% endblock %}
 {% block content %}
-<div class="page-header"><h1>Developers</h1><span class="muted">{{ total }} items</span></div>
+<div class="page-header"><h1>{{ t('dev_hub.title') }}</h1><span class="muted">{{ t('dev_hub.item_count', count=total) }}</span></div>
 
 <p class="banner-warn">
-  ⚠ These tools write directly to <code>items</code> and related tables,
-  bypassing the normal adapter/dispatcher pipeline. There's no undo beyond
-  what's in the audit log below each item, and no confirmation beyond the
-  browser's own dialog on Delete.
+  ⚠ {{ t('dev_hub.write_warning') | safe }}
 </p>
 
 <div class="tool-cards">
   <a class="tool-card" href="/dev/items/new">
     <div class="tool-icon">{{ icon('plus-circle', 20) }}</div>
-    <div class="tool-title">+ Add item</div>
-    <div class="tool-desc">Hand-create an item row with any field values.</div>
+    <div class="tool-title">{{ t('dev_hub.add_item_title') }}</div>
+    <div class="tool-desc">{{ t('dev_hub.add_item_desc') }}</div>
   </a>
   <a class="tool-card" href="/dev/sql">
     <div class="tool-icon">{{ icon('database', 20) }}</div>
-    <div class="tool-title">SQL runner</div>
-    <div class="tool-desc">Ad hoc, read-only SELECT queries against the live database.</div>
+    <div class="tool-title">{{ t('dev_hub.sql_runner_title') }}</div>
+    <div class="tool-desc">{{ t('dev_hub.sql_runner_desc') }}</div>
   </a>
 </div>
 
 <form class="filters" method="get" action="/dev">
-  <input type="text" name="q" placeholder="Search title, contents, url…" value="{{ filters.q }}">
+  <input type="text" name="q" placeholder="{{ t('dev_hub.search_placeholder') }}" value="{{ filters.q }}">
   <select name="source">
-    <option value="">Any source</option>
+    <option value="">{{ t('dev_hub.any_source') }}</option>
     {% for s in sources %}
     <option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s }}</option>
     {% endfor %}
   </select>
   <select name="type">
-    <option value="">Any type</option>
+    <option value="">{{ t('dev_hub.any_type') }}</option>
     {% for t in types %}
     <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
     {% endfor %}
   </select>
   <select name="transmit_policy">
-    <option value="">Any policy</option>
+    <option value="">{{ t('dev_hub.any_policy') }}</option>
     {% for p in policies %}
     <option value="{{ p[0] }}" {% if filters.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
     {% endfor %}
   </select>
-  <button type="submit">Filter</button>
-  <a class="btn secondary" href="/dev">Clear</a>
+  <button type="submit">{{ t('dev_hub.filter_button') }}</button>
+  <a class="btn secondary" href="/dev">{{ t('dev_hub.clear_button') }}</a>
 </form>
 
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>Source</th><th>Item</th><th class="wrap">Title</th><th>Policy</th><th>Date</th><th></th></tr></thead>
+  <thead><tr><th>{{ t('dev_hub.col_source') }}</th><th>{{ t('dev_hub.col_item') }}</th><th class="wrap">{{ t('dev_hub.col_title') }}</th><th>{{ t('dev_hub.col_policy') }}</th><th>{{ t('dev_hub.col_date') }}</th><th></th></tr></thead>
   <tbody>
     {% for item in items %}
     <tr>
@@ -59,16 +56,16 @@
       <td data-label="Policy">{% if item.transmit_policy %}<span class="{{ item.transmit_policy | policy_badge }}">{{ item.transmit_policy }}</span>{% endif %}</td>
       <td data-label="Date" class="muted">{{ item.source_date_time | display_dt }}</td>
       <td class="actions-cell">
-        <a class="btn secondary" href="/dev/items/{{ item.source }}/{{ item.item_id }}/edit">Edit</a>
+        <a class="btn secondary" href="/dev/items/{{ item.source }}/{{ item.item_id }}/edit">{{ t('dev_hub.edit_button') }}</a>
         <form method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/delete"
-              onsubmit="return confirm('Delete {{ item.source }}/{{ item.item_id }}? This cannot be undone.');">
+              onsubmit="return confirm('{{ t('dev_hub.delete_confirm', source=item.source, item_id=item.item_id) }}');">
           {{ csrf_field() }}
-          <button type="submit" class="danger">Delete</button>
+          <button type="submit" class="danger">{{ t('dev_hub.delete_button') }}</button>
         </form>
       </td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="6">No items match these filters.</td></tr>
+    <tr class="empty-row"><td colspan="6">{{ t('dev_hub.no_items') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -11,7 +11,7 @@
     {% for f in fields %}
     <tr class="{{ 'wiring-row' if f.spec.wiring else '' }}">
       <th>
-        <label for="{{ f.spec.key }}">{{ f.spec.label }}{% if f.spec.required %} *{% endif %}</label>
+        <label for="{{ f.spec.key }}">{{ t('settings.' ~ f.spec.key ~ '.label', default=f.spec.label) }}{% if f.spec.required %} *{% endif %}</label>
         <div class="mono muted" style="font-weight:400; font-size:0.78rem;">{{ f.spec.key }}</div>
         {% if f.spec.wiring %}<span class="badge badge-warn">wiring</span>{% endif %}
       </th>
@@ -19,7 +19,7 @@
         {% if f.spec.type == "secret" %}
           <input id="{{ f.spec.key }}" name="{{ f.spec.key }}" type="text"
                  autocomplete="off" value="{{ f.value }}"
-                 placeholder="{{ 'leave unchanged to keep current value' if f.overridden else '(not set)' }}">
+                 placeholder="{{ t('config.leave_unchanged') if f.overridden else t('config.not_set') }}">
         {% elif f.spec.type == "bool" %}
           <select id="{{ f.spec.key }}" name="{{ f.spec.key }}" data-original="{{ f.value }}">
             <option value="true" {% if f.value|lower == "true" %}selected{% endif %}>true</option>
@@ -40,20 +40,20 @@
                  {% if f.spec.wiring %}data-wiring{% endif %}
                  {% if f.spec.required %}required{% endif %}>
         {% endif %}
-        <div class="meta-line">{{ f.spec.description }}</div>
+        <div class="meta-line">{{ t('settings.' ~ f.spec.key ~ '.description', default=f.spec.description) }}</div>
         {% if f.spec.key == "BEACON_VOICE_ATTENTION_TONE" %}
-        <button type="button" id="tone-preview-btn" class="secondary">&#9654; Preview</button>
+        <button type="button" id="tone-preview-btn" class="secondary">&#9654; {{ t('config.preview') }}</button>
         <span id="tone-preview-msg" class="meta-line" role="status"></span>
         <audio id="tone-preview-audio" preload="none"></audio>
         {% endif %}
         {% if f.overridden %}
-        <button type="submit" form="reset-{{ f.spec.key }}" class="secondary">Reset to env/default</button>
+        <button type="submit" form="reset-{{ f.spec.key }}" class="secondary">{{ t('config.reset_to_env_default') }}</button>
         {% endif %}
       </td>
     </tr>
     {% endfor %}
   </table>
-  <button type="submit">Save</button>
+  <button type="submit">{{ t('common.save') }}</button>
 </form>
 
 {% for f in fields %}

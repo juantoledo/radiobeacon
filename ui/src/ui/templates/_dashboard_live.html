@@ -5,15 +5,15 @@
 <div id="dashboard-content">
 
 {% set toggles = [
-  ('BEACON_ENABLED', beacon_enabled, 'radio', 'Beacon transmit', 'Puts scheduled content on air'),
-  ('ACTIONS_AI_ENABLED', ai_enabled, 'sparkles', 'AI summarization', 'Summarize items before transmit'),
-  ('BEACON_WATERMARK_ENABLED', watermark_enabled, 'clock', 'Periodic watermark', 'Station ID on its own timer'),
-  ('UI_DEV_TOOLS_ENABLED', dev_tools_enabled_now, 'developers', 'Developer tools', 'Raw item edit + SQL runner'),
+  ('BEACON_ENABLED', beacon_enabled, 'radio', t('dashboard.toggle_beacon_label'), t('dashboard.toggle_beacon_hint')),
+  ('ACTIONS_AI_ENABLED', ai_enabled, 'sparkles', t('dashboard.toggle_ai_label'), t('dashboard.toggle_ai_hint')),
+  ('BEACON_WATERMARK_ENABLED', watermark_enabled, 'clock', t('dashboard.toggle_watermark_label'), t('dashboard.toggle_watermark_hint')),
+  ('UI_DEV_TOOLS_ENABLED', dev_tools_enabled_now, 'developers', t('dashboard.toggle_dev_tools_label'), t('dashboard.toggle_dev_tools_hint')),
 ] %}
 <section class="panel quick-controls">
   <div class="panel-head">
-    <h3>{{ icon('power', 17) }} Quick controls</h3>
-    <span class="muted">applied live — no restart needed</span>
+    <h3>{{ icon('power', 17) }} {{ t('dashboard.quick_controls_title') }}</h3>
+    <span class="muted">{{ t('dashboard.applied_live') }}</span>
   </div>
   <div class="toggle-grid" data-cell="quick_controls">
     {% for key, on, ic, label, hint in toggles %}
@@ -30,45 +30,45 @@
       </button>
     </form>
     {% endfor %}
-    <div class="segmented" role="group" aria-label="Beacon mode">
-      <span class="segmented-label">{{ icon('activity', 15) }}Mode</span>
+    <div class="segmented" role="group" aria-label="{{ t('dashboard.beacon_mode_aria') }}">
+      <span class="segmented-label">{{ icon('activity', 15) }}{{ t('dashboard.mode_label') }}</span>
       {% for mode in ['voice', 'frame'] %}
       <form method="post" action="/dashboard/toggle">
         {{ csrf_field() }}
         <input type="hidden" name="key" value="BEACON_TYPE">
         <input type="hidden" name="value" value="{{ mode }}">
         <button type="submit" class="{{ 'active' if beacon_type == mode else '' }}"
-                {% if beacon_type == mode %}aria-current="true"{% endif %}>{{ mode }}</button>
+                {% if beacon_type == mode %}aria-current="true"{% endif %}>{{ t('dashboard.mode_' ~ mode) }}</button>
       </form>
       {% endfor %}
       {% if beacon_type_live and beacon_type_live != beacon_type %}
-      <span class="segmented-drift" title="The beacon process last reported transmitting as {{ beacon_type_live }}">↳ still {{ beacon_type_live }}</span>
+      <span class="segmented-drift" title="{{ t('dashboard.beacon_type_live_title', mode=t('dashboard.mode_' ~ beacon_type_live)) }}">↳ {{ t('dashboard.beacon_type_live_still', mode=t('dashboard.mode_' ~ beacon_type_live)) }}</span>
       {% endif %}
     </div>
   </div>
   <div class="manual-tx-bar" data-cell="manual_tx_bar">
     <button type="button" class="btn secondary" data-open-dialog="manual-tx-dialog"
-            {% if not is_beacon_configured() %}disabled title="Configure the beacon identity first"{% endif %}>
-      {{ icon('radio', 15) }} Transmit text now
+            {% if not is_beacon_configured() %}disabled title="{{ t('dashboard.configure_beacon_identity_first_title') }}"{% endif %}>
+      {{ icon('radio', 15) }} {{ t('dashboard.transmit_now_title') }}
     </button>
     {% if manual_tx_pending_total %}
-    <span class="badge badge-warn">{{ manual_tx_pending_total }} queued</span>
+    <span class="badge badge-warn">{{ t('dashboard.queued_count', n=manual_tx_pending_total) }}</span>
     {% endif %}
     {% if last_manual_transmit_at %}
-    <span class="muted">last manual tx <time datetime="{{ last_manual_transmit_at | iso_utc }}" data-ago>{{ last_manual_transmit_at | time_ago }}</time></span>
+    <span class="muted">{{ t('dashboard.last_manual_tx') }} <time datetime="{{ last_manual_transmit_at | iso_utc }}" data-ago>{{ last_manual_transmit_at | time_ago }}</time></span>
     {% endif %}
   </div>
   <div class="manual-clips" data-cell="manual_clips">
     {% if manual_clips %}
-    <span class="manual-clips-label muted">Recent manual transmissions</span>
+    <span class="manual-clips-label muted">{{ t('dashboard.recent_manual_transmissions') }}</span>
     <ul class="feed feed--manual">
       {% for clip in manual_clips %}
       <li>
-        <button type="button" class="feed-play" data-audio-url="/dashboard/manual-audio/{{ clip.name }}" aria-label="Play manual transmission audio">
+        <button type="button" class="feed-play" data-audio-url="/dashboard/manual-audio/{{ clip.name }}" aria-label="{{ t('dashboard.play_manual_tx_audio_aria') }}">
           <span class="fp-play">{{ icon('play', 14) }}</span>
           <span class="fp-stop">{{ icon('stop', 14) }}</span>
         </button>
-        <span class="feed-title mono">manual #{{ clip.manual_id }}</span>
+        <span class="feed-title mono">{{ t('dashboard.manual_hash', n=clip.manual_id) }}</span>
         <time class="feed-time" datetime="{{ clip.at | iso_utc }}" data-ago>{{ clip.at | time_ago }}</time>
       </li>
       {% endfor %}
@@ -81,69 +81,69 @@
   {# --- Beacon --- #}
   {% set beacon_state = 'ok' if (running and beacon_enabled) else 'warn' if beacon_enabled else 'idle' %}
   <a class="status-tile" href="/config/beacon-transmission">
-    <span class="status-tile-top">{{ icon('radio', 16) }}Beacon</span>
+    <span class="status-tile-top">{{ icon('radio', 16) }}{{ t('dashboard.tile_beacon') }}</span>
     <span class="status-tile-value" data-cell="st_beacon">
       <span class="state-dot state-{{ beacon_state }}"></span>
-      {{ 'On air' if (running and beacon_enabled) else 'Idle' if beacon_enabled else 'Off' }}
+      {{ t('dashboard.status_on_air') if (running and beacon_enabled) else t('dashboard.status_idle') if beacon_enabled else t('dashboard.status_off') }}
     </span>
     <span class="status-tile-sub" data-cell="st_beacon_sub">
-      {{ 'transmit enabled' if beacon_enabled else 'transmit disabled' }} · process {{ 'running' if running else 'not running' }}
+      {{ t('dashboard.status_transmit_enabled') if beacon_enabled else t('dashboard.status_transmit_disabled') }} · {{ t('dashboard.status_process_running') if running else t('dashboard.status_process_not_running') }}
     </span>
   </a>
 
   {# --- Ingest --- #}
   {% set ing = ingest %}
   <a class="status-tile" href="/config/adapters">
-    <span class="status-tile-top">{{ icon('rss', 16) }}Ingest</span>
+    <span class="status-tile-top">{{ icon('rss', 16) }}{{ t('dashboard.tile_ingest') }}</span>
     <span class="status-tile-value" data-cell="st_ingest">
       <span class="state-dot state-{{ 'ok' if ing.state == 'ok' else 'warn' if ing.state == 'error' else 'idle' }}"></span>
-      {{ 'Healthy' if ing.state == 'ok' else 'Errors' if ing.state == 'error' else 'No fetches' }}
+      {{ t('dashboard.status_healthy') if ing.state == 'ok' else t('dashboard.status_errors') if ing.state == 'error' else t('dashboard.status_no_fetches') }}
     </span>
     <span class="status-tile-sub" data-cell="st_ingest_sub">
-      {% if ing.failing %}{{ ing.failing | join(', ') }} failing{% elif ing.last_at %}{{ ing.sources }} source{{ 's' if ing.sources != 1 }} · <time datetime="{{ ing.last_at | iso_utc }}" data-ago>{{ ing.last_at | time_ago }}</time>{% else %}—{% endif %}
+      {% if ing.failing %}{{ t('dashboard.sources_failing', list=(ing.failing | join(', '))) }}{% elif ing.last_at %}{{ t('dashboard.source_count_one', n=ing.sources) if ing.sources == 1 else t('dashboard.source_count_other', n=ing.sources) }} · <time datetime="{{ ing.last_at | iso_utc }}" data-ago>{{ ing.last_at | time_ago }}</time>{% else %}—{% endif %}
     </span>
   </a>
 
   {# --- Transmit queue --- #}
   <a class="status-tile" href="/config/beacon-queue">
-    <span class="status-tile-top">{{ icon('activity', 16) }}Queue</span>
+    <span class="status-tile-top">{{ icon('activity', 16) }}{{ t('dashboard.tile_queue') }}</span>
     <span class="status-tile-value" data-cell="st_queue">
       {{ queue_depth }} <span class="muted">/ {{ queue_max_size }}</span>
     </span>
     <span class="status-tile-sub" data-cell="st_queue_sub">
-      pending {{ beacon_type }} · {{ queue_bar.pct }}% full
+      {{ t('dashboard.pending_mode', mode=t('dashboard.mode_' ~ beacon_type)) }} · {{ t('dashboard.pct_full', pct=queue_bar.pct) }}
       <span class="queue-bar"><span class="queue-bar-fill {{ queue_bar.fill_class }}" style="width: {{ queue_bar.pct }}%;"></span></span>
     </span>
   </a>
 
   {# --- AI --- #}
   <a class="status-tile" href="/config/actions-ai">
-    <span class="status-tile-top">{{ icon('sparkles', 16) }}AI</span>
+    <span class="status-tile-top">{{ icon('sparkles', 16) }}{{ t('dashboard.tile_ai') }}</span>
     <span class="status-tile-value" data-cell="st_ai">
       <span class="state-dot state-{{ 'ok' if ai_enabled else 'idle' }}"></span>
-      {{ 'Enabled' if ai_enabled else 'Disabled' }}
+      {{ t('dashboard.status_enabled') if ai_enabled else t('dashboard.status_disabled') }}
     </span>
     <span class="status-tile-sub" data-cell="st_ai_sub">
-      {% if ai_last_run_at %}last run <time datetime="{{ ai_last_run_at | iso_utc }}" data-ago>{{ ai_last_run_at | time_ago }}</time>{% else %}never run{% endif %}
+      {% if ai_last_run_at %}{{ t('dashboard.last_run_label') }} <time datetime="{{ ai_last_run_at | iso_utc }}" data-ago>{{ ai_last_run_at | time_ago }}</time>{% else %}{{ t('dashboard.never_run') }}{% endif %}
     </span>
   </a>
 
   {# --- Clock / NTP --- #}
   {% set ntp_state = 'idle' if ntp_offset is none else 'warn' if (ntp_offset | abs) > ntp_warn else 'ok' %}
   <a class="status-tile" href="/config/beacon">
-    <span class="status-tile-top">{{ icon('clock', 16) }}Clock</span>
+    <span class="status-tile-top">{{ icon('clock', 16) }}{{ t('dashboard.tile_clock') }}</span>
     <span class="status-tile-value" data-cell="st_ntp">
       <span class="state-dot state-{{ ntp_state }}"></span>
-      {% if ntp_offset is none %}Unchecked{% else %}{{ '%+.2f'|format(ntp_offset) }}s{% endif %}
+      {% if ntp_offset is none %}{{ t('dashboard.status_unchecked') }}{% else %}{{ '%+.2f'|format(ntp_offset) }}s{% endif %}
     </span>
     <span class="status-tile-sub" data-cell="st_ntp_sub">
-      {% if ntp_checked_at %}NTP · <time datetime="{{ ntp_checked_at | iso_utc }}" data-ago>{{ ntp_checked_at | time_ago }}</time>{% else %}NTP offset not measured{% endif %}
+      {% if ntp_checked_at %}NTP · <time datetime="{{ ntp_checked_at | iso_utc }}" data-ago>{{ ntp_checked_at | time_ago }}</time>{% else %}{{ t('dashboard.ntp_offset_not_measured') }}{% endif %}
     </span>
   </a>
 </section>
 
 {% if failed_24h %}
-<p class="banner-warn">⚠ {{ failed_24h }} failed pipeline event{{ 's' if failed_24h != 1 }} in the last 24h — <a href="/audit">check the audit log</a>.</p>
+<p class="banner-warn">⚠ {{ (t('dashboard.failed_events_banner_one', n=failed_24h, link='<a href="/audit">' ~ t('dashboard.check_audit_log_link_text') ~ '</a>') if failed_24h == 1 else t('dashboard.failed_events_banner_other', n=failed_24h, link='<a href="/audit">' ~ t('dashboard.check_audit_log_link_text') ~ '</a>')) | safe }}</p>
 {% endif %}
 
 <div class="dash-grid">
@@ -151,24 +151,24 @@
 
   <section class="kpi-row">
     <div class="kpi">
-      <span class="kpi-label">{{ icon('items', 15) }}Items</span>
+      <span class="kpi-label">{{ icon('items', 15) }}{{ t('dashboard.kpi_items_label') }}</span>
       <span class="kpi-value" data-cell="kpi_items">{{ counts.total_items }}</span>
-      <span class="kpi-foot" data-cell="kpi_items_foot">+{{ counts.items_last_24h }} in 24h</span>
+      <span class="kpi-foot" data-cell="kpi_items_foot">{{ t('dashboard.in_24h', n=counts.items_last_24h) }}</span>
     </div>
     <div class="kpi">
-      <span class="kpi-label">{{ icon('audit', 15) }}Audit events</span>
+      <span class="kpi-label">{{ icon('audit', 15) }}{{ t('dashboard.kpi_audit_events_label') }}</span>
       <span class="kpi-value" data-cell="kpi_events">{{ counts.total_audit_events }}</span>
-      <span class="kpi-foot" data-cell="kpi_events_foot">+{{ counts.events_last_24h }} in 24h</span>
+      <span class="kpi-foot" data-cell="kpi_events_foot">{{ t('dashboard.in_24h', n=counts.events_last_24h) }}</span>
     </div>
     <div class="kpi">
-      <span class="kpi-label">{{ icon('beacon', 15) }}In-flight</span>
+      <span class="kpi-label">{{ icon('beacon', 15) }}{{ t('dashboard.kpi_inflight_label') }}</span>
       <span class="kpi-value" data-cell="kpi_inflight">{{ counts.in_flight_dispatches }}</span>
-      <span class="kpi-foot">dispatch rows</span>
+      <span class="kpi-foot">{{ t('dashboard.dispatch_rows') }}</span>
     </div>
     <div class="kpi">
-      <span class="kpi-label">{{ icon('policies', 15) }}Policies</span>
+      <span class="kpi-label">{{ icon('policies', 15) }}{{ t('dashboard.kpi_policies_label') }}</span>
       <span class="kpi-value" data-cell="kpi_policies">{{ counts.total_policies }}</span>
-      <span class="kpi-foot"><a href="/config/policies">manage</a></span>
+      <span class="kpi-foot"><a href="/config/policies">{{ t('dashboard.manage_link') }}</a></span>
     </div>
   </section>
 
@@ -181,10 +181,10 @@
     <input type="radio" name="activity-feed" id="af-items" class="af-radio" checked>
     <input type="radio" name="activity-feed" id="af-audit" class="af-radio">
     <div class="panel-head">
-      <h2>Activity</h2>
-      <div class="seg" role="tablist" aria-label="Activity feed">
-        <label for="af-items" class="af-tab af-tab--items">Items</label>
-        <label for="af-audit" class="af-tab af-tab--audit">Audit</label>
+      <h2>{{ t('dashboard.activity_title') }}</h2>
+      <div class="seg" role="tablist" aria-label="{{ t('dashboard.activity_title') }}">
+        <label for="af-items" class="af-tab af-tab--items">{{ t('dashboard.tab_items') }}</label>
+        <label for="af-audit" class="af-tab af-tab--audit">{{ t('dashboard.tab_audit') }}</label>
       </div>
     </div>
 
@@ -200,7 +200,7 @@
           </span>
         </a>
         {% if (item.source, item.item_id) in items_with_audio %}
-        <button type="button" class="feed-play" data-audio-url="/items/{{ item.source }}/{{ item.item_id }}/audio" aria-label="Play bulletin audio">
+        <button type="button" class="feed-play" data-audio-url="/items/{{ item.source }}/{{ item.item_id }}/audio" aria-label="{{ t('dashboard.play_bulletin_audio_aria') }}">
           <span class="fp-play">{{ icon('play', 14) }}</span>
           <span class="fp-stop">{{ icon('stop', 14) }}</span>
         </button>
@@ -208,7 +208,7 @@
         <time class="feed-time" datetime="{{ item.source_date_time | iso_utc }}" data-ago>{{ item.source_date_time | time_ago }}</time>
       </li>
       {% else %}
-      <li class="feed-empty">No items yet.</li>
+      <li class="feed-empty">{{ t('dashboard.no_items_yet') }}</li>
       {% endfor %}
     </ul>
 
@@ -229,20 +229,20 @@
         <time class="feed-time" datetime="{{ event.recorded_at | iso_utc }}" data-ago>{{ event.recorded_at | time_ago }}</time>
       </li>
       {% else %}
-      <li class="feed-empty">No audit events yet.</li>
+      <li class="feed-empty">{{ t('dashboard.no_audit_events_yet') }}</li>
       {% endfor %}
     </ul>
 
     <div class="panel-foot">
-      <a href="/items">All items {{ icon('arrow-right', 13) }}</a>
-      <a href="/audit">Full audit log {{ icon('arrow-right', 13) }}</a>
+      <a href="/items">{{ t('dashboard.all_items_link') }} {{ icon('arrow-right', 13) }}</a>
+      <a href="/audit">{{ t('dashboard.full_audit_log_link') }} {{ icon('arrow-right', 13) }}</a>
     </div>
   </section>
 </div>
 
 <aside class="dash-col-side">
   <section class="panel">
-    <div class="panel-head"><h2>{{ icon('activity', 16) }}Ingest · 14 days</h2></div>
+    <div class="panel-head"><h2>{{ icon('activity', 16) }}{{ t('dashboard.ingest_14_days_title') }}</h2></div>
     <span class="kpi-spark" data-cell="kpi_spark">{% include "_sparkline.html" %}</span>
     {% if ingest.detail %}
     <ul class="src-list">
@@ -259,24 +259,24 @@
 
   <section class="panel">
     <div class="panel-head">
-      <h2>{{ icon('radio', 16) }}Beacon</h2>
+      <h2>{{ icon('radio', 16) }}{{ t('dashboard.beacon_panel_title') }}</h2>
       <div class="header-badges">
-        {% if beacon_enabled %}<span class="badge badge-success">enabled</span>{% else %}<span class="badge badge-neutral">disabled</span>{% endif %}
-        <span class="badge {{ 'badge-success' if running else 'badge-warn' }}" data-cell="bp_proc">{{ 'running' if running else 'not running' }}</span>
+        {% if beacon_enabled %}<span class="badge badge-success">{{ t('dashboard.badge_enabled') }}</span>{% else %}<span class="badge badge-neutral">{{ t('dashboard.badge_disabled') }}</span>{% endif %}
+        <span class="badge {{ 'badge-success' if running else 'badge-warn' }}" data-cell="bp_proc">{{ t('dashboard.badge_running') if running else t('dashboard.badge_not_running') }}</span>
       </div>
     </div>
     <dl class="stat-list">
-      <div><dt>Callsign</dt><dd class="mono">{{ beacon_callsign or '—' }}</dd></div>
-      <div><dt>Mode</dt><dd data-cell="bp_type">{{ beacon_type }}</dd></div>
-      <div><dt>Uptime</dt><dd data-cell="bp_uptime">{% if beacon_started_at %}since <time datetime="{{ beacon_started_at | iso_utc }}" data-ago>{{ beacon_started_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
-      <div><dt>Voice queue</dt><dd data-cell="bp_vq">{{ voice_queue_depth }}</dd></div>
-      <div><dt>Frame queue</dt><dd data-cell="bp_fq">{{ frame_queue_depth }}</dd></div>
-      <div><dt>Last voice tx</dt><dd data-cell="bp_lv">{% if last_voice_transmit_at %}<time datetime="{{ last_voice_transmit_at | iso_utc }}" data-ago>{{ last_voice_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
-      <div><dt>Last frame tx</dt><dd data-cell="bp_lf">{% if last_frame_transmit_at %}<time datetime="{{ last_frame_transmit_at | iso_utc }}" data-ago>{{ last_frame_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
-      <div><dt>Watermark</dt><dd data-cell="bp_wm">{% if watermark_enabled %}{% if watermark_last_at %}<time datetime="{{ watermark_last_at | iso_utc }}" data-ago>{{ watermark_last_at | time_ago }}</time>{% else %}pending{% endif %}{% else %}off{% endif %}</dd></div>
+      <div><dt>{{ t('dashboard.stat_callsign') }}</dt><dd class="mono">{{ beacon_callsign or '—' }}</dd></div>
+      <div><dt>{{ t('dashboard.stat_mode') }}</dt><dd data-cell="bp_type">{{ t('dashboard.mode_' ~ beacon_type) }}</dd></div>
+      <div><dt>{{ t('dashboard.stat_uptime') }}</dt><dd data-cell="bp_uptime">{% if beacon_started_at %}{{ t('dashboard.since_label') }} <time datetime="{{ beacon_started_at | iso_utc }}" data-ago>{{ beacon_started_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
+      <div><dt>{{ t('dashboard.stat_voice_queue') }}</dt><dd data-cell="bp_vq">{{ voice_queue_depth }}</dd></div>
+      <div><dt>{{ t('dashboard.stat_frame_queue') }}</dt><dd data-cell="bp_fq">{{ frame_queue_depth }}</dd></div>
+      <div><dt>{{ t('dashboard.stat_last_voice_tx') }}</dt><dd data-cell="bp_lv">{% if last_voice_transmit_at %}<time datetime="{{ last_voice_transmit_at | iso_utc }}" data-ago>{{ last_voice_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
+      <div><dt>{{ t('dashboard.stat_last_frame_tx') }}</dt><dd data-cell="bp_lf">{% if last_frame_transmit_at %}<time datetime="{{ last_frame_transmit_at | iso_utc }}" data-ago>{{ last_frame_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
+      <div><dt>{{ t('dashboard.stat_watermark') }}</dt><dd data-cell="bp_wm">{% if watermark_enabled %}{% if watermark_last_at %}<time datetime="{{ watermark_last_at | iso_utc }}" data-ago>{{ watermark_last_at | time_ago }}</time>{% else %}{{ t('dashboard.watermark_pending') }}{% endif %}{% else %}{{ t('dashboard.watermark_off') }}{% endif %}</dd></div>
     </dl>
     {% if not is_beacon_configured() %}
-    <a class="btn secondary" href="/config/beacon-identity">Configure identity</a>
+    <a class="btn secondary" href="/config/beacon-identity">{{ t('dashboard.configure_identity_link') }}</a>
     {% endif %}
   </section>
 </aside>

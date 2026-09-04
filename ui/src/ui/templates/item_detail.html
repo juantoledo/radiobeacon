@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ item.extracted_title or item.item_id }}{% endblock %}
 {% block content %}
-<a class="crumb" href="/items">&larr; Back to items</a>
+<a class="crumb" href="/items">&larr; {{ t('item_detail.back_to_items') }}</a>
 <div class="page-header">
   <h1>{{ item.extracted_title or item.item_id }}</h1>
   {% if dev_tools_enabled() %}
-  <a class="btn secondary" href="/dev/items/{{ item.source }}/{{ item.item_id }}/edit">Edit (dev)</a>
+  <a class="btn secondary" href="/dev/items/{{ item.source }}/{{ item.item_id }}/edit">{{ t('item_detail.edit_dev') }}</a>
   {% endif %}
 </div>
 <p class="meta-line">
@@ -26,39 +26,39 @@
 </table>
 
 {% if item.summary %}
-<h2>Summary</h2>
+<h2>{{ t('item_detail.summary') }}</h2>
 <pre class="contents">{{ item.summary }}</pre>
 {% endif %}
 
-<h2>Contents</h2>
+<h2>{{ t('item_detail.contents') }}</h2>
 <pre class="contents">{{ item.extracted_contents or "" }}</pre>
 
-<h2>Actions</h2>
+<h2>{{ t('item_detail.actions') }}</h2>
 <form class="action" method="post" action="/items/{{ item.source }}/{{ item.item_id }}/override">
   {{ csrf_field() }}
-  <label for="transmit_policy">Set transmit_policy</label>
+  <label for="transmit_policy">{{ t('item_detail.set_transmit_policy') }}</label>
   <select id="transmit_policy" name="transmit_policy">
     {% for p in policies %}
     <option value="{{ p[0] }}" {% if item.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
     {% endfor %}
   </select>
-  <button type="submit" {% if not is_beacon_configured() %}disabled{% endif %}>Override</button>
-  {% if not is_beacon_configured() %}<span class="meta-line">Requires <a href="/config/beacon-identity">beacon identity</a> to be configured.</span>{% endif %}
+  <button type="submit" {% if not is_beacon_configured() %}disabled{% endif %}>{{ t('item_detail.override_button') }}</button>
+  {% if not is_beacon_configured() %}<span class="meta-line">{{ t('item_detail.requires_beacon_identity', link='<a href="/config/beacon-identity">' ~ t('item_detail.beacon_identity_link_text') ~ '</a>') | safe }}</span>{% endif %}
 </form>
 
 <form class="action" method="post" action="/items/{{ item.source }}/{{ item.item_id }}/rearm">
   {{ csrf_field() }}
-  <label for="consumer">Re-arm for consumer</label>
+  <label for="consumer">{{ t('item_detail.rearm_for_consumer') }}</label>
   <input id="consumer" name="consumer" type="text" value="{{ default_consumer }}">
-  <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Rearm</button>
-  {% if not is_beacon_configured() %}<span class="meta-line">Requires <a href="/config/beacon-identity">beacon identity</a> to be configured.</span>{% endif %}
+  <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>{{ t('item_detail.rearm_button') }}</button>
+  {% if not is_beacon_configured() %}<span class="meta-line">{{ t('item_detail.requires_beacon_identity', link='<a href="/config/beacon-identity">' ~ t('item_detail.beacon_identity_link_text') ~ '</a>') | safe }}</span>{% endif %}
 </form>
 
 {% if chunks %}
-<h2>Chunks <span class="muted">({{ chunks | length }})</span></h2>
+<h2>{{ t('item_detail.chunks') }} <span class="muted">({{ chunks | length }})</span></h2>
 <div class="table-wrap">
 <table>
-  <thead><tr><th>#</th><th class="wrap">Text</th></tr></thead>
+  <thead><tr><th>#</th><th class="wrap">{{ t('item_detail.col_chunk_text') }}</th></tr></thead>
   <tbody>
     {% for chunk in chunks %}
     <tr><td class="mono">{{ chunk.chunk_index + 1 }}/{{ chunk.chunk_count }}</td><td class="wrap">{{ chunk.text }}</td></tr>
@@ -68,10 +68,10 @@
 </div>
 {% endif %}
 
-<h2>Audit trail</h2>
+<h2>{{ t('item_detail.audit_trail') }}</h2>
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>Event</th><th>Actor</th><th class="wrap">Details</th><th>Recorded</th><th>Actions</th></tr></thead>
+  <thead><tr><th>{{ t('item_detail.col_event') }}</th><th>{{ t('item_detail.col_actor') }}</th><th class="wrap">{{ t('item_detail.col_details') }}</th><th>{{ t('item_detail.col_recorded') }}</th><th>{{ t('item_detail.col_actions') }}</th></tr></thead>
   <tbody>
     {% for event in audit_events %}
     <tr>
@@ -85,19 +85,19 @@
           {{ csrf_field() }}
           <input type="hidden" name="event_type" value="{{ event.event_type }}">
           <input type="hidden" name="consumer" value="{{ default_consumer }}">
-          <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Replay</button>
+          <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>{{ t('item_detail.replay_button') }}</button>
         </form>
         {% endif %}
         {% if event.event_type.startswith('beacon.voice.') or event.event_type.startswith('beacon.frame.') or event.event_type in ('beacon.tx.retired', 'beacon.tx.skipped_stale') %}
         <form method="post" action="/items/{{ item.source }}/{{ item.item_id }}/retransmit">
           {{ csrf_field() }}
-          <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>Re-transmit</button>
+          <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>{{ t('item_detail.retransmit_button') }}</button>
         </form>
         {% endif %}
       </td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="5">No audit events for this item.</td></tr>
+    <tr class="empty-row"><td colspan="5">{{ t('item_detail.empty_audit') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

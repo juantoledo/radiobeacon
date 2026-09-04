@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{ locale() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,15 +10,15 @@
 </head>
 <body>
 {% set nav_items = [
-  ('/', 'dashboard', 'Dashboard', request.url.path == '/'),
-  ('/items', 'items', 'Items', request.url.path.startswith('/items')),
-  ('/config', 'config', 'Config', request.url.path.startswith('/config') or request.url.path.startswith('/adapters') or request.url.path.startswith('/policies')),
-  ('/audit', 'audit', 'Audit log', request.url.path.startswith('/audit')),
+  ('/', 'dashboard', t('nav.dashboard'), request.url.path == '/'),
+  ('/items', 'items', t('nav.items'), request.url.path.startswith('/items')),
+  ('/config', 'config', t('nav.config'), request.url.path.startswith('/config') or request.url.path.startswith('/adapters') or request.url.path.startswith('/policies')),
+  ('/audit', 'audit', t('nav.audit_log'), request.url.path.startswith('/audit')),
 ] %}
-  <a class="skip-link" href="#main">Skip to content</a>
+  <a class="skip-link" href="#main">{{ t('common.skip_to_content') }}</a>
 
   <div class="mobile-bar">
-    <button type="button" class="nav-toggle" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 20) }}</button>
+    <button type="button" class="nav-toggle" aria-label="{{ t('common.open_navigation') }}" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 20) }}</button>
     <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
   </div>
 
@@ -27,22 +27,28 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
-      <button type="button" class="nav-close" aria-label="Close navigation">{{ icon('close', 20) }}</button>
+      <button type="button" class="nav-close" aria-label="{{ t('common.close_navigation') }}">{{ icon('close', 20) }}</button>
     </div>
     <nav class="sidebar-nav">
       {% for href, ic, label, active in nav_items %}
       <a href="{{ href }}" class="{{ 'active' if active else '' }}"{% if active %} aria-current="page"{% endif %}>{{ icon(ic, 18) }}{{ label }}{% if href == '/config' and not is_beacon_configured() %} <span class="badge badge-warn">!</span>{% endif %}</a>
       {% endfor %}
       {% if dev_tools_enabled() %}
-      <a href="/dev" class="{{ 'active' if request.url.path.startswith('/dev') else '' }}">{{ icon('developers', 18) }}Developers</a>
+      <a href="/dev" class="{{ 'active' if request.url.path.startswith('/dev') else '' }}">{{ icon('developers', 18) }}{{ t('nav.developers') }}</a>
       {% endif %}
     </nav>
     <div class="sidebar-foot">
       {% if is_beacon_configured() %}
-      <span class="live-badge"><span class="pulse-dot" aria-hidden="true"></span>beacon identity set</span>
+      <span class="live-badge"><span class="pulse-dot" aria-hidden="true"></span>{{ t('common.beacon_identity_set') }}</span>
       {% else %}
-      <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} configure beacon identity</a>
+      <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
       {% endif %}
+      <form class="locale-switcher" method="post" action="/locale" aria-label="{{ t('common.language') }}">
+        {{ csrf_field() }}
+        <input type="hidden" name="next" value="{{ request.url.path }}">
+        <button type="submit" name="locale" value="en" class="{{ 'active' if locale() == 'en' else '' }}" {% if locale() == 'en' %}aria-current="true"{% endif %}>EN</button>
+        <button type="submit" name="locale" value="es" class="{{ 'active' if locale() == 'es' else '' }}" {% if locale() == 'es' %}aria-current="true"{% endif %}>ES</button>
+      </form>
     </div>
   </aside>
 
@@ -55,7 +61,7 @@
         <p class="banner-warn">⚠ {{ request.query_params.get('error') }}</p>
       {% endif %}
       {% if not is_beacon_configured() and not request.url.path.startswith('/config/beacon-identity') %}
-        <p class="banner-warn">⚠ Beacon identity not configured — <a href="/config/beacon-identity">set it up</a>. Browsing is unaffected; the Override/Rearm actions on item pages are blocked until this is done.</p>
+        <p class="banner-warn">⚠ {{ t('common.beacon_not_configured_warning', link='<a href="/config/beacon-identity">' ~ t('common.set_it_up') ~ '</a>') | safe }}</p>
       {% endif %}
       {% block content %}{% endblock %}
     </main>

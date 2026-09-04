@@ -9,6 +9,30 @@
   var dialog = document.getElementById("manual-tx-dialog");
   if (!dialog) return;
 
+  // Translated via the form's data-i18n JSON blob (rendered from
+  // ui/src/ui/translations/{en,es}/items.json's "manual_tx.*" keys — see
+  // dashboard.html), same convention as dashboard-refresh.js's own
+  // data-i18n attribute. English fallback covers a form rendered without
+  // the attribute (shouldn't happen, but never crash the counter over it).
+  var MANUAL_TX_FALLBACK = {
+    count_chars: "{used} / {max} chars",
+    count_bytes: "{used} / {max} bytes"
+  };
+  var manualTxStrings = MANUAL_TX_FALLBACK;
+  try {
+    var dialogForm = dialog.querySelector("form");
+    if (dialogForm && dialogForm.dataset.i18n) {
+      manualTxStrings = JSON.parse(dialogForm.dataset.i18n);
+    }
+  } catch (e) {
+    manualTxStrings = MANUAL_TX_FALLBACK;
+  }
+
+  function formatCount(used, max, isFrame) {
+    var template = isFrame ? manualTxStrings.count_bytes : manualTxStrings.count_chars;
+    return template.replace("{used}", used).replace("{max}", max);
+  }
+
   var form = dialog.querySelector("form");
   var textarea = form.querySelector("#manual-tx-text");
   var countEl = form.querySelector("#manual-tx-count");
@@ -36,9 +60,8 @@
     var max = isFrame ? frameMax : voiceMax;
     var value = textarea.value;
     var used = isFrame && encoder ? encoder.encode(value).length : value.length;
-    var unit = isFrame ? "bytes" : "chars";
 
-    countEl.textContent = used + " / " + max + " " + unit;
+    countEl.textContent = formatCount(used, max, isFrame);
     var over = used > max;
     overEl.hidden = !over;
     countEl.classList.toggle("mtx-count-over", over);
