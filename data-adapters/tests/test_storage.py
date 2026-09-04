@@ -1461,12 +1461,13 @@ def test_get_connection_seeds_csn_api_and_senapred_custom_instances(tmp_path):
     senapred_config = json.loads(senapred["config"])
     # CUSTOM fetch config is only the code, plus the opt-in action-layer keys
     # seeded for emergency alerts: fallback-to-title on AI failure, and a
-    # qualitative-language summarization prompt override (see
+    # SENAPRED-tuned summarization prompt override (see
     # _SENAPRED_AI_PROMPT_DEFAULT).
     assert set(senapred_config.keys()) == {"code", "ai_fallback_to_title", "ai_prompt"}
     assert senapred_config["ai_fallback_to_title"] is True
     assert "{extracted_contents}" in senapred_config["ai_prompt"]
-    assert "cifra numérica" in senapred_config["ai_prompt"]
+    assert "{source_date_time}" in senapred_config["ai_prompt"]
+    assert "intensidad Mercalli" in senapred_config["ai_prompt"]
     assert "def fetch(config)" in senapred_config["code"]
     # The AWS/Cognito plumbing is baked into the code as literals at seed
     # time (see _build_senapred_code), not read from config at call time.

@@ -451,31 +451,60 @@ def fetch(config):
 # Per-adapter override of the global ACTIONS_AI_PROMPT (see
 # adapters.actions_defaults.AI_PROMPT_DEFAULT) — SENAPRED reports are
 # official emergency bulletins, so the default summarization prompt is
-# tuned to strip exact figures (never inventing a rounder-sounding number
-# in their place) in favor of qualitative language, matching how the
-# beacon voice channel is meant to sound. Overridable via
+# tuned to keep exact physical measurements (never inventing a
+# rounder-sounding number in their place), strip anything about people,
+# spell out earthquake date/time/intensity, and flag the report's status
+# (preliminary / update N / closure). Overridable via
 # ADAPTERS_SENAPRED_AI_PROMPT, same as this seed's other ADAPTERS_SENAPRED_*
 # knobs; only takes effect on a fresh install (see
 # _ensure_adapter_instances_seeded) — an existing adapter_instances.senapred
 # row keeps whatever ai_prompt it already has.
 _SENAPRED_AI_PROMPT_DEFAULT = (
     "Resume el siguiente reporte de SENAPRED en un máximo de 3 oraciones, "
-    "siguiendo estas reglas: No incluyas ninguna cifra numérica ni sus "
-    "equivalentes en palabras (ej. evita tanto \"20 mm\" como \"veinte "
-    "milímetros\"); usa términos cualitativos como \"varias\", \"algunas\", "
-    "\"varios grados bajo cero\", etc.\n"
-    "Céntrate solo en los hechos principales: qué evento ocurrió, qué "
-    "región/comunas fueron afectadas, qué tipo de daños o condiciones se "
-    "registraron (de forma cualitativa), el estado de rutas (si aplica), "
-    "el retorno gradual de establecimientos educacionales (si aplica), y "
-    "las alertas vigentes (tipo de alerta, zona y motivo).\n"
-    "Usa un tono informativo y neutro, tipo titular de noticia.\n"
-    "Redacta en prosa, no en formato de tabla ni de lista, ni markdown.\n"
-    "Cuando menciones unidades de medida (temperatura, precipitación, "
-    "viento, etc.), refiérete a ellas de forma cualitativa sin especificar "
-    "cantidad (ej. \"temperaturas bajo cero\", \"precipitaciones\", "
-    "\"nevadas\", \"vientos fuertes\").\n\n"
-    "Texto a resumir: {extracted_contents}"
+    "siguiendo estas reglas:\n\n"
+    "0. CONTEXTO TEMPORAL: El reporte fue emitido por SENAPRED el "
+    "{source_date_time}. Usa este dato como referencia para interpretar "
+    "correctamente expresiones de tiempo relativas del texto original (ej. "
+    "\"esta mañana\", \"en las últimas horas\", \"hoy\"). No es necesario "
+    "mencionar esta fecha en el resumen, salvo que sea la única fecha/hora "
+    "disponible para un evento sísmico (ver regla 3).\n\n"
+    "1. PERSONAS: No menciones nada relacionado con personas (fallecidos, "
+    "heridos, evacuados, damnificados, albergados, aislados, lesionados, "
+    "etc.), ni en cifras ni en palabras. Omite por completo esa información, "
+    "aunque el reporte la incluya.\n\n"
+    "2. UNIDADES DE MEDIDA: Cuando menciones variables físicas (temperatura, "
+    "precipitación, viento, nieve, altura de nieve, etc.), SÍ debes incluir "
+    "el valor numérico exacto junto con su unidad, tal como aparece en el "
+    "reporte (ej. \"temperaturas de -5°C\", \"precipitaciones de 20 mm\", "
+    "\"vientos de 60 km/h\"). No las conviertas a formato cualitativo.\n\n"
+    "3. SISMOS: Si el reporte corresponde a un sismo, incluye fecha y hora "
+    "de ocurrencia, y la intensidad Mercalli. Si la intensidad viene en "
+    "números romanos, conviértela a números arábigos (ej. \"VII\" → \"7\").\n"
+    "   - Formato de fecha: escribe la fecha en palabras, no en formato "
+    "numérico (ej. \"3 de septiembre de 2026\", no \"03-09-2026\" ni "
+    "\"03/09/2026\").\n"
+    "   - Formato de hora: usa formato natural (ej. \"a las 14:32 horas\"), "
+    "evitando notación abreviada tipo \"14:32:00\".\n"
+    "   - Si el reporte no especifica la fecha/hora exacta del sismo, usa "
+    "{source_date_time} como referencia.\n\n"
+    "4. ESTADO DEL REPORTE: Revisa el título y el contenido para identificar "
+    "si el reporte se describe como \"preliminar\", \"actualización\" "
+    "(indicando el número si corresponde, ej. \"actualización N°3\"), "
+    "\"informe de cierre\", \"última hora\", o similar. Si encuentras esta "
+    "información, inclúyela explícitamente en el resumen (ej. \"Según "
+    "información preliminar...\", \"En su tercera actualización, SENAPRED "
+    "informó...\"). Si no se especifica nada al respecto, no lo menciones ni "
+    "lo infieras.\n\n"
+    "5. CONTENIDO: Céntrate solo en los hechos principales: qué evento "
+    "ocurrió, qué región/comunas fueron afectadas, qué tipo de daños o "
+    "condiciones se registraron, el estado de las rutas (si aplica), el "
+    "retorno gradual de establecimientos educacionales (si aplica), y las "
+    "alertas vigentes (tipo de alerta, zona y motivo).\n\n"
+    "6. FORMATO Y TONO: Redacta en prosa corrida, sin listas, tablas ni "
+    "markdown. Usa un tono informativo y neutro, tipo titular de noticia.\n\n"
+    "Texto a resumir: {extracted_contents}\n"
+    "Título: {extracted_title}\n"
+    "Fecha y hora de emisión del reporte: {source_date_time}"
 )
 
 

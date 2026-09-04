@@ -55,7 +55,13 @@ BEACON_VOICE_ATTENTION_TONE_DEFAULT = "500:250,600:250,700:300,800:300,700:250,6
 # beacon.__main__._watermark_fields.
 BEACON_WATERMARK_ENABLED_DEFAULT = "false"
 BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT = "600"
-BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT = "Estación {callsign}, transmisión automática. {date}."
+BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT = (
+    "Estación {callsign}. Esta es una baliza de radioafición que retransmite "
+    "automáticamente comunicados de interés para la comunidad, tomados de "
+    "fuentes oficiales, configurable, con fines educativos y en fase "
+    "experimental, sin fines de lucro. {date}. Estación {callsign}. "
+    "Consulte fuentes oficiales."
+)
 BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT = "{callsign} watermark {date}"
 
 # Manual transmission: a one-shot message an operator types into the
