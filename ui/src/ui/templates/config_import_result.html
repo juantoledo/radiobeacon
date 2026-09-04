@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Import complete{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+<a class="crumb" href="/config/import-export">&larr; Back to Import / Export</a>
+<div class="page-header"><h1>Import complete</h1></div>
+
+<p class="banner">✓ Import applied — settings/adapters/policies/sources shown as
+  "created" or "updated" below are now live; nothing else on this install was
+  touched.</p>
+
+{% include "_config_import_summary_table.html" %}
+{% endblock %}

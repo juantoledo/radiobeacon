@@ -215,6 +215,14 @@ environment — a stray `BEACON_CALLSIGN` in the shell can't put a wrong
 callsign on air. The beacon refuses to transmit until every identity field
 is filled in.
 
+The whole DB-backed config — settings, adapters, transmit policies, and
+source names, secrets always excluded — can be snapshotted to a JSON file
+and restored from one, from the dashboard
+([`/config/import-export`](ui/README.md#import--export-config-configimport-export))
+or the command line
+([`export_config.py`/`import_config.py`](dispatcher/README.md#import--export-config)),
+for backups or moving to a new host.
+
 ## Time is always UTC
 
 Every datetime handled anywhere in this repo is timezone-aware UTC, with

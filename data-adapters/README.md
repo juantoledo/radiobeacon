@@ -264,6 +264,18 @@ the form, so a new or edited instance can be validated before saving.
   whether they're enabled, their own interval — lives in the
   `adapter_instances` table, managed at `/adapters` in the UI.
 
+### Import / Export
+
+`adapters/config_transfer.py` is the shared module behind the whole-DB
+config snapshot (settings + `adapter_instances` + `transmit_policies` +
+`sources`, secrets always excluded) — used identically by the UI's
+`/config/import-export` page and by the `export_config.py`/`import_config.py`
+CLI pair. The CLI itself lives in `dispatcher/` rather than here, even
+though this module does: only `dispatcher/` can register the MQ audit-event
+hook (`dispatcher.mq_publisher.publish_cloud_event`), and this repo's own
+dependency direction never lets `data-adapters` import `dispatcher` — see
+`dispatcher/README.md` for the CLI's usage.
+
 ## Tests
 
 ```bash

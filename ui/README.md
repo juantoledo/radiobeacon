@@ -27,6 +27,7 @@ publish).
 | `/items/{source}/{item_id}` | Item detail: full contents, chunks, per-item audit trail, override + rearm forms |
 | `/policies` | List/create/edit/delete named `transmit_policies` |
 | `/audit` | Global audit log, filterable by event_type/source/item_id |
+| `/config/import-export` | Export the whole DB-backed config (settings, adapters, policies, source names) as one JSON file, or import one — see below |
 | `/dev` | Developers: raw item add/edit/delete, dispatcher-state reset, read-only SQL runner — see below |
 
 Every mutating action (override, rearm, policy create/edit/delete) is a
@@ -34,6 +35,28 @@ plain HTML form POST, redirecting back to a GET page afterward. The only
 client-side JavaScript in the app is the dashboard's auto-refresh (below)
 and a confirm() prompt on Developers' delete buttons — every other page
 is plain server-rendered HTML with zero JS.
+
+## Import / Export config (`/config/import-export`)
+
+A whole-DB config snapshot as one JSON file — settings overrides, transmit
+policies, source display names, and every adapter definition (bundled with
+its source row) — going through the exact same functions the CLI pair
+(`dispatcher/export_config.py` / `import_config.py`) and every other manual
+edit already use (`adapters.config_transfer`, shared with those scripts),
+so an import is indistinguishable from the same edits made by hand.
+
+- **Secrets are always excluded from export** — `ANTHROPIC_API_KEY`/
+  `OPENAI_API_KEY` never appear in the file, not even as a placeholder key.
+- **Import is merge/upsert-only** — a record overwrites an existing one
+  sharing its name/source, but nothing already on this install that's
+  absent from the file is ever deleted.
+- Uploading a file previews what would change (created/updated/skipped,
+  with reasons) before anything is written; confirming applies it.
+- A CUSTOM-type adapter (operator-authored Python, `exec`'d with no
+  sandboxing) only imports when this install's `UI_DEV_TOOLS_ENABLED` is
+  on — same gate `/config/adapters` already applies to creating/editing
+  one — and its code is shown for review, never executed or test-run
+  during import either way.
 
 ## Developers section (`/dev`)
 

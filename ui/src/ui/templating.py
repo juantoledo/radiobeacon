@@ -67,19 +67,28 @@ _CONFIG_TAB_ICONS: dict[str, str] = {
     "Display": "activity",
     "UI": "config",
     "Policies": "policies",
+    "Import/Export": "transfer",
 }
 
 
 def _config_nav_tabs_global() -> list[dict]:
     """Tabs for the /config subnav — one per settings category (in
-    NAV_CATEGORY_ORDER) plus Policies, which lives outside SETTINGS_CATALOG
-    entirely (see ui.routers.policies) but is now folded into the same
-    Config section rather than a separate top-level page."""
+    NAV_CATEGORY_ORDER) plus Policies and Import/Export, which live outside
+    SETTINGS_CATALOG entirely (see ui.routers.policies /
+    ui.routers.config_transfer) but are folded into the same Config section
+    rather than separate top-level pages."""
     tabs = [
         {"name": category, "slug": category_slug(category), "icon": _CONFIG_TAB_ICONS[category]}
         for category in NAV_CATEGORY_ORDER
     ]
     tabs.append({"name": "Policies", "slug": "policies", "icon": _CONFIG_TAB_ICONS["Policies"]})
+    tabs.append(
+        {
+            "name": "Import/Export",
+            "slug": "import-export",
+            "icon": _CONFIG_TAB_ICONS["Import/Export"],
+        }
+    )
     return tabs
 
 

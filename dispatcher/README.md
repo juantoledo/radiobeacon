@@ -148,6 +148,31 @@ re-arming it, unlike `--rearm` above. After it, the item is neither armed
 nor recorded as "seen" by that consumer at all — for clearing stuck or
 incorrect bookkeeping while debugging, not a normal delivery control.
 
+### Import / Export config
+
+```bash
+./export_config.sh [--db PATH] [-o FILE]     # prints JSON to stdout, or writes FILE
+./import_config.sh INPUT [--db PATH] [--dry-run]
+```
+
+A whole-DB config snapshot — settings overrides, `transmit_policies`,
+source display names, and every `adapter_instances` row (bundled with its
+`sources` row) — as one JSON file. Logic lives in
+[data-adapters](../data-adapters/README.md)'s `adapters.config_transfer`
+(shared with the ui's `/config/import-export` page); this CLI pair lives
+here rather than there only because registering the MQ audit-event hook
+needs `dispatcher.mq_publisher`, same reason `policies.sh` lives here
+instead of next to `adapters/transmit_policy.py`.
+
+Secrets (`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) are never exported, not even
+as a placeholder key. Import is merge/upsert-only — a record overwrites an
+existing one sharing its name/source; nothing already in the target DB
+that's absent from the file is ever deleted. `--dry-run` validates and
+prints the same per-section created/updated/skipped/warned summary without
+writing anything. A CUSTOM-type adapter (operator-authored Python, `exec`'d
+with no sandboxing) only imports when the target DB's `UI_DEV_TOOLS_ENABLED`
+is on; its code is never executed or test-run during import either way.
+
 ## Publishing to a message queue (CloudEvents over MQTT)
 
 Optionally, 6 of the audit events this package records (see "State" below

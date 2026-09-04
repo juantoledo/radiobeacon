@@ -94,6 +94,10 @@ _ICONS: dict[str, str] = {
     ),
     "play": ('<polygon points="7 4 20 12 7 20 7 4" fill="currentColor"/>'),
     "stop": ('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>'),
+    "transfer": (
+        '<line x1="8" y1="3" x2="8" y2="15"/><polyline points="4 11 8 15 12 11"/>'
+        '<line x1="16" y1="21" x2="16" y2="9"/><polyline points="12 13 16 9 20 13"/>'
+    ),
 }
 
 
