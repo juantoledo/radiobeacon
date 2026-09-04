@@ -9,8 +9,25 @@ get_setting(..., conn=conn) at request time instead of importing a fixed
 module attribute from here."""
 import os
 
-UI_HOST = os.environ.get("UI_HOST", "0.0.0.0")
+# Loopback by default: the dashboard has no authentication, and every
+# state-changing action (enable transmission, send an ad-hoc message, edit an
+# adapter that runs `exec`) is a plain unauthenticated POST. Binding all
+# interfaces put that on the LAN for anyone who could reach the port. An
+# operator who genuinely wants remote access sets UI_HOST explicitly and is
+# then also responsible for putting auth in front of it.
+UI_HOST = os.environ.get("UI_HOST", "127.0.0.1")
 UI_PORT = int(os.environ.get("UI_PORT", "8080"))
+
+# Host-header allow-list (DNS-rebinding guard) and cross-origin POST guard.
+# Comma-separated; the defaults cover the loopback names the app is reachable
+# under out of the box plus the test client's synthetic host. Add real names
+# here when UI_HOST is widened.
+_DEFAULT_ALLOWED_HOSTS = "127.0.0.1,localhost,testserver,[::1]"
+UI_ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("UI_ALLOWED_HOSTS", _DEFAULT_ALLOWED_HOSTS).split(",")
+    if h.strip()
+]
 
 # None means "use adapters.storage.DEFAULT_DB_PATH" — resolved in db.py,
 # not here, so this module doesn't need to import adapters.storage just

@@ -1,12 +1,8 @@
 import argparse
 import logging
 import sys
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
-
-from adapters.storage import (  # noqa: E402
+from adapters.storage import (
     DEFAULT_DB_PATH,
     delete_source,
     get_connection,

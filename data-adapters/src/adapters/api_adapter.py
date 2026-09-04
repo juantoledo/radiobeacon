@@ -1,21 +1,123 @@
+import ipaddress
 import json
 import logging
 import re
+import socket
 import urllib.error
 import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urlencode, urlsplit
 
 from .base import AdapterItem, DataSourceAdapter, SourceReading
-from .storage import DEFAULT_DB_PATH, get_connection, get_source_fields
+from .storage import DEFAULT_DB_PATH, get_connection, get_setting, get_source_fields
 from .templating import safe_format
 from .timeutil import to_utc, utc_now
 
 logger = logging.getLogger(__name__)
 
 _MAPPED_FIELDS = ("id", "title", "contents", "url", "event_key", "type", "subtype")
+
+# The endpoint URL is operator-typed on the (unauthenticated) /adapters form
+# and then fetched server-side, with the body handed back to the browser on
+# the "Test"/"Sample" paths — an unrestricted request primitive otherwise.
+# These bound it: http(s) only, no redirects to anywhere private, one size
+# cap, one timeout. ADAPTERS_ALLOW_PRIVATE_FETCH re-opens private/loopback
+# targets for a deliberate LAN or localhost feed (the running adapter honours
+# it; the in-form Test/Sample always denies).
+_FETCH_TIMEOUT_SECONDS = 15
+_MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+class BlockedRequestError(ValueError):
+    """A fetch target that policy refuses (bad scheme, or a private address
+    without ADAPTERS_ALLOW_PRIVATE_FETCH). A ValueError so the adapter's
+    fetch() turns it into SourceReading(ok=False) like any other bad config."""
+
+
+def _assert_public_host(host: str) -> None:
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise BlockedRequestError(f"cannot resolve host {host!r}: {exc}") from exc
+    for info in infos:
+        addr = ipaddress.ip_address(info[4][0])
+        mapped = getattr(addr, "ipv4_mapped", None)
+        if mapped is not None:
+            addr = mapped
+        if (
+            addr.is_private
+            or addr.is_loopback
+            or addr.is_link_local
+            or addr.is_reserved
+            or addr.is_multicast
+            or addr.is_unspecified
+        ):
+            raise BlockedRequestError(
+                f"host {host!r} resolves to a non-public address ({addr}); "
+                "set ADAPTERS_ALLOW_PRIVATE_FETCH=true to allow a LAN feed"
+            )
+
+
+def _assert_scheme_allowed(url: str) -> None:
+    """Cheap, no I/O — the up-front check in _fetch_json for a clear error."""
+    scheme = urlsplit(url).scheme.lower()
+    if scheme not in _ALLOWED_SCHEMES:
+        raise BlockedRequestError(
+            f"unsupported URL scheme {scheme!r} (only http/https)"
+        )
+
+
+def _assert_fetch_allowed(url: str, *, allow_private: bool) -> None:
+    """Full check — scheme plus a DNS resolution of the host against the
+    private/loopback/link-local block-list. Runs inside the opener's guard
+    handler so it also fires on every redirect hop."""
+    _assert_scheme_allowed(url)
+    parts = urlsplit(url)
+    if not parts.hostname:
+        raise BlockedRequestError("URL has no host")
+    if not allow_private:
+        _assert_public_host(parts.hostname)
+
+
+class _SsrfGuardHandler(urllib.request.BaseHandler):
+    """Runs _assert_fetch_allowed on the outgoing request — and, because
+    urllib feeds a redirect's new Request back through the whole handler
+    chain, on every Location: hop too, so a public URL can't 302 onto
+    file:// or 169.254.169.254. A redirected Request carries no
+    `_allow_private` flag, so redirect targets are always checked strictly.
+    handler_order 100 puts it ahead of the default HTTP(S) handlers (500)."""
+
+    handler_order = 100
+
+    def http_request(self, req):
+        _assert_fetch_allowed(
+            req.full_url, allow_private=getattr(req, "_allow_private", False)
+        )
+        return req
+
+    https_request = http_request
+
+
+def _build_opener() -> urllib.request.OpenerDirector:
+    # A hand-built director: no FileHandler / FTPHandler / ProxyHandler, so
+    # only http(s) can be opened at all, regardless of what slips past
+    # _assert_fetch_allowed.
+    opener = urllib.request.OpenerDirector()
+    opener.add_handler(_SsrfGuardHandler())
+    opener.add_handler(urllib.request.HTTPHandler())
+    opener.add_handler(urllib.request.HTTPSHandler())
+    opener.add_handler(urllib.request.HTTPDefaultErrorHandler())
+    opener.add_handler(urllib.request.HTTPRedirectHandler())
+    opener.add_handler(urllib.request.HTTPErrorProcessor())
+    opener.add_handler(urllib.request.UnknownHandler())
+    return opener
+
+
+_OPENER = _build_opener()
 
 
 def _content_uuid(item: dict[str, Any]) -> str:
@@ -206,20 +308,27 @@ def _map_item(
     )
 
 
-def _fetch_json(cfg: ApiAdapterConfig) -> Any:
+def _fetch_json(cfg: ApiAdapterConfig, *, allow_private: bool = False) -> Any:
     url = cfg.url
     if cfg.query_params:
-        from urllib.parse import urlencode
-
         url = f"{url}?{urlencode(cfg.query_params)}"
+    # Scheme up front for a clear message; the guard handler does the full
+    # host check (and re-checks every redirect hop) once in flight.
+    _assert_scheme_allowed(url)
     request = urllib.request.Request(
         url,
         data=cfg.body.encode("utf-8") if cfg.body else None,
         headers=cfg.headers,
         method=cfg.method,
     )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        return json.loads(response.read().decode("utf-8"))
+    request._allow_private = allow_private
+    with _OPENER.open(request, timeout=_FETCH_TIMEOUT_SECONDS) as response:
+        raw = response.read(_MAX_RESPONSE_BYTES + 1)
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        raise BlockedRequestError(
+            f"response exceeds {_MAX_RESPONSE_BYTES} bytes; refusing to buffer it"
+        )
+    return json.loads(raw.decode("utf-8"))
 
 
 def _find_array_paths(
@@ -246,7 +355,9 @@ def _find_array_paths(
     return found
 
 
-def preview_response(config: dict[str, Any], limit: int = 5) -> dict[str, Any]:
+def preview_response(
+    config: dict[str, Any], limit: int = 5, *, allow_private: bool = False
+) -> dict[str, Any]:
     """Calls the endpoint (url/method/headers/query_params/body only —
     `mapping`/`date_field`/`transmit_policy` are irrelevant here)
     without mapping anything, so the UI can show an operator what a
@@ -264,7 +375,7 @@ def preview_response(config: dict[str, Any], limit: int = 5) -> dict[str, Any]:
     an operator mid-way through finding the right path is the expected
     case here, not a fatal error."""
     cfg = ApiAdapterConfig.from_dict(config)
-    raw_response = _fetch_json(cfg)
+    raw_response = _fetch_json(cfg, allow_private=allow_private)
 
     candidates = [
         {
@@ -346,11 +457,23 @@ class ApiAdapter(DataSourceAdapter):
             )
             return {"source_name": self.source, "source_url": ""}
 
+    def _allow_private_fetch(self) -> bool:
+        try:
+            conn = get_connection(self.db_path)
+            try:
+                return get_setting(
+                    "ADAPTERS_ALLOW_PRIVATE_FETCH", "false", conn=conn
+                ).strip().lower() == "true"
+            finally:
+                conn.close()
+        except Exception:
+            return False
+
     def fetch(self) -> SourceReading:
         now = utc_now()
         try:
             cfg = ApiAdapterConfig.from_dict(self.config)
-            raw_response = _fetch_json(cfg)
+            raw_response = _fetch_json(cfg, allow_private=self._allow_private_fetch())
             raw_items = _lookup_path(raw_response, cfg.items_path)
             source_context = self._source_template_context(cfg)
             items = []
@@ -367,6 +490,6 @@ class ApiAdapter(DataSourceAdapter):
             )
             logger.info("source=%s: fetched %d item(s)", self.source, len(items))
             return SourceReading(source=self.source, fetched_at=now, ok=True, data=items)
-        except (urllib.error.URLError, KeyError, ValueError, TypeError) as e:
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, KeyError, ValueError, TypeError) as e:
             logger.error("source=%s: fetch failed: %s", self.source, e, exc_info=True)
             return SourceReading(source=self.source, fetched_at=now, ok=False, data=[], error=str(e))

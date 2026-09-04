@@ -1,0 +1,25 @@
+# data-adapters is the shared library every other component imports from
+# (`from adapters.storage import ...`, `adapters.timeutil`, `adapters.llm`,
+# `adapters.templating`, ...). Packaging it means consumers depend on it with
+# `-e ../data-adapters` in their requirements.txt instead of each entry point
+# hand-inserting `data-adapters/src` onto sys.path.
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radiobeacon-adapters"
+version = "0.1.0"
+description = "Shared data layer, settings, timeutil and LLM helpers for radiobeacon"
+requires-python = ">=3.10"
+dependencies = [
+    "botocore",      # SENAPRED adapter: AWS SigV4 signing + AppSync GraphQL
+    "tzdata",        # zoneinfo needs it on slim Linux / containers
+    "croniter",      # aiprompt adapter regeneration schedule
+    "anthropic",     # adapters.llm provider SDKs (also used by actions.ai)
+    "openai",
+    "ollama",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

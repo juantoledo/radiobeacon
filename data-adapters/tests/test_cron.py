@@ -48,16 +48,7 @@ def test_latest_fire_is_inclusive_of_an_exact_occurrence(conn):
     assert latest == now
 
 
-def test_next_fire_after(conn):
-    now = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
-
-    nxt = cron.next_fire_after("0 6 * * *", now, conn=conn)
-
-    assert nxt == datetime(2026, 9, 4, 10, 0, tzinfo=timezone.utc)
-
-
 def test_invalid_expression_returns_none(conn):
     now = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
 
     assert cron.latest_fire_at_or_before("nope", now, conn=conn) is None
-    assert cron.next_fire_after("nope", now, conn=conn) is None

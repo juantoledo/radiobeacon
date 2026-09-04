@@ -32,3 +32,15 @@ def test_safe_format_falls_back_to_empty_string_on_index_error(caplog):
 
 def test_safe_format_passes_through_literal_text_unchanged():
     assert safe_format("[EXPERIMENTAL]", "BEACON_FRAME_SUFFIX") == "[EXPERIMENTAL]"
+
+
+def test_safe_format_refuses_attribute_and_index_traversal(caplog):
+    with caplog.at_level(logging.ERROR):
+        attr = safe_format(
+            "{x.__class__.__init__.__globals__}", "ACTIONS_AI_PROMPT", x="hi"
+        )
+        index = safe_format("{x[0]}", "BEACON_VOICE_TEMPLATE", x="hi")
+
+    assert attr == ""
+    assert index == ""
+    assert "ACTIONS_AI_PROMPT" in caplog.text

@@ -8,6 +8,7 @@
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
 
 <form method="post" action="{{ '/config/adapters/' + source if mode == 'edit' else '/config/adapters' }}" id="adapter-form">
+  {{ csrf_field() }}
   <input type="hidden" name="mode" value="{{ mode }}">
   <table class="form-table">
     <tr>

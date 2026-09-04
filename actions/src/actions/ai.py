@@ -18,10 +18,6 @@ from actions.base import Action
 
 logger = logging.getLogger(__name__)
 
-# Backwards-compatible alias — the canonical value now lives in the adapters
-# package so ui/ (which has no dependency on actions/) can show it too.
-_DEFAULT_PROMPT = AI_PROMPT_DEFAULT
-
 # The provider clients live in adapters.llm now, shared with the aiprompt
 # adapter. Imported under their historical private names so this module's
 # call sites (and the tests that monkeypatch them) are unchanged.
@@ -90,7 +86,7 @@ def _resolve_prompt_template(conn: sqlite3.Connection, source: str) -> str:
     """Prompt-template resolution order: the source's own adapter_instances
     config `ai_prompt` (an optional per-adapter override, set on the
     /adapters form) -> the global ACTIONS_AI_PROMPT setting -> the built-in
-    _DEFAULT_PROMPT. A source with no adapter_instances row (e.g. an item
+    AI_PROMPT_DEFAULT. A source with no adapter_instances row (e.g. an item
     from a since-deleted source) falls straight through to the global path.
     """
     instance = get_adapter_instance(conn, source)
@@ -99,7 +95,7 @@ def _resolve_prompt_template(conn: sqlite3.Connection, source: str) -> str:
         adapter_prompt = config.get("ai_prompt")
         if adapter_prompt:
             return adapter_prompt
-    return get_setting("ACTIONS_AI_PROMPT", _DEFAULT_PROMPT, conn=conn)
+    return get_setting("ACTIONS_AI_PROMPT", AI_PROMPT_DEFAULT, conn=conn)
 
 
 def _resolve_fallback_to_title(conn: sqlite3.Connection, source: str) -> bool:
@@ -242,7 +238,7 @@ class AiAction(Action):
     the source's own adapter_instances config `ai_prompt` wins when set — a
     per-adapter override so e.g. a SENAPRED alert and a CSN bulletin can be
     framed differently — otherwise the global ACTIONS_AI_PROMPT setting,
-    otherwise the built-in _DEFAULT_PROMPT. Whichever template wins, it can
+    otherwise the built-in AI_PROMPT_DEFAULT. Whichever template wins, it can
     reference any of the item's mapped adapter attributes as a
     {placeholder} (see PROMPT_ITEM_FIELDS / _render_prompt) — not just
     title/contents — plus the source's display name / site URL as

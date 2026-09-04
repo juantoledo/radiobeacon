@@ -1,7 +1,5 @@
+# Editable install of this package (adapters) + its runtime deps, declared
+# in pyproject.toml. `pip install -r requirements.txt` from this directory
+# picks it up; lib.sh setup_venv does exactly that.
+-e .
 pytest
-botocore
-tzdata
-croniter
-anthropic
-openai
-ollama

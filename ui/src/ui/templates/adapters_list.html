@@ -46,6 +46,7 @@
       <td class="actions-cell">
         <a class="btn secondary" href="/config/adapters/{{ row.source }}/edit">Edit</a>
         <form method="post" action="/config/adapters/{{ row.source }}/delete">
+          {{ csrf_field() }}
           <button type="submit" class="danger">Delete</button>
         </form>
       </td>

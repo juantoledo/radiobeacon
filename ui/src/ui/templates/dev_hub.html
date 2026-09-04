@@ -62,6 +62,7 @@
         <a class="btn secondary" href="/dev/items/{{ item.source }}/{{ item.item_id }}/edit">Edit</a>
         <form method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/delete"
               onsubmit="return confirm('Delete {{ item.source }}/{{ item.item_id }}? This cannot be undone.');">
+          {{ csrf_field() }}
           <button type="submit" class="danger">Delete</button>
         </form>
       </td>

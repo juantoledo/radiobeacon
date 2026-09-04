@@ -60,3 +60,10 @@ def test_rejects_select_containing_disallowed_keyword_as_subquery():
 def test_rejects_query_that_neither_selects_nor_withs():
     with pytest.raises(InvalidQuery):
         ensure_select_only("EXPLAIN QUERY PLAN SELECT * FROM items")
+
+
+def test_rejects_query_referencing_the_settings_table():
+    with pytest.raises(InvalidQuery):
+        ensure_select_only("SELECT key, value FROM settings")
+    with pytest.raises(InvalidQuery):
+        ensure_select_only("SELECT * FROM Settings WHERE key = 'ANTHROPIC_API_KEY'")

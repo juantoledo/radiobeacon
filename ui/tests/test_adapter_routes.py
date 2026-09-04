@@ -188,6 +188,50 @@ def test_adapter_test_action_runs_fetch_and_shows_result(client):
     assert "Fetched 1 item" in response.text
 
 
+def test_custom_adapter_is_blocked_when_dev_tools_disabled(client, conn):
+    from adapters.storage import set_setting
+
+    set_setting(conn, "UI_DEV_TOOLS_ENABLED", "false")
+
+    save = client.post(
+        "/config/adapters",
+        data={
+            "mode": "create",
+            "source": "sneaky",
+            "adapter_type": "custom",
+            "code": "def fetch(config):\n    return []\n",
+        },
+        follow_redirects=False,
+    )
+    assert save.status_code == 403
+    assert get_adapter_instance(conn, "sneaky") is None
+
+    test = client.post(
+        "/config/adapters/test",
+        data={
+            "mode": "create",
+            "source": "sneaky",
+            "adapter_type": "custom",
+            "code": "def fetch(config):\n    return []\n",
+        },
+    )
+    assert test.status_code == 403
+
+    # API-type adapters are unaffected by the switch.
+    ok = client.post(
+        "/config/adapters",
+        data={
+            "mode": "create",
+            "source": "plain-api",
+            "adapter_type": "api",
+            "url": "https://example.test/",
+            "map_id_template": "{Id}",
+        },
+        follow_redirects=False,
+    )
+    assert ok.status_code == 303
+
+
 def test_adapter_test_action_shows_every_mapped_field(client):
     response = client.post(
         "/config/adapters/test",
@@ -235,8 +279,8 @@ class _FakeResponse:
     def __init__(self, payload):
         self._body = json.dumps(payload).encode("utf-8")
 
-    def read(self):
-        return self._body
+    def read(self, amt=None):
+        return self._body if amt is None else self._body[:amt]
 
     def __enter__(self):
         return self
@@ -247,7 +291,7 @@ class _FakeResponse:
 
 def test_adapter_test_action_for_api_type_uses_structured_fields(client):
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse([{"Fecha": "2026-01-01T00:00:00"}]),
     ):
         response = client.post(
@@ -282,7 +326,7 @@ def test_adapter_test_action_does_not_persist_anything(client, conn):
 
 def test_adapter_sample_action_shows_raw_unmapped_response(client):
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse([{"Fecha": "2026-01-01 00:00:00", "Magnitud": "3.0"}]),
     ):
         response = client.post(
@@ -314,7 +358,7 @@ def test_adapter_sample_action_shows_raw_unmapped_response(client):
 
 def test_adapter_sample_action_json_preview_top_level_keys_are_draggable(client):
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse(
             [{"Fecha": "2026-01-01 00:00:00", "variableRiesgo": {"nombre": "Viento"}}]
         ),
@@ -343,7 +387,7 @@ def test_adapter_sample_action_json_preview_top_level_keys_are_draggable(client)
 
 def test_adapter_sample_action_escapes_untrusted_response_content(client):
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse([{"<script>alert(1)</script>": "<img src=x onerror=alert(1)>"}]),
     ):
         response = client.post(
@@ -366,7 +410,7 @@ def test_adapter_sample_action_needs_no_mapping_configured(client):
     """No map_*/date_field/dispatch_* fields posted at all — only
     connection settings — must still work, since the whole point is
     previewing a response before any mapping is configured."""
-    with patch("urllib.request.urlopen", return_value=_FakeResponse([{"a": 1}])):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse([{"a": 1}])):
         response = client.post(
             "/config/adapters/sample",
             data={
@@ -383,7 +427,7 @@ def test_adapter_sample_action_needs_no_mapping_configured(client):
 
 def test_adapter_sample_action_detects_nested_array_and_warns_when_items_path_is_blank(client):
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse({"result": {"items": [{"Id": "1"}, {"Id": "2"}]}}),
     ):
         response = client.post(
@@ -409,7 +453,7 @@ def test_adapter_sample_action_detects_nested_array_and_warns_when_items_path_is
 def test_adapter_sample_action_shows_error_on_failure(client):
     import urllib.error
 
-    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("boom")):
+    with patch("adapters.api_adapter._OPENER.open", side_effect=urllib.error.URLError("boom")):
         response = client.post(
             "/config/adapters/sample",
             data={
@@ -440,7 +484,7 @@ def test_adapter_sample_action_rejects_custom_type(client):
 
 
 def test_adapter_sample_action_does_not_persist_anything(client, conn):
-    with patch("urllib.request.urlopen", return_value=_FakeResponse([{"a": 1}])):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse([{"a": 1}])):
         client.post(
             "/config/adapters/sample",
             data={

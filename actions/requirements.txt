@@ -1,6 +1,6 @@
-pytest
+# -e ../data-adapters brings in `adapters` and, transitively, the provider
+# SDKs (anthropic/openai/ollama) that actions.ai uses via adapters.llm.
+-e ../data-adapters
 paho-mqtt
 cloudevents>=1.9,<2
-anthropic
-openai
-ollama
+pytest

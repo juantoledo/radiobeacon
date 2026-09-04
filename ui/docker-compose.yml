@@ -16,6 +16,9 @@ services:
       # mq/ uses (mosquitto binds all interfaces, the host-side mapping
       # decides how far that reaches).
       - UI_HOST=0.0.0.0
+      # Host-header allow-list (see ui/security.py). Add the name/IP you
+      # actually browse to — a Host not listed here gets a 400.
+      - UI_ALLOWED_HOSTS=localhost,127.0.0.1
       - UI_DB_PATH=/app/storage/radiobeacon.db
     env_file:
       - ../.env

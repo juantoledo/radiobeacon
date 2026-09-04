@@ -18,6 +18,7 @@
   <div class="toggle-grid" data-cell="quick_controls">
     {% for key, on, ic, label, hint in toggles %}
     <form method="post" action="/dashboard/toggle" class="toggle-form">
+      {{ csrf_field() }}
       <input type="hidden" name="key" value="{{ key }}">
       <input type="hidden" name="value" value="{{ 'false' if on else 'true' }}">
       <button type="submit" class="switch {{ 'is-on' if on else '' }}" role="switch" aria-checked="{{ 'true' if on else 'false' }}">
@@ -33,6 +34,7 @@
       <span class="segmented-label">{{ icon('activity', 15) }}Mode</span>
       {% for mode in ['voice', 'frame'] %}
       <form method="post" action="/dashboard/toggle">
+        {{ csrf_field() }}
         <input type="hidden" name="key" value="BEACON_TYPE">
         <input type="hidden" name="value" value="{{ mode }}">
         <button type="submit" class="{{ 'active' if beacon_type == mode else '' }}"

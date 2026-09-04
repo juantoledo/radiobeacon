@@ -1,14 +1,12 @@
-pytest
+# -e ../data-adapters and -e ../dispatcher replace the sys.path bootstrap
+# ui/src/ui/app.py used to do. Transitive deps (tzdata, botocore, croniter,
+# the provider SDKs via data-adapters; paho-mqtt, cloudevents via dispatcher)
+# no longer need to be listed here.
+-e ../data-adapters
+-e ../dispatcher
 httpx
 fastapi
 uvicorn
 jinja2
 python-multipart
-paho-mqtt
-cloudevents>=1.9,<2
-tzdata
-botocore
-croniter
-anthropic
-openai
-ollama
+pytest

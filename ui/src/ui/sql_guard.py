@@ -12,6 +12,15 @@ _DISALLOWED_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+# The `settings` table stores API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, ...)
+# in plaintext; the config UI only masks them on the way out. The SQL runner
+# would otherwise be a straight read path around that masking, so any query
+# that so much as names the table is refused here — crude on purpose (it also
+# trips on the bare word in a string literal or another table's column), with a
+# message that says why. This is the same defense-in-depth layer as the rest of
+# this module, not the real boundary.
+_BLOCKED_TABLES = re.compile(r"\bsettings\b", re.IGNORECASE)
+
 
 class InvalidQuery(ValueError):
     pass
@@ -39,5 +48,8 @@ def ensure_select_only(sql: str) -> str:
 
     if _DISALLOWED_KEYWORDS.search(stripped):
         raise InvalidQuery("query contains a disallowed keyword")
+
+    if _BLOCKED_TABLES.search(stripped):
+        raise InvalidQuery("the settings table is not queryable here (it holds secrets)")
 
     return stripped

@@ -24,6 +24,7 @@
 <dialog id="manual-tx-dialog" class="manual-tx-dialog">
   <form method="post" action="/dashboard/transmit"
         data-voice-max="{{ manual_voice_max_chars }}" data-frame-max="{{ manual_frame_max_bytes }}">
+    {{ csrf_field() }}
     <h2>{{ icon('radio', 18) }} Transmit text now</h2>
 
     <div class="segmented mtx-kind" role="group" aria-label="Transmission type">

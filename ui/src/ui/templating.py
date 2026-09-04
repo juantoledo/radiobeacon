@@ -43,6 +43,18 @@ def _icon_global(name: str, size: int = 16) -> Markup:
 
 templates.env.globals["icon"] = _icon_global
 
+
+@pass_context
+def _csrf_field(context) -> Markup:
+    """`{{ csrf_field() }}` inside every state-changing <form> — the hidden
+    input the double-submit-cookie check (ui.security.verify_csrf) compares
+    against the csrf_token cookie."""
+    token = getattr(context["request"].state, "csrf_token", "")
+    return Markup(f'<input type="hidden" name="csrf_token" value="{token}">')
+
+
+templates.env.globals["csrf_field"] = _csrf_field
+
 # Icon per /config tab — purely presentational, keyed by category name (see
 # NAV_CATEGORY_ORDER) plus the one non-catalog tab, Policies.
 _CONFIG_TAB_ICONS: dict[str, str] = {

@@ -1,22 +1,17 @@
 import logging
 import signal
-import sys
 import threading
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
-
-from adapters.storage import (  # noqa: E402
+from adapters.storage import (
     DEFAULT_DB_PATH,
     get_connection,
     get_setting,
     register_audit_event_hook,
 )
-from adapters.timeutil import utc_now  # noqa: E402
+from adapters.timeutil import utc_now
 
-from .mq_publisher import publish_cloud_event  # noqa: E402
-from .watcher import check_for_new_items, log_handler  # noqa: E402
+from .mq_publisher import publish_cloud_event
+from .watcher import check_for_new_items, log_handler
 
 logger = logging.getLogger(__name__)
 

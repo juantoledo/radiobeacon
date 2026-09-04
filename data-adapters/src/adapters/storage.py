@@ -1436,18 +1436,6 @@ def count_tx_schedule_by_kind(conn: sqlite3.Connection) -> dict[str, int]:
     }
 
 
-def has_pending_tx_schedule(conn: sqlite3.Connection, kind: str) -> bool:
-    """Whether any row of this `kind` is still pending — beacon uses this
-    to decide whether to pre-switch radio services ahead of a slot."""
-    _ensure_beacon_tx_schedule_table(conn)
-    return (
-        conn.execute(
-            "SELECT EXISTS(SELECT 1 FROM beacon_tx_schedule WHERE kind = ?)", (kind,)
-        ).fetchone()[0]
-        == 1
-    )
-
-
 def delete_tx_schedule_for_item(conn: sqlite3.Connection, source: str, item_id: str) -> None:
     """Drops every pending transmit unit for an item — called when the item
     itself is deleted (see ui.dev_ops.delete_item)."""

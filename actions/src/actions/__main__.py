@@ -3,23 +3,18 @@ import inspect
 import logging
 import pkgutil
 import signal
-import sys
 import threading
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
-
-from adapters.storage import (  # noqa: E402
+from adapters.storage import (
     DEFAULT_DB_PATH,
     get_connection,
     get_setting,
     record_audit_event,
 )
 
-import actions  # noqa: E402
-from actions import content_ready, mq  # noqa: E402
-from actions.base import Action  # noqa: E402
+import actions
+from actions import content_ready, mq
+from actions.base import Action
 
 logger = logging.getLogger(__name__)
 

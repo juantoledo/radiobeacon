@@ -459,11 +459,14 @@ def test_ai_prompt_includes_item_fields(tmp_path, monkeypatch):
 
     monkeypatch.setattr(actions.ai, "_call_ollama", _fake_call)
     conn = get_connection(tmp_path / "radiobeacon.db")
+    # A non-seeded source: `senapred` ships a per-adapter `ai_prompt` override
+    # that only references {extracted_contents}, so it would never exercise the
+    # AI_PROMPT_DEFAULT template this test is about (title + contents).
     _insert_item(
-        conn, "senapred", "1", "Contenido de la alerta.", extracted_title="Alerta importante"
+        conn, "acme", "1", "Contenido de la alerta.", extracted_title="Alerta importante"
     )
 
-    AiAction().run(_dispatched_event("senapred", "1"), conn=conn)
+    AiAction().run(_dispatched_event("acme", "1"), conn=conn)
 
     assert "Alerta importante" in captured["prompt"]
     assert "Contenido de la alerta." in captured["prompt"]
@@ -652,7 +655,7 @@ def test_ai_falls_back_to_default_prompt_when_no_adapter_row(tmp_path, monkeypat
 
     AiAction().run(_dispatched_event("no-such-adapter", "1"), conn=conn)
 
-    assert captured["prompt"] == actions.ai._DEFAULT_PROMPT.format(
+    assert captured["prompt"] == actions.ai.AI_PROMPT_DEFAULT.format(
         extracted_title="",
         extracted_contents="Contenido de la alerta.",
         url="",

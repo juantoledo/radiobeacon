@@ -6,6 +6,7 @@
 <div class="page-header"><h1>{% if mode == "edit" %}Edit policy{% else %}New policy{% endif %}</h1></div>
 
 <form method="post" action="/config/policies">
+  {{ csrf_field() }}
   <table class="form-table">
     <tr>
       <th><label for="name">Name</label></th>

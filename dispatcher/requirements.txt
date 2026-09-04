@@ -1,3 +1,6 @@
+# -e ../data-adapters first: the `dispatcher` package and the two CLI
+# wrappers import `adapters.storage`. Then -e . for the dispatcher package
+# itself (deps declared in pyproject.toml).
+-e ../data-adapters
+-e .
 pytest
-paho-mqtt
-cloudevents>=1.9,<2

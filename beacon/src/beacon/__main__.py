@@ -61,17 +61,13 @@ _reconcile_missed_content_ready's catch-up path), so newly-scheduled
 content is picked up on the very next loop iteration."""
 import logging
 import signal
-import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
-
-from adapters.attention_tone import prepend_tone_to_wav  # noqa: E402
-from adapters.beacon_defaults import (  # noqa: E402
+from adapters.attention_tone import prepend_tone_to_wav
+from adapters.beacon_defaults import (
     BEACON_ENABLED_DEFAULT,
     BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
     BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT,
@@ -87,7 +83,7 @@ from adapters.beacon_defaults import (  # noqa: E402
     BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT,
     BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT,
 )
-from adapters.storage import (  # noqa: E402
+from adapters.storage import (
     DEFAULT_DB_PATH,
     add_tx_schedule_unit,
     count_tx_schedule_by_kind,
@@ -102,10 +98,15 @@ from adapters.storage import (  # noqa: E402
     record_tx_schedule_sent,
     set_beacon_status,
 )
-from adapters.timeutil import to_display_tz, utc_now  # noqa: E402
-from adapters.transmit_policy import policy_for  # noqa: E402
+from adapters.timeutil import to_display_tz, utc_now
+from adapters.transmit_policy import policy_for
 
-from beacon import content, formatters, frame_audio, mq, ntp, transmit, voice  # noqa: E402
+from beacon import content, formatters, frame_audio, mq, ntp, transmit, voice
+
+# Repo root — for anchoring a relative BEACON_TTS_WAV_DIR (see
+# _resolve_wav_dir). beacon/ runs from source (PYTHONPATH=src, `python -m
+# beacon`), so beacon/src/beacon/__main__.py -> parents[3] is the repo root.
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 logger = logging.getLogger(__name__)
 

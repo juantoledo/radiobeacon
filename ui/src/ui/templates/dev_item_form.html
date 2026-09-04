@@ -11,6 +11,7 @@
 </p>
 
 <form method="post" action="{% if mode == 'edit' %}/dev/items/{{ item.source }}/{{ item.item_id }}{% else %}/dev/items{% endif %}">
+  {{ csrf_field() }}
   <table class="form-table">
     <tr>
       <th><label for="source">source</label></th>
@@ -83,6 +84,7 @@
 {% if mode == "edit" %}
 <h2>Dispatcher state</h2>
 <form class="action" method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/reset-dispatch">
+  {{ csrf_field() }}
   <label for="consumer">Reset dispatch state for consumer</label>
   <input id="consumer" name="consumer" type="text" value="{{ default_consumer }}">
   <button type="submit" class="secondary">Reset</button>
@@ -97,6 +99,7 @@
 <h2>Delete</h2>
 <form method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/delete"
       onsubmit="return confirm('Delete {{ item.source }}/{{ item.item_id }}? This cannot be undone.');">
+  {{ csrf_field() }}
   <button type="submit" class="danger">Delete this item</button>
 </form>
 {% endif %}

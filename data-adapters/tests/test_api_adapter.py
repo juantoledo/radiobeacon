@@ -45,8 +45,8 @@ class _FakeResponse:
     def __init__(self, payload):
         self._body = json.dumps(payload).encode("utf-8")
 
-    def read(self):
-        return self._body
+    def read(self, amt=None):
+        return self._body if amt is None else self._body[:amt]
 
     def __enter__(self):
         return self
@@ -56,7 +56,7 @@ class _FakeResponse:
 
 
 def test_fetch_maps_fields_from_config():
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE)):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE)):
         reading = ApiAdapter("csn", CSN_CONFIG).fetch()
 
     assert reading.ok
@@ -73,7 +73,7 @@ def test_fetch_maps_fields_from_config():
 
 
 def test_fetch_converts_source_date_time_with_configured_timezone():
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE[:1])):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE[:1])):
         reading = ApiAdapter("csn", CSN_CONFIG).fetch()
 
     # America/Santiago is UTC-3 (or -4) — the converted UTC hour must differ
@@ -84,7 +84,7 @@ def test_fetch_converts_source_date_time_with_configured_timezone():
 def test_fetch_handles_items_path():
     config = dict(CSN_CONFIG, items_path="result.items")
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse({"result": {"items": CSN_RESPONSE[:1]}}),
     ):
         reading = ApiAdapter("csn", config).fetch()
@@ -96,7 +96,7 @@ def test_fetch_handles_items_path():
 def test_fetch_returns_not_ok_on_network_error():
     import urllib.error
 
-    with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("boom")):
+    with patch("adapters.api_adapter._OPENER.open", side_effect=urllib.error.URLError("boom")):
         reading = ApiAdapter("csn", CSN_CONFIG).fetch()
 
     assert not reading.ok
@@ -105,7 +105,7 @@ def test_fetch_returns_not_ok_on_network_error():
 
 def test_fetch_skips_malformed_item_without_failing_whole_batch():
     bad_and_good = [{"Fecha": None}, CSN_RESPONSE[0]]
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(bad_and_good)):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(bad_and_good)):
         reading = ApiAdapter("csn", CSN_CONFIG).fetch()
 
     assert reading.ok
@@ -126,7 +126,7 @@ def test_fetch_mapping_template_can_reference_source_display_name(tmp_path):
             url={"template": "{source_url}"},
         ),
     )
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE[:1])):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE[:1])):
         reading = ApiAdapter("quakes", config, db_path=db_path).fetch()
 
     assert reading.data[0].title == "ACME Quake Feed: Sismo M5.0 - Test Zone"
@@ -141,7 +141,7 @@ def test_fetch_mapping_source_name_falls_back_to_raw_key_when_unmanaged(tmp_path
         CSN_CONFIG,
         mapping=dict(CSN_CONFIG["mapping"], title={"template": "[{source_name}] {RefGeografica}"}),
     )
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE[:1])):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE[:1])):
         reading = ApiAdapter("quakes", config, db_path=db_path).fetch()
 
     assert reading.data[0].title == "[quakes] Test Zone"
@@ -151,7 +151,7 @@ def test_fetch_does_not_touch_db_when_no_template_uses_source_placeholders(tmp_p
     """The common case — no mapping references {source_name}/{source_url} —
     keeps the fetch path DB-free."""
     with patch("adapters.api_adapter.get_connection", side_effect=AssertionError("db opened")):
-        with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE[:1])):
+        with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE[:1])):
             reading = ApiAdapter("csn", CSN_CONFIG).fetch()
 
     assert reading.ok
@@ -160,7 +160,7 @@ def test_fetch_does_not_touch_db_when_no_template_uses_source_placeholders(tmp_p
 
 def test_preview_response_needs_no_mapping_configured():
     config = {"url": "https://example.test/", "headers": {}}
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE)):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE)):
         preview = preview_response(config)
 
     assert preview["items"] == CSN_RESPONSE
@@ -171,7 +171,7 @@ def test_preview_response_needs_no_mapping_configured():
 def test_preview_response_honors_items_path_and_limit():
     config = {"url": "https://example.test/", "items_path": "result.items"}
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse({"result": {"items": CSN_RESPONSE}}),
     ):
         preview = preview_response(config, limit=1)
@@ -183,7 +183,7 @@ def test_preview_response_honors_items_path_and_limit():
 def test_preview_response_reports_non_list_items_path_without_raising():
     config = {"url": "https://example.test/", "items_path": "result"}
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse({"result": {"a": 1}}),
     ):
         preview = preview_response(config)
@@ -196,7 +196,7 @@ def test_preview_response_reports_non_list_items_path_without_raising():
 def test_preview_response_reports_unresolvable_items_path_without_raising():
     config = {"url": "https://example.test/", "items_path": "does.not.exist"}
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse({"result": {"a": 1}}),
     ):
         preview = preview_response(config)
@@ -209,7 +209,7 @@ def test_preview_response_reports_unresolvable_items_path_without_raising():
 def test_preview_response_finds_array_candidates_at_any_depth():
     config = {"url": "https://example.test/"}
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse({"result": {"items": CSN_RESPONSE}, "meta": {"count": 2}}),
     ):
         preview = preview_response(config)
@@ -222,7 +222,7 @@ def test_preview_response_finds_array_candidates_at_any_depth():
 
 def test_preview_response_root_array_candidate_has_empty_path():
     config = {"url": "https://example.test/"}
-    with patch("urllib.request.urlopen", return_value=_FakeResponse(CSN_RESPONSE)):
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE)):
         preview = preview_response(config)
 
     assert preview["candidates"] == [
@@ -237,10 +237,54 @@ def test_preview_response_root_array_candidate_has_empty_path():
 def test_preview_response_ignores_arrays_of_bare_scalars():
     config = {"url": "https://example.test/"}
     with patch(
-        "urllib.request.urlopen",
+        "adapters.api_adapter._OPENER.open",
         return_value=_FakeResponse({"tags": ["a", "b", "c"], "items": [{"id": 1}]}),
     ):
         preview = preview_response(config)
 
     paths = [c["path"] for c in preview["candidates"]]
     assert paths == ["items"]
+
+
+# --- SSRF / resource guards (adapters.api_adapter._assert_fetch_allowed,
+#     _SsrfGuardHandler, the hand-built _OPENER, the response size cap) ---
+
+
+def test_fetch_rejects_file_scheme():
+    reading = ApiAdapter("x", {"url": "file:///etc/passwd"}).fetch()
+    assert not reading.ok
+    assert "scheme" in reading.error
+
+
+def test_fetch_rejects_loopback_address():
+    reading = ApiAdapter("x", {"url": "http://127.0.0.1:8080/"}).fetch()
+    assert not reading.ok
+    assert "non-public" in reading.error
+
+
+def test_fetch_rejects_link_local_metadata_address():
+    reading = ApiAdapter("x", {"url": "http://169.254.169.254/latest/meta-data/"}).fetch()
+    assert not reading.ok
+    assert "non-public" in reading.error
+
+
+def test_allow_private_setting_opens_loopback(tmp_path):
+    from adapters.storage import get_connection, set_setting
+
+    db_path = tmp_path / "radiobeacon.db"
+    conn = get_connection(db_path)
+    set_setting(conn, "ADAPTERS_ALLOW_PRIVATE_FETCH", "true")
+    conn.close()
+
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse([{"id": 1}])):
+        reading = ApiAdapter("x", {"url": "http://127.0.0.1:9999/"}, db_path=db_path).fetch()
+
+    assert reading.ok  # the guard was not consulted; the (mocked) open succeeded
+
+
+def test_fetch_rejects_oversize_response():
+    huge = [{"id": i, "pad": "x" * 1024} for i in range(6000)]
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(huge)):
+        reading = ApiAdapter("x", CSN_CONFIG).fetch()
+    assert not reading.ok
+    assert "bytes" in reading.error

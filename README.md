@@ -175,6 +175,12 @@ Seven decoupled components, wired together only by a shared SQLite
 database (`storage/radiobeacon.db`) and, optionally, a local MQTT broker.
 Each has its own README with the details.
 
+`data-adapters/` doubles as the shared library — settings, the DB schema,
+`timeutil`, `transmit_policy`, the LLM helpers — so every other component
+installs it (`-e ../data-adapters` in its `requirements.txt`, which
+`start.sh` picks up); `dispatcher/` is likewise installed by `ui/`. No
+runtime coupling beyond that and the database.
+
 ```
 data-adapters/  polls external sources, stores raw items          → data-adapters/README.md
 dispatcher/     watches for new items, delivers them to handlers   → dispatcher/README.md

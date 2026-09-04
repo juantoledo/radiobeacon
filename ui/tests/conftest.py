@@ -54,6 +54,12 @@ def client(conn: sqlite3.Connection):
     row/audit_log state."""
     from ui.app import app
     from ui.db import get_db
+    from ui.security import verify_csrf
+
+    # CSRF enforcement is exercised directly in test_security.py; every other
+    # route test drives the app without juggling a token, the same way
+    # Django's test client disables CSRF by default.
+    app.dependency_overrides[verify_csrf] = lambda: None
 
     def _override(request: Request):
         # Mirrors the real get_db()'s request.state.db_conn stash — see
@@ -69,3 +75,4 @@ def client(conn: sqlite3.Connection):
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(verify_csrf, None)

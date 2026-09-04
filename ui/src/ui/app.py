@@ -1,23 +1,22 @@
-"""Composition root: sys.path bootstrap for cross-module imports, then
-builds the FastAPI app. Same precedent as dispatcher/override_item.py /
-dispatcher/policies.py / dispatcher/src/dispatcher/__main__.py, each of
-which does this sys.path.insert at the top of its own entry-point file
-rather than relying on PYTHONPATH alone. Routers are only ever imported
-from this module (below, after the insert), so they can freely import
-adapters.* / dispatcher.* without repeating the bootstrap themselves."""
-import sys
+"""Composition root: builds the FastAPI app. `adapters` and `dispatcher`
+resolve from the editable installs in .venv (`-e ../data-adapters` /
+`-e ../dispatcher` in requirements.txt) — no sys.path juggling."""
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(REPO_ROOT / "data-adapters" / "src"))
-sys.path.insert(0, str(REPO_ROOT / "dispatcher" / "src"))
+from adapters.storage import register_audit_event_hook
+from dispatcher.mq_publisher import publish_cloud_event
+from fastapi import Depends, FastAPI
+from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from adapters.storage import register_audit_event_hook  # noqa: E402
-from dispatcher.mq_publisher import publish_cloud_event  # noqa: E402
-from fastapi import FastAPI  # noqa: E402
-from fastapi.staticfiles import StaticFiles  # noqa: E402
+from .config import UI_ALLOWED_HOSTS
+from .security import (
+    CrossOriginGuardMiddleware,
+    CsrfCookieMiddleware,
+    verify_csrf,
+)
 
-from .routers import (  # noqa: E402
+from .routers import (
     adapters,
     audit,
     beacon,
@@ -38,7 +37,13 @@ from .routers import (  # noqa: E402
 # No-ops unless DISPATCHER_MQ_HOST is set.
 register_audit_event_hook(publish_cloud_event)
 
-app = FastAPI(title="radiobeacon-ui")
+app = FastAPI(title="radiobeacon-ui", dependencies=[Depends(verify_csrf)])
+# The app has no auth; see ui.security. Added inner-to-outer: the Host
+# allow-list (DNS-rebinding guard) runs first, then the cross-origin POST
+# guard, then the CSRF-cookie issuer.
+app.add_middleware(CsrfCookieMiddleware)
+app.add_middleware(CrossOriginGuardMiddleware, allowed_hosts=UI_ALLOWED_HOSTS)
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=UI_ALLOWED_HOSTS)
 app.mount(
     "/static",
     StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),

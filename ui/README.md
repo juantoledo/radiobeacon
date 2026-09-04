@@ -144,15 +144,24 @@ frame one plays as AFSK tones.
 
 ## No authentication
 
-This first version has no login system — it's meant to be reached only
-from `localhost` or a trusted network. `ui/start.sh` binds `0.0.0.0` by
-default (all interfaces, reachable from the LAN, e.g.
-`192.168.200.145:8080`); set `UI_HOST=127.0.0.1` to keep it loopback-only
-instead. Since it can trigger write actions against
-`storage/radiobeacon.db`, don't expose this beyond a trusted network
-without adding auth first — this goes double for `/dev` (raw item add/
-edit/delete), which you may also want to disable outright via
-`UI_DEV_TOOLS_ENABLED=false` on any deployment where you don't need it.
+There is no login system. Three request guards stand in for it (see
+`ui/src/ui/security.py`):
+
+- **Loopback bind.** `UI_HOST` defaults to `127.0.0.1` — the dashboard is
+  off the network entirely until you set it otherwise.
+- **Host allow-list** (`UI_ALLOWED_HOSTS`, a DNS-rebinding guard) — a
+  request whose `Host` header isn't listed gets a 400.
+- **Cross-origin + CSRF.** A state-changing POST is refused unless its
+  `Origin` is allow-listed *and* it echoes the `csrf_token` cookie back
+  (hidden form field or `X-CSRF-Token` header).
+
+To reach it from the LAN: set `UI_HOST=0.0.0.0`, add every name/IP it's
+served under to `UI_ALLOWED_HOSTS`, and put real auth (a reverse proxy
+with a password) in front of it — the guards above stop a browser on
+another site from driving it, not someone who can reach the port
+directly. This goes double for `/dev` (raw item add/edit/delete and the
+SQL runner) and CUSTOM adapters (arbitrary `exec`), both of which you can
+disable outright with `UI_DEV_TOOLS_ENABLED=false`.
 
 ## Usage
 
@@ -172,7 +181,8 @@ Env vars, in `.env` at the repo root (see `.env.example`).
 
 | var | default |
 |---|---|
-| `UI_HOST` | `0.0.0.0` |
+| `UI_HOST` | `127.0.0.1` |
+| `UI_ALLOWED_HOSTS` | `127.0.0.1,localhost,testserver,[::1]` |
 | `UI_PORT` | `8080` |
 | `UI_DB_PATH` | *(unset — uses `adapters.storage.DEFAULT_DB_PATH`, `storage/radiobeacon.db`)* |
 | `UI_PAGE_SIZE` | `50` |
@@ -186,10 +196,10 @@ events is controlled by `DISPATCHER_MQ_HOST` (and the other
 
 ## Running in Docker
 
-Built from the **repo root**, not `ui/` alone — `ui/src/ui/app.py`'s
-`sys.path` bootstrap expects `data-adapters/src` and `dispatcher/src` as
-siblings on disk, same as `dispatcher/__main__.py`/`override_item.py` rely
-on outside Docker, so the image preserves that layout.
+Built from the **repo root**, not `ui/` alone — `ui/requirements.txt`
+installs the sibling `data-adapters/` and `dispatcher/` packages editable
+(`-e ../data-adapters`, `-e ../dispatcher`), so the image copies all three
+in under `/app` and runs `pip install` from `/app/ui`.
 
 ```bash
 docker compose -f ui/docker-compose.yml up --build
@@ -202,11 +212,14 @@ docker build -f ui/Dockerfile -t radiobeacon-ui .
 docker run --rm -p 8080:8080 \
   -v "$(pwd)/storage:/app/storage" \
   -e UI_HOST=0.0.0.0 -e UI_DB_PATH=/app/storage/radiobeacon.db \
+  -e UI_ALLOWED_HOSTS=localhost,127.0.0.1 \
   radiobeacon-ui
 ```
 
 Use `-p 127.0.0.1:8080:8080` instead if you want it reachable only from
-`localhost`, not the LAN.
+`localhost`, not the LAN. `UI_ALLOWED_HOSTS` must contain whatever host
+name you actually open the dashboard under (e.g. add the mini-PC's LAN IP
+or `.local` name) — a `Host` header that isn't listed gets a 400.
 
 The `storage/` directory is bind-mounted read-write (not a named volume,
 and not `:ro`) — the UI writes to `radiobeacon.db` via its override/rearm/

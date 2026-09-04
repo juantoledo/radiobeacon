@@ -56,14 +56,3 @@ def latest_fire_at_or_before(expr: str, at: datetime, *, conn) -> datetime | Non
     # `at` lands exactly on an occurrence.
     base = at.astimezone(_display_tz(conn)) + timedelta(seconds=1)
     return croniter(expr.strip(), base).get_prev(datetime).astimezone(timezone.utc)
-
-
-def next_fire_after(expr: str, after: datetime, *, conn) -> datetime | None:
-    """The next cron occurrence strictly after `after`, as a UTC-aware
-    datetime (for a UI "next run" hint). None if `expr` is invalid."""
-    if not is_valid_cron(expr):
-        return None
-    from croniter import croniter
-
-    base = after.astimezone(_display_tz(conn))
-    return croniter(expr.strip(), base).get_next(datetime).astimezone(timezone.utc)

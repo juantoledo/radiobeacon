@@ -35,6 +35,26 @@ router = APIRouter()
 
 _ADAPTER_CLASSES = {"api": ApiAdapter, "custom": CustomAdapter, "aiprompt": AiPromptAdapter}
 
+
+def _dev_tools_enabled(conn: sqlite3.Connection) -> bool:
+    return get_setting("UI_DEV_TOOLS_ENABLED", "true", conn=conn).lower() not in (
+        "false",
+        "0",
+        "",
+    )
+
+
+def _guard_custom_adapter(adapter_type: str, conn: sqlite3.Connection) -> None:
+    """A CUSTOM adapter runs operator-authored Python via exec() on every
+    poll — the same power the /dev SQL runner has, so it sits behind the same
+    switch. With UI_DEV_TOOLS_ENABLED off (the hardened profile), CUSTOM
+    adapters can't be created, edited, or test-run through the web form."""
+    if adapter_type == "custom" and not _dev_tools_enabled(conn):
+        raise HTTPException(
+            status_code=403,
+            detail="custom adapters are disabled (UI_DEV_TOOLS_ENABLED is off)",
+        )
+
 # The aiprompt-type fields, flat, in template-input-name order. Mirrors
 # MAPPED_FIELDS' role for the API type — see _config_to_fields / _form_to_fields.
 AIPROMPT_FIELDS = (
@@ -483,6 +503,7 @@ async def adapter_test_action(request: Request, conn: sqlite3.Connection = Depen
     if not common["source"]:
         context = _error_context(common, form, "Source is required to run a test fetch.", conn=conn)
         return templates.TemplateResponse(request, "adapter_form.html", context)
+    _guard_custom_adapter(common["adapter_type"], conn)
 
     try:
         config = _form_to_config(common["adapter_type"], form)
@@ -491,8 +512,14 @@ async def adapter_test_action(request: Request, conn: sqlite3.Connection = Depen
         return templates.TemplateResponse(request, "adapter_form.html", context)
 
     context = _error_context(common, form, None, conn=conn)
-    adapter = _build_test_adapter(common["source"], common["adapter_type"], config)
-    reading = adapter.fetch()
+    try:
+        adapter = _build_test_adapter(common["source"], common["adapter_type"], config)
+        reading = adapter.fetch()
+    except HTTPException:
+        raise
+    except Exception as e:
+        context = _error_context(common, form, f"Test fetch failed: {e}", conn=conn)
+        return templates.TemplateResponse(request, "adapter_form.html", context)
     context["test_result"] = {
         "ok": reading.ok,
         "error": reading.error,
@@ -577,6 +604,7 @@ async def adapter_save_action(
             common, form, f"Unknown adapter type {common['adapter_type']!r}.", conn=conn
         )
         return templates.TemplateResponse(request, "adapter_form.html", context, status_code=400)
+    _guard_custom_adapter(common["adapter_type"], conn)
 
     try:
         config = _form_to_config(common["adapter_type"], form)

@@ -17,6 +17,7 @@
       <td class="actions-cell">
         <a class="btn secondary" href="/config/policies/{{ name }}/edit">Edit</a>
         <form method="post" action="/config/policies/{{ name }}/delete">
+          {{ csrf_field() }}
           <button type="submit" class="danger">Delete</button>
         </form>
       </td>
