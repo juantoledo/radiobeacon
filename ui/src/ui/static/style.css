@@ -34,6 +34,16 @@
   --neutral: #48515d;
   --neutral-bg: #e9ecf1;
 
+  /* Python syntax-highlight tokens — see static/code-editor.js and the
+     "Code editor" section below (adapter_form.html's CUSTOM-type snippet). */
+  --code-kw: #a626a4;
+  --code-str: #50a14f;
+  --code-com: #a0a1a7;
+  --code-num: #986801;
+  --code-def: #4078f2;
+  --code-deco: #c18401;
+  --code-builtin: #0184bc;
+
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
   --shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.12), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
   --shadow-lg: 0 24px 48px -12px rgba(15, 23, 42, 0.22);
@@ -91,6 +101,14 @@
     --info-bg: #13243a;
     --neutral: #b7c0c9;
     --neutral-bg: #23262d;
+
+    --code-kw: #c678dd;
+    --code-str: #98c379;
+    --code-com: #7f848e;
+    --code-num: #d19a66;
+    --code-def: #61afef;
+    --code-deco: #e5c07b;
+    --code-builtin: #56b6c2;
 
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
     --shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
@@ -1070,6 +1088,104 @@ textarea.sql-box {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--text-sm);
   resize: vertical;
+}
+
+/* ======================= Code editor (Python) ========================= */
+/* The CUSTOM adapter's snippet box (adapter_form.html). This rule alone
+   (full width, resizable, a generous min-height, native scrolling) is the
+   whole thing when JS is off. code-editor.js is progressive enhancement on
+   top: it wraps the textarea in .code-editor-wrap and paints a
+   syntax-colored <pre> BEHIND it as a same-size SIBLING (never an
+   ancestor) — the wrap itself carries no border/background/overflow of
+   its own, so it can never clip the textarea; only `pre` (which owns the
+   visible card look — background/border/radius — since the textarea's own
+   are made transparent once wrapped) clips and scrolls its own text,
+   kept pixel-synced to the textarea's actual box by JS (ResizeObserver +
+   scroll/input), not by CSS layout tricks. */
+textarea.code-editor {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 22rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  tab-size: 4;
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+textarea.code-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.code-editor-wrap { position: relative; width: 100%; }
+.code-editor-wrap pre.code-editor-highlight {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  overflow: hidden;
+  /* Must match textarea.code-editor's font block byte-for-byte: `pre`'s
+     own parent (.code-editor-wrap) is a plain div with no font of its
+     own, so `font: inherit` here would pull in the page's proportional
+     body font instead — same text, different line-height/character
+     width, so its rendered height stops matching the textarea's
+     scrollHeight and the two can no longer scroll in sync (this was a
+     real bug: the overlay grew taller than the textarea, so scrolling
+     the textarea to ITS end still left the last ~15 lines of the
+     overlay unreachable). */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  tab-size: 4;
+  white-space: pre;
+  color: var(--fg);
+  pointer-events: none;
+  /* width/height are set in pixels by code-editor.js, copied from the
+     textarea's own offsetWidth/offsetHeight on load, on every resize
+     (ResizeObserver), and on window resize — so this box is always
+     exactly the textarea's size, never guessed via CSS. */
+}
+.code-editor-wrap pre.code-editor-highlight code { font: inherit; }
+.code-editor-wrap textarea.code-editor {
+  position: relative;
+  z-index: 1;
+  border-color: transparent;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--fg);
+}
+.code-editor-wrap textarea.code-editor:focus { outline: none; box-shadow: none; }
+.code-editor-wrap textarea.code-editor:focus ~ pre.code-editor-highlight {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.code-editor-wrap textarea.code-editor::selection { background: var(--accent-soft); color: transparent; }
+
+.tok-kw { color: var(--code-kw); font-weight: 600; }
+.tok-str { color: var(--code-str); }
+.tok-com { color: var(--code-com); font-style: italic; }
+.tok-num { color: var(--code-num); }
+.tok-def { color: var(--code-def); font-weight: 600; }
+.tok-deco { color: var(--code-deco); }
+.tok-builtin { color: var(--code-builtin); }
+
+@media (max-width: 680px) {
+  textarea.code-editor, .code-editor-wrap pre.code-editor-highlight { font-size: var(--text-xs); }
 }
 
 /* ============================ Forms ================================= */

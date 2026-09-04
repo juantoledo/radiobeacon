@@ -278,7 +278,7 @@
       (title, contents, url, event_key, type, subtype, transmit_policy, source_date_time, raw are optional).
       Executed as trusted admin code — no sandboxing.
     </p>
-    <textarea id="code" name="code" class="mono" rows="22">{{ custom_fields.code }}</textarea>
+    <textarea id="code" name="code" class="code-editor" rows="20" spellcheck="false">{{ custom_fields.code }}</textarea>
   </fieldset>
 
   <fieldset id="aiprompt-fields">
@@ -401,6 +401,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ static_url('code-editor.js') }}" defer></script>
 <script>
   function addKvRow(bodyId, keyName, valueName) {
     var tbody = document.getElementById(bodyId);
