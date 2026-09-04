@@ -25,3 +25,11 @@ services:
       # WAL mode needs to create -wal/-shm sidecar files next to it in
       # the same directory.
       - ../storage:/app/storage
+      # To use the /config → Beacon — SvxLink page's svxlink.conf editor
+      # (BEACON_RF_CONF_EDITOR_ENABLED=true), bind-mount the host file and
+      # make it writable by the container user (the image runs as root by
+      # default, so plain root-owned /etc/svxlink/svxlink.conf works):
+      # - /etc/svxlink/svxlink.conf:/etc/svxlink/svxlink.conf
+      # - /etc/direwolf.conf:/etc/direwolf.conf
+      # The editor still can't restart the host services — it shows the
+      # `systemctl restart …` command for you to run outside the container.

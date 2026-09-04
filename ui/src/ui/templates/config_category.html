@@ -7,44 +7,47 @@
 <p class="banner-warn">
   ⚠ Changes take effect immediately for Actions (config is re-read per message)
   and on next process restart for Dispatcher, MQ, and Beacon infra (config is
-  read once at process start). Rows marked "advanced" are internal wiring —
-  most installs never touch these. This dashboard has no login — anyone with
+  read once at process start). This dashboard has no login — anyone with
   network access to it can change live pipeline behavior and provider credentials.
 </p>
 
-{% for group in groups %}
-<div class="page-header">
-  <h3>{{ group.name }}</h3>
-  <a class="btn secondary" href="/config/{{ group.slug }}">Edit</a>
-</div>
-<div class="table-wrap cards">
-<table>
-  <thead><tr><th>Key</th><th>Value</th><th>Source</th></tr></thead>
-  <tbody>
-    {% for entry in group.rows %}
-    <tr>
-      <td data-label="Key" class="mono">{{ entry.spec.key }}</td>
-      <td data-label="Value" class="wrap">
-        {% if entry.spec.is_secret %}
-          {% if entry.row %}<span class="mono">{{ sentinel }}</span>{% else %}<span class="muted">(not set)</span>{% endif %}
-        {% elif entry.effective %}
-          {% if entry.row %}{{ entry.effective }}{% else %}<span class="muted">{{ entry.effective }}</span>{% endif %}
-        {% else %}
-          <span class="muted">(not set)</span>
-        {% endif %}
-      </td>
-      <td data-label="Source">
-        {% if entry.row %}
-          <span class="badge badge-success">overridden in DB</span>
-        {% else %}
-          <span class="badge badge-neutral">env / default</span>
-        {% endif %}
-        {% if entry.spec.wiring %}<span class="badge badge-warn">wiring</span>{% elif entry.advanced %}<span class="badge badge-neutral">advanced</span>{% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-</div>
+{% if sections | length > 1 %}
+<nav class="section-jump">
+  {% for s in sections %}<a href="#section-{{ s.slug }}">{{ s.label or "General" }}</a>{% endfor %}
+</nav>
+{% endif %}
+
+{% for s in sections %}
+{% if s.collapsed %}
+<details class="config-section" id="section-{{ s.slug }}">
+  <summary>{{ s.label }} <span class="muted">— advanced, rarely changed</span></summary>
+{% else %}
+<section class="config-section" id="section-{{ s.slug }}">
+  {% if s.label %}<h2>{{ s.label }}</h2>{% endif %}
+{% endif %}
+  <div class="table-wrap cards">
+  <table>
+    <thead><tr><th>Group</th><th>Settings</th><th></th></tr></thead>
+    <tbody>
+      {% for g in s.groups %}
+      <tr>
+        <td data-label="Group"><a href="/config/{{ g.slug }}">{{ g.name }}</a></td>
+        <td data-label="Settings">
+          {{ g.count }} setting{{ "s" if g.count != 1 }}
+          {% if g.overridden %} · <span class="badge badge-success">{{ g.overridden }} overridden</span>{% endif %}
+        </td>
+        <td>
+          {% if g.has_wiring %}<span class="badge badge-warn">wiring</span>{% elif g.advanced %}<span class="badge badge-neutral">advanced</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% if s.collapsed %}
+</details>
+{% else %}
+</section>
+{% endif %}
 {% endfor %}
 {% endblock %}

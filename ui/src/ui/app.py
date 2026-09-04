@@ -27,6 +27,7 @@ from .routers import (
     manual_tx,
     policies,
     quick_settings,
+    rf_conf,
 )
 
 # Publishes select audit events (item.policy_overridden, item.rearmed,
@@ -57,6 +58,9 @@ app.include_router(beacon.router)
 app.include_router(items.router)
 app.include_router(adapters.router)
 app.include_router(policies.router)
+# Before config.router: rf_conf owns GET /config/beacon-{svxlink,direwolf},
+# which config.router's GET /config/{slug} catch-all would otherwise handle.
+app.include_router(rf_conf.router)
 app.include_router(config.router)
 app.include_router(audit.router)
 # Always mounted — dev.router itself 404s every route when

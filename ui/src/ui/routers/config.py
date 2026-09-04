@@ -7,14 +7,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import PlainTextResponse, RedirectResponse, Response
 
 from ..config_catalog import (
-    SETTINGS_CATALOG,
     category_for_group,
     category_for_slug,
     category_slug,
+    group_is_advanced,
     group_slug,
-    groups_for_category,
-    is_advanced,
     is_multi_group_category,
+    section_slug,
+    sections_for_category,
     specs_for_group,
 )
 from ..db import get_db
@@ -30,35 +30,70 @@ router = APIRouter()
 SECRET_SENTINEL = "•" * 8
 
 
-def _category_groups_view(conn: sqlite3.Connection, category: str) -> list[dict]:
-    """group -> row list for one category's tab page — every group in the
-    category, every spec regardless of advanced/wiring tier (that split no
-    longer separates pages; each row just carries its own "advanced" flag so
-    the template can badge it in place)."""
+def _category_sections_view(conn: sqlite3.Connection, category: str) -> list[dict]:
+    """Section -> compact group-row list for one category's landing page — one
+    row per group (not per key: the group's own edit form already shows every
+    field's effective value), grouped under CATEGORY_LAYOUT's labelled,
+    optionally-collapsed sections (see config_catalog.sections_for_category)."""
+    overridden_keys = {row["key"] for row in list_settings(conn)}
+    sections = []
+    for section in sections_for_category(category):
+        groups = []
+        for group in section.groups:
+            slug = group_slug(group)
+            specs = specs_for_group(slug)
+            groups.append(
+                {
+                    "name": group,
+                    "slug": slug,
+                    "count": len(specs),
+                    "overridden": sum(1 for spec in specs if spec.key in overridden_keys),
+                    "advanced": group_is_advanced(slug),
+                    "has_wiring": any(spec.wiring for spec in specs),
+                }
+            )
+        sections.append(
+            {
+                "label": section.label,
+                "slug": section_slug(section.label),
+                "collapsed": section.collapsed,
+                "groups": groups,
+            }
+        )
+    return sections
+
+
+def build_group_form_context(conn: sqlite3.Connection, group_slug: str) -> dict | None:
+    """The config_group_form.html context for one settings group, or None if
+    `group_slug` names no known group. Shared by the generic group edit page
+    (config_tab_page) and ui.routers.rf_conf's SvxLink/Direwolf pages, which
+    render the same group form plus a conf-file editor panel."""
+    specs = specs_for_group(group_slug)
+    if not specs:
+        return None
     overrides = {row["key"]: row for row in list_settings(conn)}
-    cat_groups = []
-    for group in groups_for_category(category):
-        rows = []
-        for spec in SETTINGS_CATALOG:
-            if spec.group != group:
-                continue
-            row = overrides.get(spec.key)
-            # Effective value (DB override -> env var -> catalog default, or
-            # DB override -> catalog default only when spec.env_fallback is
-            # False) — never resolved for secrets, which are masked
-            # unconditionally.
-            effective = (
-                None
-                if spec.is_secret
-                else get_setting(
-                    spec.key, spec.default, conn=conn, env_fallback=spec.env_fallback
-                )
-            )
-            rows.append(
-                {"spec": spec, "row": row, "effective": effective, "advanced": is_advanced(spec)}
-            )
-        cat_groups.append({"name": group, "slug": group_slug(group), "rows": rows})
-    return cat_groups
+    fields = []
+    for spec in specs:
+        row = overrides.get(spec.key)
+        if spec.is_secret:
+            value = SECRET_SENTINEL if row is not None else ""
+        else:
+            # Effective value (DB override -> env var -> catalog default) —
+            # NOT just "the DB row or the catalog default", so a value
+            # currently coming from an env var (not yet DB-overridden) still
+            # shows correctly instead of being masked by the default.
+            value = get_setting(
+                spec.key, spec.default, conn=conn, env_fallback=spec.env_fallback
+            ) or ""
+        fields.append({"spec": spec, "value": value, "overridden": row is not None})
+    return {
+        "group": specs[0].group,
+        "slug": group_slug,
+        "fields": fields,
+        "sentinel": SECRET_SENTINEL,
+        "error": None,
+        "back_url": _group_back_url(specs[0].group, group_slug),
+    }
 
 
 def _group_back_url(group: str, slug: str) -> str | None:
@@ -103,44 +138,14 @@ def config_tab_page(request: Request, slug: str, conn: sqlite3.Connection = Depe
             "config_category.html",
             {
                 "category": category,
-                "groups": _category_groups_view(conn, category),
-                "sentinel": SECRET_SENTINEL,
+                "sections": _category_sections_view(conn, category),
             },
         )
 
-    group = slug
-    specs = specs_for_group(group)
-    if not specs:
+    ctx = build_group_form_context(conn, slug)
+    if ctx is None:
         raise HTTPException(status_code=404, detail="settings group not found")
-    overrides = {row["key"]: row for row in list_settings(conn)}
-
-    fields = []
-    for spec in specs:
-        row = overrides.get(spec.key)
-        if spec.is_secret:
-            value = SECRET_SENTINEL if row is not None else ""
-        else:
-            # Effective value (DB override -> env var -> catalog default) —
-            # NOT just "the DB row or the catalog default", so a value
-            # currently coming from an env var (not yet DB-overridden)
-            # still shows correctly instead of being masked by the default.
-            # env_fallback=spec.env_fallback so a DB-only group (beacon
-            # identity) never picks up a stray env var of the same name.
-            value = get_setting(spec.key, spec.default, conn=conn, env_fallback=spec.env_fallback) or ""
-        fields.append({"spec": spec, "value": value, "overridden": row is not None})
-
-    return templates.TemplateResponse(
-        request,
-        "config_group_form.html",
-        {
-            "group": specs[0].group,
-            "slug": group,
-            "fields": fields,
-            "sentinel": SECRET_SENTINEL,
-            "error": None,
-            "back_url": _group_back_url(specs[0].group, group),
-        },
-    )
+    return templates.TemplateResponse(request, "config_group_form.html", ctx)
 
 
 @router.post("/config/{group}")

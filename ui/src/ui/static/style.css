@@ -437,9 +437,26 @@ main {
 .subnav a:hover { color: var(--fg); background: var(--bg-raised); text-decoration: none; }
 .subnav a.active { color: var(--accent); background: var(--bg-raised); box-shadow: var(--shadow-sm); }
 
-/* legacy config category accordions (kept harmless) */
-.config-category { margin-bottom: var(--space-6); }
-.config-category summary { cursor: pointer; }
+/* config category landing pages (/config/<category>) — CATEGORY_LAYOUT's
+   labelled sections, each a compact one-row-per-group index linking to that
+   group's edit form. See ui.config_catalog.Section / ui.routers.config. */
+.section-jump {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  font-size: var(--text-sm);
+}
+.section-jump a { color: var(--fg-muted); }
+.section-jump a:hover { color: var(--accent); }
+
+.config-section { margin-bottom: var(--space-6); }
+details.config-section > summary {
+  cursor: pointer;
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
 
 /* ============================ Dashboard ============================== */
 

@@ -14,7 +14,12 @@ operator-added instance) lives in the adapter_instances table instead,
 managed at /config/adapters — see ui.routers.adapters.
 UI_HOST/UI_PORT/UI_DB_PATH are the only settings that stay env-only — they're
 needed before the app can even reach its own database, so they can never be
-DB-backed like everything else here (see ui.config)."""
+DB-backed like everything else here (see ui.config).
+
+A multi-group category's /config landing page groups its groups into labelled
+Sections per CATEGORY_LAYOUT (e.g. Beacon's 11 groups become "Station",
+"Content", "Radio hand-off", "Infrastructure") — presentation-only, layered on
+top of the category/group split above; see ui.routers.config."""
 from dataclasses import dataclass, field
 
 from adapters.beacon_defaults import (
@@ -522,7 +527,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "spoken-word WAV (piper/espeak). \"frame\" renders an AX.25 UI frame "
         "to a 1200-baud AFSK WAV via Direwolf's gen_packets, one per chunk. "
         "Either way a single WAV is produced and handed to the WAV "
-        "transmitter (see Beacon — Output). Changing this clears any "
+        "transmitter (see Beacon — SvxLink). Changing this clears any "
         "pending rows of the other type on the next tick.",
         "select",
         BEACON_TYPE_DEFAULT,
@@ -550,10 +555,13 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "2",
         advanced=True,
     ),
-    # --- Beacon — Output ---
+    # --- Beacon — SvxLink ---
+    # How the rendered WAV is handed to SvxLink, plus an optional
+    # in-dashboard editor for the real /etc/svxlink/svxlink.conf (off by
+    # default — see BEACON_RF_CONF_EDITOR_ENABLED and ui.routers.rf_conf).
     SettingSpec(
         "BEACON_WAV_TRANSMITTER",
-        "Beacon — Output",
+        "Beacon — SvxLink",
         "WAV transmitter",
         "\"logging\" (default, safe) just logs the WAV it would hand off. "
         "\"spool\" drops the WAV into the svxlink-txqueue spool for SvxLink "
@@ -565,7 +573,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
     ),
     SettingSpec(
         "BEACON_TXQUEUE_INCOMING_DIR",
-        "Beacon — Output",
+        "Beacon — SvxLink",
         "svxlink-txqueue incoming dir",
         "Folder the \"spool\" WAV transmitter drops rendered WAV files into — "
         "svxlink-txqueue's documented drop point, which stamps a FIFO "
@@ -573,6 +581,31 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "svxlink-txqueue's TXQUEUE_SPOOL/incoming.",
         "text",
         "/var/spool/svxlink-tx/incoming",
+    ),
+    SettingSpec(
+        "BEACON_SVXLINK_CONF_PATH",
+        "Beacon — SvxLink",
+        "svxlink.conf path",
+        "Absolute path to svxlink.conf, used ONLY by the in-dashboard editor "
+        "on this page — the beacon never reads this file itself. Blank "
+        "disables the editor. In the Docker deployment this file must also be "
+        "bind-mounted into the UI container and writable by its user.",
+        "text",
+        "/etc/svxlink/svxlink.conf",
+    ),
+    SettingSpec(
+        "BEACON_RF_CONF_EDITOR_ENABLED",
+        "Beacon — SvxLink",
+        "Enable svxlink.conf / direwolf.conf editor",
+        "Allow editing svxlink.conf (this page) and direwolf.conf (the "
+        "Direwolf page) from this dashboard. OFF by default: the dashboard "
+        "has no login, so with this on, anyone who can reach it can read or "
+        "overwrite any file the UI process can write. Only enable on a "
+        "trusted host. A timestamped .bak is written on every save; no "
+        "service is restarted (the page shows the systemctl command).",
+        "bool",
+        "false",
+        advanced=True,
     ),
     # --- Beacon — Templates ---
     SettingSpec(
@@ -679,9 +712,14 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "text",
         "",
     ),
+    # --- Beacon — Direwolf ---
+    # Frame rendering via Direwolf's one-shot `gen_packets` CLI (no Direwolf
+    # process runs), plus an optional editor for a real direwolf.conf if you
+    # run a full Direwolf instance on this host (off by default — shares
+    # BEACON_RF_CONF_EDITOR_ENABLED with the SvxLink page).
     SettingSpec(
         "BEACON_GEN_PACKETS_BINARY",
-        "Beacon — AX.25",
+        "Beacon — Direwolf",
         "gen_packets binary",
         "Command used to render an AX.25 frame to an AFSK WAV when "
         "BEACON_TYPE=frame. Ships with the `direwolf` package "
@@ -693,13 +731,25 @@ SETTINGS_CATALOG: list[SettingSpec] = [
     ),
     SettingSpec(
         "BEACON_FRAME_LEAD_SILENCE_MS",
-        "Beacon — AX.25",
+        "Beacon — Direwolf",
         "Frame lead silence (ms)",
         "Milliseconds of silence prepended to each rendered frame WAV so the "
         "first bits aren't clipped while SvxLink keys the transmitter.",
         "int",
         "250",
         advanced=True,
+    ),
+    SettingSpec(
+        "BEACON_DIREWOLF_CONF_PATH",
+        "Beacon — Direwolf",
+        "direwolf.conf path",
+        "Absolute path to a direwolf.conf, if you run a full Direwolf "
+        "instance on this host. radiobeacon itself only uses `gen_packets` "
+        "and needs no direwolf.conf, so this is blank by default — blank "
+        "hides the editor. Requires BEACON_RF_CONF_EDITOR_ENABLED (on the "
+        "SvxLink page) to be on.",
+        "text",
+        "",
     ),
     # --- Beacon — Voice ---
     SettingSpec(
@@ -984,8 +1034,7 @@ CATEGORIES: list[str] = list(dict.fromkeys(category_for_group(g) for g in GROUPS
 
 
 def category_slug(category: str) -> str:
-    """e.g. "Beacon" -> "beacon" — used as the /config page's jump-nav/
-    <details> section anchor id."""
+    """e.g. "Beacon" -> "beacon" — used as the /config nav tab's URL slug."""
     return _slugify(category)
 
 
@@ -1010,6 +1059,67 @@ def is_multi_group_category(category: str) -> bool:
     needs its own tab-landing page listing them; a single-group category's
     tab IS that group's edit form directly (same slug either way)."""
     return len(groups_for_category(category)) > 1
+
+
+@dataclass(frozen=True)
+class Section:
+    """One labelled cluster of groups on a multi-group category's landing
+    page (see CATEGORY_LAYOUT). Purely presentational — grouping/ordering
+    only, no effect on routing, storage, or a group's own edit form (which
+    always shows its own full field list regardless of section)."""
+
+    label: str  # "" renders with no header — the CATEGORY_LAYOUT fallback
+    groups: tuple[str, ...]  # exact group names, in display order
+    collapsed: bool = False  # rendered inside a closed <details> by default
+
+
+# Declarative section layout for the categories whose group count actually
+# benefits from it (currently Beacon: 11 groups: Identity, Transmission,
+# SvxLink, Templates, AX.25, Direwolf, Voice, Watermark, Queue, MQ, NTP; and
+# Actions: 3). A category not listed here (MQ's 2 groups, or any future
+# small one) falls back to a single unlabeled section via
+# sections_for_category — this map is an ordering/labelling aid, not a
+# structural requirement. test_config_catalog.py asserts every group of a
+# listed category is placed in exactly one of its sections, so a group added
+# to SETTINGS_CATALOG without a matching layout update fails a test instead
+# of silently landing in an "Other" catch-all (see sections_for_category).
+CATEGORY_LAYOUT: dict[str, tuple[Section, ...]] = {
+    "Beacon": (
+        Section("Station", ("Beacon — Identity", "Beacon — Transmission", "Beacon — Queue")),
+        Section("Content", ("Beacon — Templates", "Beacon — Voice", "Beacon — Watermark")),
+        Section("Radio hand-off", ("Beacon — SvxLink", "Beacon — AX.25", "Beacon — Direwolf")),
+        Section("Infrastructure", ("Beacon — MQ", "Beacon — NTP"), collapsed=True),
+    ),
+    "Actions": (
+        Section("Pipeline", ("Actions — AI", "Actions — Chunk")),
+        Section("Infrastructure", ("Actions — Content Ready",), collapsed=True),
+    ),
+}
+
+
+def sections_for_category(category: str) -> list[Section]:
+    """CATEGORY_LAYOUT's entry for `category`, or one unlabeled section
+    holding every group when the category isn't in the map. Any group
+    belonging to a *listed* category that no declared Section names is
+    appended as a trailing "Other" section — a defensive fallback (kept in
+    sync with the catalog by test_config_catalog.py) rather than a silently
+    dropped group."""
+    all_groups = groups_for_category(category)
+    declared = CATEGORY_LAYOUT.get(category)
+    if not declared:
+        return [Section("", tuple(all_groups))]
+    placed = {g for section in declared for g in section.groups}
+    leftover = tuple(g for g in all_groups if g not in placed)
+    sections = list(declared)
+    if leftover:
+        sections.append(Section("Other", leftover))
+    return sections
+
+
+def section_slug(label: str) -> str:
+    """Anchor id for a section's jump-nav link — "" (the unlabeled fallback)
+    still needs a valid id."""
+    return _slugify(label) or "general"
 
 
 # Explicit tab order for the reorganized /config page — deliberately not

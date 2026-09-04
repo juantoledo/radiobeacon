@@ -94,6 +94,12 @@ Nada más en `svxlink.conf` cambia. Fíjate en el valor `TIMEOUT` de la lógica
 así que limita la duración del clip. El servicio rechaza clips más largos que
 `TIMEOUT − 5 s`.
 
+> Si el panel de radiobeacon corre en este host, esta línea también se puede
+> agregar desde **/config → Beacon — SvxLink** (activa antes
+> `BEACON_RF_CONF_EDITOR_ENABLED` — viene apagado porque el panel no tiene
+> login). Escribe un `.bak` con fecha y no reinicia SvxLink; ejecuta
+> `systemctl restart svxlink` tú después.
+
 Reinicia SvxLink y confirma que el PTY aparece:
 
 ```sh

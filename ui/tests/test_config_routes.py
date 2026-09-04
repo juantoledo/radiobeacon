@@ -10,30 +10,66 @@ def test_config_root_redirects_to_adapters_tab(client):
     assert response.headers["location"] == "/config/adapters"
 
 
-def test_mq_category_tab_lists_every_group_regardless_of_advanced(client):
+def test_mq_category_tab_lists_every_group_in_one_unlabeled_section(client):
+    # MQ isn't in CATEGORY_LAYOUT (only 2 groups) — falls back to a single
+    # section with no header, both groups linked to their own edit form.
     response = client.get("/config/mq")
 
     assert response.status_code == 200
+    assert 'href="/config/mq-dispatcher"' in response.text
+    assert 'href="/config/mq-actions"' in response.text
     assert "MQ — Dispatcher" in response.text
     assert "MQ — Actions" in response.text
-    assert "DISPATCHER_MQ_HOST" in response.text  # advanced, still shown on its own tab
+    assert "<h2>" not in response.text  # the unlabeled fallback section
 
 
-def test_actions_category_tab_lists_basic_and_wiring_keys_together(client):
+def test_actions_category_tab_lists_its_declared_sections(client):
     response = client.get("/config/actions")
 
     assert response.status_code == 200
-    assert "ACTIONS_AI_PROVIDER" in response.text  # basic
-    assert "ACTIONS_AI_OUTPUT_TOPIC" in response.text  # wiring, no longer hidden on a separate tab
+    assert "Pipeline" in response.text
+    assert "Infrastructure" in response.text
+    assert 'href="/config/actions-ai"' in response.text
+    assert 'href="/config/actions-chunk"' in response.text
+    assert 'href="/config/actions-content-ready"' in response.text
 
 
-def test_beacon_category_tab_lists_every_beacon_group(client):
+def test_beacon_category_tab_lists_every_beacon_group_under_its_section(client):
     response = client.get("/config/beacon")
 
     assert response.status_code == 200
-    assert "Beacon — Identity" in response.text
-    assert "Beacon — MQ" in response.text  # advanced
-    assert "BEACON_MQ_HOST" in response.text
+    for label in ("Station", "Content", "Radio hand-off", "Infrastructure"):
+        assert label in response.text
+    for group in (
+        "Beacon — Identity",
+        "Beacon — SvxLink",
+        "Beacon — Direwolf",
+        "Beacon — MQ",
+        "Beacon — NTP",
+    ):
+        assert group in response.text
+
+
+def test_beacon_infrastructure_section_is_collapsed_by_default(client):
+    response = client.get("/config/beacon")
+
+    i = response.text.find('id="section-infrastructure"')
+    assert i != -1
+    # It's a <details> without an `open` attribute — collapsed on load.
+    tag_start = response.text.rfind("<details", 0, i)
+    tag_end = response.text.find(">", i)
+    assert "open" not in response.text[tag_start:tag_end]
+
+
+def test_beacon_group_shows_settings_count_and_overridden_badge(client, conn):
+    set_setting(conn, "BEACON_TICK_SECONDS", "3")
+
+    response = client.get("/config/beacon")
+
+    i = response.text.find("Beacon — Transmission")
+    row = response.text[i : i + 400]
+    assert "setting" in row
+    assert "1 overridden" in row
 
 
 def test_config_nav_links_to_every_tab(client):

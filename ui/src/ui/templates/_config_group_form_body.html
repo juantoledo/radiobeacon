@@ -1,0 +1,63 @@
+{# The editable form for one settings group — the catalog fields, the Save
+   button, and the per-field "reset to env/default" sub-forms. Shared by
+   config_group_form.html (the generic group edit page) and
+   config_rf_conf.html (the SvxLink/Direwolf pages, which add a conf-file
+   editor below this). Expects: group, slug, fields, sentinel, error. #}
+{% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
+
+<form method="post" action="/config/{{ slug }}" id="config-form">
+  {{ csrf_field() }}
+  <table class="form-table">
+    {% for f in fields %}
+    <tr class="{{ 'wiring-row' if f.spec.wiring else '' }}">
+      <th>
+        <label for="{{ f.spec.key }}">{{ f.spec.label }}{% if f.spec.required %} *{% endif %}</label>
+        <div class="mono muted" style="font-weight:400; font-size:0.78rem;">{{ f.spec.key }}</div>
+        {% if f.spec.wiring %}<span class="badge badge-warn">wiring</span>{% endif %}
+      </th>
+      <td>
+        {% if f.spec.type == "secret" %}
+          <input id="{{ f.spec.key }}" name="{{ f.spec.key }}" type="text"
+                 autocomplete="off" value="{{ f.value }}"
+                 placeholder="{{ 'leave unchanged to keep current value' if f.overridden else '(not set)' }}">
+        {% elif f.spec.type == "bool" %}
+          <select id="{{ f.spec.key }}" name="{{ f.spec.key }}" data-original="{{ f.value }}">
+            <option value="true" {% if f.value|lower == "true" %}selected{% endif %}>true</option>
+            <option value="false" {% if f.value|lower != "true" %}selected{% endif %}>false</option>
+          </select>
+        {% elif f.spec.type == "select" %}
+          <select id="{{ f.spec.key }}" name="{{ f.spec.key }}" data-original="{{ f.value }}">
+            <option value="" {% if not f.value %}selected{% endif %}></option>
+            {% for choice in f.spec.choices %}
+            <option value="{{ choice }}" {% if f.value == choice %}selected{% endif %}>{{ choice }}</option>
+            {% endfor %}
+          </select>
+        {% elif f.spec.key == "ACTIONS_AI_PROMPT" %}
+          <textarea id="{{ f.spec.key }}" name="{{ f.spec.key }}">{{ f.value }}</textarea>
+        {% else %}
+          <input id="{{ f.spec.key }}" name="{{ f.spec.key }}" type="text"
+                 value="{{ f.value }}" data-original="{{ f.value }}"
+                 {% if f.spec.wiring %}data-wiring{% endif %}
+                 {% if f.spec.required %}required{% endif %}>
+        {% endif %}
+        <div class="meta-line">{{ f.spec.description }}</div>
+        {% if f.spec.key == "BEACON_VOICE_ATTENTION_TONE" %}
+        <button type="button" id="tone-preview-btn" class="secondary">&#9654; Preview</button>
+        <span id="tone-preview-msg" class="meta-line" role="status"></span>
+        <audio id="tone-preview-audio" preload="none"></audio>
+        {% endif %}
+        {% if f.overridden %}
+        <button type="submit" form="reset-{{ f.spec.key }}" class="secondary">Reset to env/default</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  <button type="submit">Save</button>
+</form>
+
+{% for f in fields %}
+{% if f.overridden %}
+<form id="reset-{{ f.spec.key }}" method="post" action="/config/{{ slug }}/{{ f.spec.key }}/reset">{{ csrf_field() }}</form>
+{% endif %}
+{% endfor %}

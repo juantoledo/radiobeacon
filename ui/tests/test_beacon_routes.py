@@ -295,10 +295,14 @@ def test_dashboard_quick_toggle_rejects_key_not_on_allowlist(client, conn):
 
 
 def test_beacon_group_settings_appear_in_config(client):
+    # The category landing page lists groups (linking to their edit form),
+    # not individual keys — see BEACON_TYPE on the group's own form instead.
     response = client.get("/config/beacon")
-
     assert "Beacon — Transmission" in response.text
-    assert "BEACON_TYPE" in response.text
+    assert 'href="/config/beacon-transmission"' in response.text
+
+    group_page = client.get("/config/beacon-transmission")
+    assert "BEACON_TYPE" in group_page.text
 
 
 def test_beacon_transmission_group_editable_via_config(client, conn):

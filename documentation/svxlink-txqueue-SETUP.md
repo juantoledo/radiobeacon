@@ -88,6 +88,12 @@ Nothing else in `svxlink.conf` changes. Note the logic's `TIMEOUT` value (defaul
 `300` seconds) — it caps how long a single transmission may last, so it caps clip
 length. The service refuses clips longer than `TIMEOUT − 5 s`.
 
+> If the radiobeacon dashboard runs on this host, this one-line edit can also be
+> made from **/config → Beacon — SvxLink** (set `BEACON_RF_CONF_EDITOR_ENABLED`
+> on first — it is off by default because the dashboard has no login). It writes
+> a timestamped `.bak` and does not restart SvxLink; run `systemctl restart
+> svxlink` yourself afterward.
+
 Restart SvxLink and confirm the PTY appears:
 
 ```sh

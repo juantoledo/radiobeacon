@@ -232,6 +232,16 @@ to `""` rather than raising.
 this package** — see
 [../documentation/svxlink-txqueue-SETUP.md](../documentation/svxlink-txqueue-SETUP.md).
 
+The dashboard groups the beacon-side knobs under `/config` → **Beacon — SvxLink**
+(`BEACON_WAV_TRANSMITTER`, `BEACON_TXQUEUE_INCOMING_DIR`) and **Beacon — Direwolf**
+(`BEACON_GEN_PACKETS_BINARY`, `BEACON_FRAME_LEAD_SILENCE_MS`). Those two pages
+also carry an **optional raw editor for the real `svxlink.conf` / `direwolf.conf`**
+on the host — OFF by default, gated on `BEACON_RF_CONF_EDITOR_ENABLED`. The
+dashboard has no login, so with it on anyone who can reach the UI can overwrite
+any file the UI process can write; only enable it on a trusted host. A saved
+edit writes a timestamped `.bak` and never restarts anything — the page shows the
+`systemctl restart …` command to run.
+
 ## Not addressed
 
 Continuous, content-independent periodic station identification (CW ID) —
@@ -263,6 +273,9 @@ Env vars in `.env` at the repo root — also all editable live via `/config` →
 | `BEACON_INTER_TX_DELAY_SECONDS` | `2` |
 | `BEACON_WAV_TRANSMITTER` | `logging` (`logging` \| `spool`) |
 | `BEACON_TXQUEUE_INCOMING_DIR` | `/var/spool/svxlink-tx/incoming` |
+| `BEACON_SVXLINK_CONF_PATH` | `/etc/svxlink/svxlink.conf` (editor only; blank disables) |
+| `BEACON_DIREWOLF_CONF_PATH` | `""` (editor only; blank hides) |
+| `BEACON_RF_CONF_EDITOR_ENABLED` | `false` (dashboard editor for the two files above) |
 | `BEACON_VOICE_TEMPLATE` | `{text}` |
 | `BEACON_VOICE_PREFIX` | `Información de {source_name}, {date}. ` |
 | `BEACON_VOICE_SUFFIX` | `. Para más información consulte fuentes oficiales de {source_name}. Fin del comunicado. ` |
