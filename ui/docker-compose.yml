@@ -11,14 +11,11 @@ services:
       # own (see ui/README.md) — only do this on a trusted network.
       - "8080:8080"
     environment:
-      # Bind all interfaces inside the container; the ports: mapping
-      # above is what actually controls host-side access — same split
-      # mq/ uses (mosquitto binds all interfaces, the host-side mapping
-      # decides how far that reaches).
-      - UI_HOST=0.0.0.0
-      # Host-header allow-list (see ui/security.py). Add the name/IP you
-      # actually browse to — a Host not listed here gets a 400.
-      - UI_ALLOWED_HOSTS=localhost,127.0.0.1
+      # UI_HOST defaults to 0.0.0.0 and UI_ALLOWED_HOSTS to "*" (see
+      # ui/src/ui/config.py) — the ports: mapping above is what actually
+      # controls host-side access. Set UI_ALLOWED_HOSTS to the exact
+      # name/IP you browse to if you want the Host guard back (a Host not
+      # listed then gets a 400).
       - UI_DB_PATH=/app/storage/radiobeacon.db
     env_file:
       - ../.env

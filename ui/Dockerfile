@@ -27,7 +27,7 @@ EXPOSE 8080
 
 # storage/radiobeacon.db is not baked into the image — bind-mount it at
 # runtime (see ui/docker-compose.yml or the README's `docker run` form).
-# UI_HOST must be overridden to 0.0.0.0 at run time (127.0.0.1 inside a
-# container is unreachable through a port mapping), and UI_ALLOWED_HOSTS
-# must name whatever Host you browse to.
+# UI_HOST defaults to 0.0.0.0 and UI_ALLOWED_HOSTS to "*", so the app is
+# reachable through a port mapping with no host env vars; the `ports:`/`-p`
+# binding is what controls host-side reach.
 CMD ["python3", "-m", "ui"]

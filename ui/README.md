@@ -144,24 +144,30 @@ frame one plays as AFSK tones.
 
 ## No authentication
 
-There is no login system. Three request guards stand in for it (see
+There is no login system. `UI_HOST` defaults to `0.0.0.0` (all
+interfaces) and `UI_ALLOWED_HOSTS` defaults to `*` (guard off), so the
+dashboard is reachable from the LAN as soon as it starts — **only run it
+on a trusted network.** Anyone who can reach the port can enable
+transmission, send an ad-hoc message, and (via `/dev` and CUSTOM
+adapters) run arbitrary SQL and `exec` code.
+
+Two request guards remain, and they can be re-armed (see
 `ui/src/ui/security.py`):
 
-- **Loopback bind.** `UI_HOST` defaults to `127.0.0.1` — the dashboard is
-  off the network entirely until you set it otherwise.
-- **Host allow-list** (`UI_ALLOWED_HOSTS`, a DNS-rebinding guard) — a
+- **Host allow-list** (`UI_ALLOWED_HOSTS`, a DNS-rebinding guard) —
+  narrow it from `*` to the exact names/IPs you serve under and a
   request whose `Host` header isn't listed gets a 400.
-- **Cross-origin + CSRF.** A state-changing POST is refused unless its
-  `Origin` is allow-listed *and* it echoes the `csrf_token` cookie back
-  (hidden form field or `X-CSRF-Token` header).
+- **Cross-origin + CSRF.** With the allow-list narrowed, a state-changing
+  POST is also refused unless its `Origin` is allow-listed *and* it
+  echoes the `csrf_token` cookie back (hidden form field or
+  `X-CSRF-Token` header).
 
-To reach it from the LAN: set `UI_HOST=0.0.0.0`, add every name/IP it's
-served under to `UI_ALLOWED_HOSTS`, and put real auth (a reverse proxy
-with a password) in front of it — the guards above stop a browser on
-another site from driving it, not someone who can reach the port
-directly. This goes double for `/dev` (raw item add/edit/delete and the
-SQL runner) and CUSTOM adapters (arbitrary `exec`), both of which you can
-disable outright with `UI_DEV_TOOLS_ENABLED=false`.
+To lock it down: set `UI_HOST=127.0.0.1` (off the network entirely) or
+narrow `UI_ALLOWED_HOSTS`, and put real auth (a reverse proxy with a
+password) in front of it — the guards stop a browser on another site
+from driving it, not someone who can reach the port directly. This goes
+double for `/dev` and CUSTOM adapters, both of which you can disable
+outright with `UI_DEV_TOOLS_ENABLED=false`.
 
 ## Usage
 
@@ -171,8 +177,8 @@ disable outright with `UI_DEV_TOOLS_ENABLED=false`.
 
 Same pattern as every other package's `start.sh`: creates a `.venv`,
 installs `requirements.txt`, loads `../.env`, then `exec`s into Uvicorn
-(`PYTHONPATH=src python3 -m ui`). Visit `http://127.0.0.1:8080` (or
-whatever LAN address it's reachable at — see "No authentication" above).
+(`PYTHONPATH=src python3 -m ui`). Visit `http://<host>:8080` — it binds
+all interfaces by default (see "No authentication" above).
 `Ctrl+C`/`SIGTERM` stops it cleanly.
 
 ## Configuration
@@ -181,8 +187,8 @@ Env vars, in `.env` at the repo root (see `.env.example`).
 
 | var | default |
 |---|---|
-| `UI_HOST` | `127.0.0.1` |
-| `UI_ALLOWED_HOSTS` | `127.0.0.1,localhost,testserver,[::1]` |
+| `UI_HOST` | `0.0.0.0` *(all interfaces)* |
+| `UI_ALLOWED_HOSTS` | `*` *(Host/cross-origin guard off)* |
 | `UI_PORT` | `8080` |
 | `UI_DB_PATH` | *(unset — uses `adapters.storage.DEFAULT_DB_PATH`, `storage/radiobeacon.db`)* |
 | `UI_PAGE_SIZE` | `50` |
@@ -211,24 +217,25 @@ or, without Compose:
 docker build -f ui/Dockerfile -t radiobeacon-ui .
 docker run --rm -p 8080:8080 \
   -v "$(pwd)/storage:/app/storage" \
-  -e UI_HOST=0.0.0.0 -e UI_DB_PATH=/app/storage/radiobeacon.db \
-  -e UI_ALLOWED_HOSTS=localhost,127.0.0.1 \
+  -e UI_DB_PATH=/app/storage/radiobeacon.db \
   radiobeacon-ui
 ```
 
-Use `-p 127.0.0.1:8080:8080` instead if you want it reachable only from
-`localhost`, not the LAN. `UI_ALLOWED_HOSTS` must contain whatever host
-name you actually open the dashboard under (e.g. add the mini-PC's LAN IP
-or `.local` name) — a `Host` header that isn't listed gets a 400.
+`UI_HOST` already defaults to `0.0.0.0` and `UI_ALLOWED_HOSTS` to `*`, so
+no host env vars are needed. Use `-p 127.0.0.1:8080:8080` if you want it
+reachable only from `localhost`, not the LAN. To re-arm the Host guard,
+set `UI_ALLOWED_HOSTS` to whatever name you open the dashboard under
+(e.g. the mini-PC's LAN IP or `.local` name) — then a `Host` header that
+isn't listed gets a 400.
 
 The `storage/` directory is bind-mounted read-write (not a named volume,
 and not `:ro`) — the UI writes to `radiobeacon.db` via its override/rearm/
 policy actions, and this is the same file every other process (Dockerized
 or not) reads and writes, so it has to be the real one on disk, not a
-container-private copy. `UI_HOST=0.0.0.0` is required for the app to be
-reachable through the container's port mapping — `127.0.0.1` inside the
-container is unreachable from outside it; the `ports:`/`-p` binding is
-what actually controls host-side access (loopback-only vs. all
+container-private copy. The default `UI_HOST=0.0.0.0` is what makes the
+app reachable through the container's port mapping — `127.0.0.1` inside
+the container is unreachable from outside it; the `ports:`/`-p` binding
+is what actually controls host-side access (loopback-only vs. all
 interfaces).
 
 ## Tests

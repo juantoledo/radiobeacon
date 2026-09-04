@@ -1,6 +1,13 @@
+import os
 import sqlite3
 import tempfile
 from pathlib import Path
+
+# The shipped default is UI_ALLOWED_HOSTS="*" (the host/cross-origin guard
+# off, matching the all-interfaces UI_HOST default). Pin a restrictive
+# allow-list before ui.config is imported so test_security's DNS-rebinding /
+# foreign-origin cases still exercise the guard.
+os.environ.setdefault("UI_ALLOWED_HOSTS", "127.0.0.1,localhost,testserver,[::1]")
 
 import adapters.storage as storage_module
 import pytest
