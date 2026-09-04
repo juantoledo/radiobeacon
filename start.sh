@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # One command for a fresh clone: creates .env from .env.example if
-# missing, sets up every Python package's .venv, brings up the local MQTT
-# broker, then starts data-adapters, dispatcher, actions, ui, and beacon
-# together — tearing all of it down cleanly on Ctrl+C/SIGTERM. Every step
-# here is idempotent, so re-running is safe. To run just one piece
-# instead, use that package's own start.sh directly. beacon starts
+# missing, sets up one shared .venv for every Python package (see
+# lib.sh's VENV_DIR), brings up the local MQTT broker, then starts
+# data-adapters, dispatcher, actions, ui, and beacon together — tearing
+# all of it down cleanly on Ctrl+C/SIGTERM. Every step here is idempotent,
+# so re-running is safe. To run just one piece instead, use that
+# package's own start.sh directly — it installs into the same shared
+# venv. beacon starts
 # disabled (BEACON_ENABLED=false) and — even once enabled — only its
 # hardware-independent parts (queuing, scheduling, the default logging-only
 # transmitters) do anything without a real SvxLink/Direwolf/radio present;
@@ -22,10 +24,9 @@ else
   echo "warning: .env.example not found, skipping .env creation" >&2
 fi
 
-for pkg in data-adapters dispatcher actions ui beacon; do
-  echo "== $pkg: setting up .venv =="
-  ( cd "$pkg" && setup_venv )
-done
+echo "== setting up shared .venv for data-adapters, dispatcher, actions, ui, beacon =="
+setup_venv_all data-adapters/requirements.txt dispatcher/requirements.txt \
+  actions/requirements.txt ui/requirements.txt beacon/requirements.txt
 
 if command -v docker >/dev/null 2>&1; then
   echo "== mq: starting broker =="

@@ -68,37 +68,145 @@ _find_python3() {
   return 1
 }
 
-# Creates ./.venv (relative to the caller's cwd) if missing and installs
-# ./requirements.txt into it. Fails with an actionable message instead of
-# python3 -m venv's own cryptic "ensurepip is not available" error when
-# the venv module isn't installed (e.g. Debian/Ubuntu's python3 package
-# splits it out into python3-venv) — the actual failure mode fresh clones
-# hit most often.
-setup_venv() {
+# Shared virtualenv every package/script installs into and runs from — one
+# venv instead of one per package. data-adapters/dispatcher/actions/ui/
+# beacon editable-install each other (-e ../data-adapters, ui also -e
+# ../dispatcher) and share no conflicting pins, so building and filling 5
+# separate venvs was pure redundant work — the dominant cost of a fresh
+# clone's first start. Resolved from lib.sh's own location (like RUN_DIR
+# below), not the caller's cwd, so it's the same directory whether sourced
+# as ../lib.sh (a package's own start.sh, cwd = package dir) or ./lib.sh
+# (repo root's own start.sh / stop.sh, cwd = repo root).
+VENV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/.venv"
+
+# Serializes access to $VENV_DIR across processes: root start.sh backgrounds
+# all five packages' start.sh scripts, and each of those still calls
+# setup_venv on its way in (so it keeps working when run standalone) — with
+# one shared venv, that's up to five `pip install` invocations racing
+# against the *same* site-packages directory at once, which pip has no
+# built-in protection against (seen in testing as spurious "No existe el
+# archivo o el directorio" errors on the .pth / dist-info files pip itself
+# was mid-write on). `mkdir` is used as the lock, not flock, since flock
+# isn't available on macOS (no util-linux there) and this codebase
+# otherwise stays portable to it (see run_with_timeout's gtimeout handling
+# below) — mkdir's EEXIST-on-collision is atomic on any POSIX filesystem.
+# A generous wait: a genuinely fresh install (no cached wheels) can take
+# minutes, and this is what a concurrent caller may be waiting out.
+_venv_lock_acquire() {
+  local lock_dir="$VENV_DIR.lock" waited=0
+  until mkdir "$lock_dir" 2>/dev/null; do
+    sleep 1
+    waited=$((waited + 1))
+    if [ "$waited" -ge 600 ]; then
+      echo "error: timed out waiting for another venv setup to finish -- if none is actually running, remove the stale lock with: rmdir $lock_dir" >&2
+      exit 1
+    fi
+  done
+  # EXIT (not RETURN): _ensure_venv_dir below exits directly on failure
+  # rather than returning, which a RETURN trap would miss and leave the
+  # lock stuck. Safe to leave set past a normal return too -- nothing
+  # between here and the next exec (which discards it) reruns this lock.
+  trap 'rmdir "'"$lock_dir"'" 2>/dev/null' EXIT
+}
+
+_venv_lock_release() {
+  rmdir "$VENV_DIR.lock" 2>/dev/null
+  trap - EXIT
+}
+
+# Creates $VENV_DIR if missing, or recreates it if it's stale (built with a
+# Python older than $_MIN_PY_MINOR). Fails with an actionable message
+# instead of python3 -m venv's own cryptic "ensurepip is not available"
+# error when the venv module isn't installed (e.g. Debian/Ubuntu's python3
+# package splits it out into python3-venv) — the actual failure mode fresh
+# clones hit most often. Shared by setup_venv and setup_venv_all below;
+# nothing else calls it directly.
+_ensure_venv_dir() {
   local python_bin
   if ! python_bin="$(_find_python3)"; then
     echo "error: no Python 3.${_MIN_PY_MINOR}+ found on PATH — install one (e.g. 'brew install python@3.12' on macOS) or put it ahead of an older python3 on PATH." >&2
     exit 1
   fi
 
-  if [ -d .venv ]; then
+  if [ -d "$VENV_DIR" ]; then
     local venv_minor
-    venv_minor=$(.venv/bin/python3 -c 'import sys; print(sys.version_info[1])' 2>/dev/null) || venv_minor=0
+    venv_minor=$("$VENV_DIR/bin/python3" -c 'import sys; print(sys.version_info[1])' 2>/dev/null) || venv_minor=0
     if [ "$venv_minor" -lt "$_MIN_PY_MINOR" ]; then
       echo "existing .venv was built with Python 3.${venv_minor} (< 3.${_MIN_PY_MINOR} required) — recreating with $("$python_bin" --version 2>&1)" >&2
-      rm -rf .venv
+      rm -rf "$VENV_DIR"
     fi
   fi
 
-  if [ ! -d .venv ]; then
+  if [ ! -d "$VENV_DIR" ]; then
     local venv_err
-    if ! venv_err=$("$python_bin" -m venv .venv 2>&1); then
+    if ! venv_err=$("$python_bin" -m venv "$VENV_DIR" 2>&1); then
       echo "$venv_err" >&2
       echo "error: could not create .venv — on Debian/Ubuntu, install the venv module: sudo apt install python3-venv" >&2
       exit 1
     fi
   fi
-  .venv/bin/pip install -q -r requirements.txt
+}
+
+# Ensures the shared venv exists, then installs ./requirements.txt
+# (relative to the caller's cwd) into it. Called by each package's own
+# start.sh, and by sources.sh/policies.sh/override_item.sh, so every one of
+# them keeps working standalone — against the one shared venv — per this
+# repo's "run just one piece" contract (see root start.sh's own comment).
+setup_venv() {
+  _venv_lock_acquire
+  _ensure_venv_dir
+  "$VENV_DIR/bin/pip" install -q -r requirements.txt
+  _venv_lock_release
+}
+
+# Ensures the shared venv exists, then installs every requirements file
+# named in "$@" (paths relative to the caller's cwd, e.g.
+# "data-adapters/requirements.txt") in a single pip invocation instead of
+# one per file. Used only by the repo root's own start.sh, to bring up the
+# whole stack with one pip pass instead of setup_venv's five.
+#
+# Can't just pip install -r one -r another: each file's own "-e ../foo"
+# lines are written relative to *that package's own directory* (matching
+# what setup_venv above uses, cwd == the caller's own dir), but pip
+# resolves a requirements file's "-e <relative path>" lines against the
+# cwd pip was invoked from — not that file's own directory, confirmed
+# empirically (this holds even when the file is reached via a nested -r,
+# not just a top-level one) — so handing pip several such files at once
+# from the repo root breaks every "-e ../data-adapters"-style line. Worked
+# around by rewriting each file's own "-e <path>" line to an absolute path
+# (resolved against *that file's* directory, before pip ever sees it) into
+# one merged temp file; every other line (plain package specs, comments,
+# blanks) passes through untouched — so no package's requirements.txt
+# needs to change to support this.
+setup_venv_all() {
+  _venv_lock_acquire
+  _ensure_venv_dir
+  local merged
+  merged="$(mktemp)"
+  trap 'rm -f "$merged"' RETURN
+
+  local f dir line target
+  for f in "$@"; do
+    dir="$(cd "$(dirname "$f")" && pwd)"
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        -e\ *)
+          target="${line#-e }"
+          case "$target" in
+            /*) ;; # already absolute
+            *) target="$(cd "$dir/$target" && pwd)" ;;
+          esac
+          echo "-e $target"
+          ;;
+        *)
+          echo "$line"
+          ;;
+      esac
+    done < "$f"
+  done > "$merged"
+
+  "$VENV_DIR/bin/pip" install -q -r "$merged"
+  _venv_lock_release
 }
 
 # Downloads the default Piper neural-TTS voice model (BEACON_TTS_ENGINE=

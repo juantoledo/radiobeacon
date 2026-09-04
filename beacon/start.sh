@@ -18,9 +18,10 @@ fi
 export PYTHONPATH=src
 # voice.py shells out to the bare "piper" command (BEACON_TTS_PIPER_BINARY)
 # rather than an absolute path -- pip installs its console-script entry
-# point into .venv/bin, but running .venv/bin/python3 directly (below)
-# never adds that directory to PATH the way `source .venv/bin/activate`
-# would, so it'd otherwise be unresolvable even though it's right there.
-export PATH="$PWD/.venv/bin:$PATH"
+# point into the shared venv's bin dir, but running its python3 directly
+# (below) never adds that directory to PATH the way `source
+# .venv/bin/activate` would, so it'd otherwise be unresolvable even though
+# it's right there.
+export PATH="$VENV_DIR/bin:$PATH"
 guard_single_instance beacon beacon
-exec .venv/bin/python3 -m beacon
+exec "$VENV_DIR/bin/python3" -m beacon

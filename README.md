@@ -152,7 +152,7 @@ to display it — it never adjusts the clock itself.
 ## Running the automation
 
 ```bash
-./start.sh   # fresh clone: creates .env, sets up each component's venv,
+./start.sh   # fresh clone: creates .env, sets up one shared venv,
              # and starts data collection + delivery + actions + the
              # dashboard + the beacon together (Ctrl+C stops all).
              # No secrets required; every default is safe to run as-is,

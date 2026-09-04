@@ -163,7 +163,7 @@ solo para mostrarla; nunca ajusta el reloj por sí misma.
 ## Ejecutar la automatización
 
 ```bash
-./start.sh   # clon nuevo: crea .env, prepara el venv de cada componente
+./start.sh   # clon nuevo: crea .env, prepara un venv compartido
              # y arranca junto la recolección de datos + la entrega + las
              # acciones + el panel + la baliza (Ctrl+C detiene todo).
              # No requiere secretos; todos los valores por defecto son

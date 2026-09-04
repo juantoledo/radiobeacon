@@ -6,4 +6,4 @@ source ../lib.sh
 load_env_file ../.env
 setup_venv
 
-.venv/bin/python3 sources.py "$@"
+"$VENV_DIR/bin/python3" sources.py "$@"

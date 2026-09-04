@@ -11,4 +11,4 @@ setup_venv
 # for the same pattern.
 export PYTHONPATH=src
 guard_single_instance ui ui
-exec .venv/bin/python3 -m ui
+exec "$VENV_DIR/bin/python3" -m ui
