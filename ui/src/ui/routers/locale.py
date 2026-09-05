@@ -2,12 +2,13 @@
 visitor's language choice is ever persisted (see ui.i18n.LocaleMiddleware,
 which otherwise re-resolves the locale from Accept-Language on every
 request without writing a cookie)."""
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException
 from starlette.responses import RedirectResponse
 
+from ..current_user import get_current_user
 from ..i18n import LOCALE_COOKIE_NAME, SUPPORTED_LOCALES
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(get_current_user)])
 
 
 @router.post("/locale")

@@ -1462,3 +1462,69 @@ pre.contents {
   flex-wrap: wrap;
 }
 .pagination a { color: var(--accent); font-weight: 600; }
+
+/* --- Login page (login.html) — standalone, doesn't extend base.html, so
+   it needs its own body background/centering rather than the sidebar
+   layout's. --- */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  padding: var(--space-4);
+}
+.auth-card {
+  width: 100%;
+  max-width: 22rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-6);
+}
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  margin-bottom: var(--space-5);
+}
+.auth-brand .dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+}
+.auth-field { margin-bottom: var(--space-4); }
+.auth-field label {
+  display: block;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  margin-bottom: var(--space-2);
+}
+.auth-field input[type="text"], .auth-field input[type="password"] {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: var(--text-base);
+}
+.auth-field input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.auth-submit { width: 100%; justify-content: center; margin-top: var(--space-2); }
+
+.logout-form {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.logged-in-as { font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logout-btn { flex-shrink: 0; padding: var(--space-1) var(--space-2); font-size: var(--text-xs); }

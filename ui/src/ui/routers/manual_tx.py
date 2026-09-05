@@ -19,9 +19,10 @@ from starlette.responses import FileResponse, RedirectResponse
 
 from .. import beacon_audio
 from ..beacon import is_beacon_configured
+from ..current_user import require_role
 from ..db import get_db
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 _KINDS = ("voice", "frame")
 

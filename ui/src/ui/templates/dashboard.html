@@ -20,7 +20,13 @@
 
 {# "Transmit now" modal — also outside #dashboard-content so an in-progress
    compose survives a background refresh. Opened by the [data-open-dialog]
-   button in Quick controls (manual-tx.js). #}
+   button in Quick controls (manual-tx.js). Admin-only: its form posts to
+   /dashboard/transmit, which lives on manual_tx.router (admin-gated) —
+   see _dashboard_live.html, which is also where the only button that
+   opens this dialog is (itself admin-gated), so a 'user'-role visitor
+   never has a way to trigger it anyway; still gated here as well so it
+   isn't left inert-but-present in the page for them. #}
+{% if is_admin() %}
 <dialog id="manual-tx-dialog" class="manual-tx-dialog">
   <form method="post" action="/dashboard/transmit"
         data-voice-max="{{ manual_voice_max_chars }}" data-frame-max="{{ manual_frame_max_bytes }}"
@@ -62,6 +68,7 @@
     </div>
   </form>
 </dialog>
+{% endif %}
 {% endblock %}
 {% block scripts %}
 <script src="{{ static_url('beacon-audio.js') }}" defer></script>

@@ -9,12 +9,15 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%234f46e5'/><circle cx='12' cy='7' r='2.2' fill='white'/><path d='M8 12a5 5 0 0 1 8 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round'/><path d='M5 9a9 9 0 0 1 14 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.55'/></svg>">
 </head>
 <body>
-{% set nav_items = [
-  ('/', 'dashboard', t('nav.dashboard'), request.url.path == '/'),
+{% set nav_items = [('/', 'dashboard', t('nav.dashboard'), request.url.path == '/')] %}
+{% if is_admin() %}
+{% set nav_items = nav_items + [
   ('/items', 'items', t('nav.items'), request.url.path.startswith('/items')),
   ('/config', 'config', t('nav.config'), request.url.path.startswith('/config') or request.url.path.startswith('/adapters') or request.url.path.startswith('/policies')),
   ('/audit', 'audit', t('nav.audit_log'), request.url.path.startswith('/audit')),
+  ('/users', 'users', t('nav.users'), request.url.path.startswith('/users')),
 ] %}
+{% endif %}
   <a class="skip-link" href="#main">{{ t('common.skip_to_content') }}</a>
 
   <div class="mobile-bar">
@@ -38,10 +41,12 @@
       {% endif %}
     </nav>
     <div class="sidebar-foot">
-      {% if is_beacon_configured() %}
-      <span class="live-badge"><span class="pulse-dot" aria-hidden="true"></span>{{ t('common.beacon_identity_set') }}</span>
-      {% else %}
-      <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
+      {% if is_admin() %}
+        {% if is_beacon_configured() %}
+        <span class="live-badge"><span class="pulse-dot" aria-hidden="true"></span>{{ t('common.beacon_identity_set') }}</span>
+        {% else %}
+        <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
+        {% endif %}
       {% endif %}
       <form class="locale-switcher" method="post" action="/locale" aria-label="{{ t('common.language') }}">
         {{ csrf_field() }}
@@ -49,6 +54,13 @@
         <button type="submit" name="locale" value="en" class="{{ 'active' if locale() == 'en' else '' }}" {% if locale() == 'en' %}aria-current="true"{% endif %}>EN</button>
         <button type="submit" name="locale" value="es" class="{{ 'active' if locale() == 'es' else '' }}" {% if locale() == 'es' %}aria-current="true"{% endif %}>ES</button>
       </form>
+      {% if current_user() %}
+      <form class="logout-form" method="post" action="/logout">
+        {{ csrf_field() }}
+        <span class="muted logged-in-as">{{ t('auth.logged_in_as', username=current_user().username) }}</span>
+        <button type="submit" class="btn secondary logout-btn">{{ icon('power', 14) }} {{ t('auth.logout_button') }}</button>
+      </form>
+      {% endif %}
     </div>
   </aside>
 
@@ -60,7 +72,7 @@
       {% if request.query_params.get('error') %}
         <p class="banner-warn">⚠ {{ request.query_params.get('error') }}</p>
       {% endif %}
-      {% if not is_beacon_configured() and not request.url.path.startswith('/config/beacon-identity') %}
+      {% if is_admin() and not is_beacon_configured() and not request.url.path.startswith('/config/beacon-identity') %}
         <p class="banner-warn">⚠ {{ t('common.beacon_not_configured_warning', link='<a href="/config/beacon-identity">' ~ t('common.set_it_up') ~ '</a>') | safe }}</p>
       {% endif %}
       {% block content %}{% endblock %}

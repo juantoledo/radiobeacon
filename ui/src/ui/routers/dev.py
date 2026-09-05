@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import RedirectResponse
 
 from .. import queries
+from ..current_user import require_role
 from ..db import get_db, open_readonly_connection
 from ..dev_ops import create_item, delete_item, update_item
 from ..sql_guard import InvalidQuery, ensure_select_only
@@ -29,7 +30,9 @@ def _require_dev_tools_enabled(conn: sqlite3.Connection = Depends(get_db)) -> No
         raise HTTPException(status_code=404, detail="not found")
 
 
-router = APIRouter(dependencies=[Depends(_require_dev_tools_enabled)])
+router = APIRouter(
+    dependencies=[Depends(_require_dev_tools_enabled), Depends(require_role("admin"))]
+)
 
 
 def _qs_without_page(request: Request) -> str:

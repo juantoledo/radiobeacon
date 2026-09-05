@@ -1,6 +1,8 @@
-"""Request-gating for the dashboard — it has no auth of its own, so this is
-the layer that keeps a page open in the operator's browser (or anything else
-on the network) from driving it.
+"""Request-gating that sits underneath the login system (ui.current_user) as
+defense in depth against a page open in the operator's browser (or anything
+else on the network) driving the dashboard on a logged-in user's behalf —
+none of this is a substitute for login, just what still holds if a session
+cookie is ever stolen or a browser tab is left open on an untrusted network.
 
 - `TrustedHostMiddleware` (wired in app.py) rejects a Host header that isn't
   in UI_ALLOWED_HOSTS — a DNS-rebinding guard.

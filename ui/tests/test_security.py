@@ -1,6 +1,7 @@
-"""Host / cross-origin / CSRF request gating — the dashboard has no auth, so
-this layer is what stops another page in the operator's browser (or anything
-else on the network) from driving it. See ui.security / ui.app."""
+"""Host / cross-origin / CSRF request gating — defense in depth underneath
+the login system (see ui.current_user), stopping another page in the
+operator's browser (or anything else on the network) from driving the
+dashboard on a logged-in user's behalf. See ui.security / ui.app."""
 import sqlite3
 
 import pytest
@@ -9,21 +10,32 @@ from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-def csrf_client(conn: sqlite3.Connection):
+def csrf_client(conn: sqlite3.Connection, admin_user):
     """Like the shared `client` fixture but WITHOUT the verify_csrf override,
-    so the real double-submit-cookie check runs."""
+    so the real double-submit-cookie check runs. Still logs in as
+    admin_user (via the get_current_user override, same as `client`) so
+    these assertions land on verify_csrf's 403 specifically, not on the
+    login/role gate that would otherwise 303-redirect an unauthenticated
+    request to /login before verify_csrf ever runs."""
     from ui.app import app
+    from ui.current_user import get_current_user
     from ui.db import get_db
 
-    def _override(request: Request):
+    def _db_override(request: Request):
         request.state.db_conn = conn
         yield conn
 
-    app.dependency_overrides[get_db] = _override
+    def _user_override(request: Request):
+        request.state.user = admin_user
+        return admin_user
+
+    app.dependency_overrides[get_db] = _db_override
+    app.dependency_overrides[get_current_user] = _user_override
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 def _insert_item(conn):

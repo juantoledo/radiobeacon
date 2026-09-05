@@ -3,14 +3,16 @@
 Each renders the standard catalog group form (via
 ui.routers.config.build_group_form_context) PLUS an optional raw editor for
 the real svxlink.conf / direwolf.conf file on the host. The editor is OFF by
-default and gated on BEACON_RF_CONF_EDITOR_ENABLED: the dashboard has no auth,
-so an always-on "write any path the UI process can reach" surface would be the
-same risk class as CUSTOM adapters or the /dev tools (both flag-gated too).
+default and gated on BEACON_RF_CONF_EDITOR_ENABLED, on top of the admin-only
+login gate every route under /config already requires: an always-on "write
+any path the UI process can reach" surface is the same risk class as CUSTOM
+adapters or the /dev tools (both flag-gated too), worth a second switch even
+behind a login.
 
 No service is ever restarted from here — a save writes the file (after a
 timestamped .bak) and the page shows the `systemctl restart ...` command for
-the operator to run. See the plan/docs for why (host systemd services, an
-auth-less UI, and a container deployment with no service manager at all).
+the operator to run. See the plan/docs for why (host systemd services and a
+container deployment with no service manager at all).
 
 These routers own only GET /config/beacon-{svxlink,direwolf} and
 POST /config/beacon-{svxlink,direwolf}/conf. The catalog Save
@@ -29,11 +31,12 @@ from adapters.storage import get_setting, record_audit_event
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import RedirectResponse
 
+from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
 from .config import build_group_form_context
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 MAX_CONF_BYTES = 512 * 1024
 

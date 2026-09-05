@@ -52,14 +52,42 @@ def conn():
     connection.close()
 
 
+def _create_test_user(conn: sqlite3.Connection, username: str, role: str):
+    """create_user() writes a user.created audit_log row like any other
+    write path — cleared right back out here so a test using `client`/
+    `user_client` still sees the empty audit_log its pre-auth version did;
+    several existing tests (e.g. test_audit_log_returns_200) assert on
+    that emptiness directly."""
+    from adapters.auth import create_user
+
+    user = create_user(conn, username, "test-password", role, actor="test")
+    conn.execute("DELETE FROM audit_log")
+    conn.commit()
+    return user
+
+
 @pytest.fixture
-def client(conn: sqlite3.Connection):
-    """A TestClient wired to the same in-memory connection every route
-    test's assertions inspect afterward — overrides ui.db.get_db rather
-    than pointing UI_DB_PATH at a real file, so a test can both drive the
-    app through HTTP and query `conn` directly to check the resulting
-    row/audit_log state."""
+def admin_user(conn: sqlite3.Connection):
+    return _create_test_user(conn, "admin", "admin")
+
+
+@pytest.fixture
+def plain_user(conn: sqlite3.Connection):
+    return _create_test_user(conn, "operator", "user")
+
+
+def _make_client(conn: sqlite3.Connection, user):
+    """Shared machinery behind `client`/`user_client` below: overrides
+    ui.db.get_db the same way regardless of which user is logged in, and
+    overrides ui.current_user.get_current_user directly (rather than
+    round-tripping through a real session cookie) — simplest way to log
+    a TestClient in as a given role, consistent with this fixture already
+    overriding get_db/verify_csrf via app.dependency_overrides instead of
+    exercising the real HTTP mechanics. test_auth_routes.py's login/logout
+    tests exercise the real cookie/session path directly, unaffected by
+    this override since they build their own TestClient."""
     from ui.app import app
+    from ui.current_user import get_current_user
     from ui.db import get_db
     from ui.security import verify_csrf
 
@@ -68,7 +96,7 @@ def client(conn: sqlite3.Connection):
     # Django's test client disables CSRF by default.
     app.dependency_overrides[verify_csrf] = lambda: None
 
-    def _override(request: Request):
+    def _db_override(request: Request):
         # Mirrors the real get_db()'s request.state.db_conn stash — see
         # its docstring — so ui.templating's is_beacon_configured Jinja
         # global reuses this exact in-memory `conn` instead of opening a
@@ -77,9 +105,34 @@ def client(conn: sqlite3.Connection):
         request.state.db_conn = conn
         yield conn
 
-    app.dependency_overrides[get_db] = _override
+    def _user_override(request: Request):
+        request.state.user = user
+        return user
+
+    app.dependency_overrides[get_db] = _db_override
+    app.dependency_overrides[get_current_user] = _user_override
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(verify_csrf, None)
+        app.dependency_overrides.pop(get_current_user, None)
+
+
+@pytest.fixture
+def client(conn: sqlite3.Connection, admin_user):
+    """A TestClient wired to the same in-memory connection every route
+    test's assertions inspect afterward, logged in as `admin_user` by
+    default — every existing route test already assumed unauthenticated-
+    but-unblocked access, which after adding login is equivalent to
+    admin-authenticated access, so this is what keeps them passing without
+    touching their bodies. See `user_client` for the 'user'-role
+    equivalent, used by tests that specifically assert the role gate."""
+    yield from _make_client(conn, admin_user)
+
+
+@pytest.fixture
+def user_client(conn: sqlite3.Connection, plain_user):
+    """Same wiring as `client`, but logged in as the 'user' role — for
+    tests asserting that role is actually blocked from admin-only routes."""
+    yield from _make_client(conn, plain_user)

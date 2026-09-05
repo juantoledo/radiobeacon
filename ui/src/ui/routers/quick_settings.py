@@ -14,9 +14,10 @@ from adapters.storage import set_setting
 from fastapi import APIRouter, Depends, Form
 from starlette.responses import RedirectResponse
 
+from ..current_user import require_role
 from ..db import get_db
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 # Live-applied booleans safe to flip from the dashboard. Labels here are
 # only for the redirect toast; the panel's own template owns the UI copy.

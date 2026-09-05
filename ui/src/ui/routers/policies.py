@@ -6,10 +6,11 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import RedirectResponse
 
 from .. import queries
+from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 
 @router.get("/policies", include_in_schema=False)

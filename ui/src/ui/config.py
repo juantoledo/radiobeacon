@@ -10,12 +10,12 @@ module attribute from here."""
 import os
 
 # All interfaces by default so the dashboard is reachable from the LAN (and
-# through a container port mapping) out of the box. NOTE: this module has no
-# authentication, and every state-changing action (enable transmission, send
-# an ad-hoc message, edit an adapter that runs `exec`) is a plain
-# unauthenticated POST — anyone who can reach the port can drive it. Only run
-# it on a trusted network, or set UI_HOST=127.0.0.1 and put real auth (a
-# reverse proxy with a login) in front of it.
+# through a container port mapping) out of the box. Every page (other than
+# the dashboard itself) and every state-changing action now requires a
+# logged-in admin (see ui.current_user) — but that's still just an
+# application-level gate; put it on a trusted network, or set
+# UI_HOST=127.0.0.1 with a reverse proxy in front, if you want defense in
+# depth against a compromised/weak account too.
 UI_HOST = os.environ.get("UI_HOST", "0.0.0.0")
 UI_PORT = int(os.environ.get("UI_PORT", "8080"))
 

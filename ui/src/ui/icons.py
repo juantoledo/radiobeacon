@@ -94,6 +94,12 @@ _ICONS: dict[str, str] = {
     ),
     "play": ('<polygon points="7 4 20 12 7 20 7 4" fill="currentColor"/>'),
     "stop": ('<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>'),
+    "users": (
+        '<path d="M8 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/>'
+        '<path d="M2.5 20a5.5 5.5 0 0 1 11 0"/>'
+        '<path d="M15.5 5.5a3.2 3.2 0 0 1 0 6.2"/>'
+        '<path d="M15 13.2c2.8.3 4.9 2 5.5 4.8"/>'
+    ),
     "transfer": (
         '<line x1="8" y1="3" x2="8" y2="15"/><polyline points="4 11 8 15 12 11"/>'
         '<line x1="16" y1="21" x2="16" y2="9"/><polyline points="12 13 16 9 20 13"/>'

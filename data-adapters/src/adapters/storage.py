@@ -116,6 +116,42 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+# Login accounts for ui/ — role is a fixed two-value enum (admin/user), not
+# its own lookup table, since nothing in this app needs a growing set of
+# roles. No declared FOREIGN KEY out of sessions.user_id (nothing in this
+# schema declares one — PRAGMA foreign_keys is never turned on repo-wide);
+# cascade-on-delete is explicit in adapters.auth.delete_user instead.
+_CREATE_USERS = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+    disabled INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+# token_hash stores sha256(raw session cookie value), never the raw token
+# itself — so a DB read (a backup, or even the admin-gated /dev/sql
+# read-only runner) never yields a directly replayable session.
+_CREATE_SESSIONS = """
+CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+);
+"""
+_CREATE_SESSIONS_USER_ID_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id)"
+)
+_CREATE_SESSIONS_EXPIRES_AT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions (expires_at)"
+)
+
 # beacon_status holds machine-written telemetry from the beacon/ package's
 # transmit loop (beacon type, queue depth, last NTP check, a heartbeat) — NOT
 # operator config (that's `settings`, above). beacon/ and ui/ are separate
@@ -937,6 +973,8 @@ def get_connection(
         _ensure_audit_log_table(conn)
         _ensure_chunks_table(conn)
         _ensure_settings_table(conn)
+        _ensure_users_table(conn)
+        _ensure_sessions_table(conn)
         _ensure_beacon_status_table(conn)
         _ensure_item_readiness_table(conn)
         _ensure_sources_table(conn)
@@ -1094,6 +1132,22 @@ def _ensure_settings_table(conn: sqlite3.Connection) -> None:
     set_setting/list_settings/delete_setting all call this themselves, same
     pattern as _ensure_audit_log_table/_ensure_chunks_table."""
     conn.execute(_CREATE_SETTINGS)
+
+
+def _ensure_users_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — adapters.auth's
+    user functions all call this themselves, same pattern as
+    _ensure_settings_table."""
+    conn.execute(_CREATE_USERS)
+
+
+def _ensure_sessions_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — adapters.auth's
+    session functions all call this themselves, same pattern as
+    _ensure_settings_table."""
+    conn.execute(_CREATE_SESSIONS)
+    conn.execute(_CREATE_SESSIONS_USER_ID_INDEX)
+    conn.execute(_CREATE_SESSIONS_EXPIRES_AT_INDEX)
 
 
 def get_setting(

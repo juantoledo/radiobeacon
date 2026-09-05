@@ -165,31 +165,45 @@ from `GET /dashboard/manual-audio/{name}` (`manual-<id>-<ts>.wav` files in
 `BEACON_TTS_WAV_DIR`). Both voice and frame manual clips are listed; a
 frame one plays as AFSK tones.
 
-## No authentication
+## Authentication
 
-There is no login system. `UI_HOST` defaults to `0.0.0.0` (all
-interfaces) and `UI_ALLOWED_HOSTS` defaults to `*` (guard off), so the
-dashboard is reachable from the LAN as soon as it starts — **only run it
-on a trusted network.** Anyone who can reach the port can enable
-transmission, send an ad-hoc message, and (via `/dev` and CUSTOM
-adapters) run arbitrary SQL and `exec` code.
+Login is required for every page except `/login` itself. Two roles:
 
-Two request guards remain, and they can be re-armed (see
-`ui/src/ui/security.py`):
+- **admin** — full access to everything (dashboard, items, config,
+  adapters, policies, audit log, `/dev`, and user management at
+  `/users`).
+- **user** — read-only access to the dashboard only; every other route
+  (including `/items`, `/config`, `/audit`, `/dev`, manual transmit)
+  answers 403.
 
-- **Host allow-list** (`UI_ALLOWED_HOSTS`, a DNS-rebinding guard) —
-  narrow it from `*` to the exact names/IPs you serve under and a
-  request whose `Host` header isn't listed gets a 400.
-- **Cross-origin + CSRF.** With the allow-list narrowed, a state-changing
-  POST is also refused unless its `Origin` is allow-listed *and* it
-  echoes the `csrf_token` cookie back (hidden form field or
-  `X-CSRF-Token` header).
+An `admin` account is created automatically the first time the app
+starts against a database with no admin user yet — its username
+(`admin`) and a randomly generated password are printed once to the
+server log (look for `===== INITIAL ADMIN PASSWORD =====`). Log in and
+change that password immediately, either from `/users` or with the
+recovery script below (which also works if you're locked out and can't
+log in at all):
 
-To lock it down: set `UI_HOST=127.0.0.1` (off the network entirely) or
-narrow `UI_ALLOWED_HOSTS`, and put real auth (a reverse proxy with a
-password) in front of it — the guards stop a browser on another site
-from driving it, not someone who can reach the port directly. This goes
-double for `/dev` and CUSTOM adapters, both of which you can disable
+```bash
+../data-adapters/manage_users.sh set-password admin
+../data-adapters/manage_users.sh list
+../data-adapters/manage_users.sh add-user someone --role user
+../data-adapters/manage_users.sh set-role someone --role admin
+../data-adapters/manage_users.sh delete-user someone
+```
+
+Sessions are DB-backed (a `sessions` table, not a JWT), stored as an
+httponly cookie, and last 30 days on a sliding window (refreshed once
+more than half spent). Changing a user's password or role, or deleting
+them, immediately invalidates their existing sessions.
+
+This is still application-level auth, not network isolation — `UI_HOST`
+defaults to `0.0.0.0` (all interfaces) and `UI_ALLOWED_HOSTS` defaults to
+`*` (the DNS-rebinding/cross-origin guard off). For defense in depth
+beyond the login itself, narrow `UI_ALLOWED_HOSTS` to the exact names/IPs
+you serve under (see `ui/src/ui/security.py`), or set `UI_HOST=127.0.0.1`
+and put a reverse proxy in front. `/dev` and CUSTOM adapters (arbitrary
+SQL / `exec`) are admin-only on top of that, and can still be disabled
 outright with `UI_DEV_TOOLS_ENABLED=false`.
 
 ## Usage
@@ -201,7 +215,8 @@ outright with `UI_DEV_TOOLS_ENABLED=false`.
 Same pattern as every other package's `start.sh`: creates a `.venv`,
 installs `requirements.txt`, loads `../.env`, then `exec`s into Uvicorn
 (`PYTHONPATH=src python3 -m ui`). Visit `http://<host>:8080` — it binds
-all interfaces by default (see "No authentication" above).
+all interfaces by default (see "Authentication" above for the
+auto-created admin account and login).
 `Ctrl+C`/`SIGTERM` stops it cleanly.
 
 ## Configuration

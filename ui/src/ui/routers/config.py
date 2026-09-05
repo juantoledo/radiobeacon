@@ -17,10 +17,11 @@ from ..config_catalog import (
     sections_for_category,
     specs_for_group,
 )
+from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 # Rendered in a secret field when a DB row exists for that key — never the
 # real value, and never varies with the stored value's length. Submitting a

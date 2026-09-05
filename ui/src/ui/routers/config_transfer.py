@@ -12,10 +12,10 @@ there for rf_conf.router and adapters.router: literal paths under
 GET /config/{slug} catch-all.
 
 Preview -> apply carries the exact uploaded JSON text forward as a hidden
-form field rather than a server-side token-keyed stash — this app has no
-session middleware anywhere by design (stateless, no auth beyond
-loopback+CSRF+origin checks, see ui.security), and even the largest CUSTOM
-adapter snippet in this repo (~7 KB) is trivial to resubmit once."""
+form field rather than a server-side token-keyed stash — the login
+session (ui.current_user) is for auth only, not a place to park scratch
+request state, and even the largest CUSTOM adapter snippet in this repo
+(~7 KB) is trivial to resubmit once."""
 import json
 import sqlite3
 from typing import Any
@@ -27,10 +27,11 @@ from adapters.timeutil import utc_now
 from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from starlette.responses import RedirectResponse, Response
 
+from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 # Truncated to a skim-able length in the CUSTOM-code review banner — the
 # full snippet is still in the hidden config_json field and gets stored

@@ -196,6 +196,30 @@ templates.env.globals["is_beacon_configured"] = _beacon_configured_global
 
 
 @pass_context
+def _current_user_global(context):
+    """`{{ current_user() }}` — the logged-in User (or None on /login,
+    where get_current_user never ran), stashed onto request.state.user by
+    ui.current_user.get_current_user. Templates use this for the sidebar's
+    logged-in-as/logout control and to hide admin-only nav/controls from a
+    'user'-role visitor."""
+    return getattr(context["request"].state, "user", None)
+
+
+templates.env.globals["current_user"] = _current_user_global
+
+
+@pass_context
+def _is_admin_global(context) -> bool:
+    """`{{ is_admin() }}` — shorthand for the current_user().role == 'admin'
+    check every admin-only template guard needs."""
+    user = _current_user_global(context)
+    return user is not None and user.role == "admin"
+
+
+templates.env.globals["is_admin"] = _is_admin_global
+
+
+@pass_context
 def _display_dt(context, value: str | None) -> str:
     """Converts a stored timestamp to DISPLAY_TIMEZONE for display only —
     never fed back into a query. Handles both Python's offset-suffixed

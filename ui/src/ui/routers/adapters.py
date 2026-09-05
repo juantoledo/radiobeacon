@@ -28,10 +28,11 @@ from starlette.responses import RedirectResponse
 
 from .. import queries
 from ..config_catalog import specs_for_group
+from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 _ADAPTER_CLASSES = {"api": ApiAdapter, "custom": CustomAdapter, "aiprompt": AiPromptAdapter}
 

@@ -6,10 +6,11 @@ from adapters.storage import get_setting
 from fastapi import APIRouter, Depends, Request
 
 from .. import queries
+from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 
 @router.get("/audit")

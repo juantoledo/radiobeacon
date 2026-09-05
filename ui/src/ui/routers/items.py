@@ -11,10 +11,11 @@ from starlette.responses import FileResponse, RedirectResponse
 
 from .. import beacon_audio, queries
 from ..beacon import is_beacon_configured
+from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 
 def _qs_without_page(request: Request) -> str:
