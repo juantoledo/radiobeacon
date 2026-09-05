@@ -18,6 +18,8 @@
 
   "item_detail.back_to_items": "Volver a elementos",
   "item_detail.edit_dev": "Editar (dev)",
+  "item_detail.details_heading": "Detalles",
+  "item_detail.policy_unset": "(sin establecer)",
   "item_detail.summary": "Resumen",
   "item_detail.contents": "Contenido",
   "item_detail.actions": "Acciones",

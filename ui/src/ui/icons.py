@@ -104,6 +104,11 @@ _ICONS: dict[str, str] = {
         '<line x1="8" y1="3" x2="8" y2="15"/><polyline points="4 11 8 15 12 11"/>'
         '<line x1="16" y1="21" x2="16" y2="9"/><polyline points="12 13 16 9 20 13"/>'
     ),
+    "refresh": (
+        '<polyline points="23 4 23 10 17 10"/>'
+        '<polyline points="1 20 1 14 7 14"/>'
+        '<path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>'
+    ),
 }
 
 

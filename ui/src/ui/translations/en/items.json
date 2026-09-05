@@ -18,6 +18,8 @@
 
   "item_detail.back_to_items": "Back to items",
   "item_detail.edit_dev": "Edit (dev)",
+  "item_detail.details_heading": "Details",
+  "item_detail.policy_unset": "(unset)",
   "item_detail.summary": "Summary",
   "item_detail.contents": "Contents",
   "item_detail.actions": "Actions",
