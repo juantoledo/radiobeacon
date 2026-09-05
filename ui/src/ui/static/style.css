@@ -8,31 +8,57 @@
 :root {
   color-scheme: light dark;
 
-  --fg: #16181d;
-  --fg-muted: #5b6472;
-  --fg-faint: #8a93a3;
-  --bg: #f7f8fa;
-  --bg-subtle: #eef0f4;
+  --fg: #14171c;
+  --fg-muted: #57616f;
+  --fg-faint: #8892a0;
+  --bg: #f4f6f8;
+  --bg-subtle: #e8ecf0;
   --bg-raised: #ffffff;
-  --bg-sidebar: #ffffff;
-  --border: #e3e6ec;
-  --border-strong: #cfd4dd;
+  --border: #d8dee5;
+  --border-strong: #b9c2cc;
 
-  --accent: #4f46e5;
+  /* Emergency-alert red accent — the siren/EAS color the rest of the
+     "radio equipment" palette below is built around. */
+  --accent: #d7263d;
   --accent-fg: #ffffff;
-  --accent-hover: #4338ca;
+  --accent-hover: #a91c30;
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
 
-  --danger: #c0271d;
-  --danger-bg: #fdecea;
+  /* A darker maroon, not the same red as --accent, so destructive/danger
+     UI stays visually distinct from ordinary links/buttons. */
+  --danger: #7f1d1d;
+  --danger-bg: #f8e9e7;
   --success: #15803d;
   --success-bg: #e7f6ec;
-  --warn: #92600a;
-  --warn-bg: #fbf1dd;
+  --warn: #a16207;
+  --warn-bg: #fbf1d9;
   --info: #1b5da8;
   --info-bg: #e7f1fc;
-  --neutral: #48515d;
-  --neutral-bg: #e9ecf1;
+  --neutral: #4b5563;
+  --neutral-bg: #e8ecf0;
+
+  /* The sidebar/mobile-bar "chassis" is a fixed gunmetal-steel panel with
+     a red alert-lamp glow in both light and dark page themes — like a
+     radio unit's casing staying the same regardless of what's tuned in
+     on its display — so these are defined once, outside the light/dark
+     blocks below. */
+  --sidebar-bg: #1c232c;
+  --sidebar-bg-raised: #29323d;
+  --sidebar-border: #3a4552;
+  --sidebar-fg: #eef1f5;
+  --sidebar-fg-muted: #9aa5b1;
+  --sidebar-fg-faint: #6b7684;
+  --sidebar-accent: #ff5a5a;
+  --sidebar-accent-soft: color-mix(in srgb, var(--sidebar-accent) 18%, transparent);
+  /* "ON AIR" lamp red — the live/beacon-active pulse, a pure siren red
+     distinct from the sidebar's softer coral dial glow. */
+  --on-air: #ff2d2d;
+
+  /* Condensed display face for the brand mark, page headings and other
+     "instrument label" text — falls back cleanly to the system sans
+     stack (see body's font-family) when the webfont can't load, which
+     matters for a tool meant to keep working in a degraded network. */
+  --font-display: "Oswald", "Segoe UI Semibold", "Arial Narrow", -apple-system, sans-serif;
 
   /* Python syntax-highlight tokens — see static/code-editor.js and the
      "Code editor" section below (adapter_form.html's CUSTOM-type snippet). */
@@ -76,31 +102,30 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --fg: #eceef4;
-    --fg-muted: #9aa2b4;
-    --fg-faint: #6b7385;
-    --bg: #0c0d11;
-    --bg-subtle: #191b21;
-    --bg-raised: #16181e;
-    --bg-sidebar: #101116;
-    --border: #282b34;
-    --border-strong: #3a3e4a;
+    --fg: #eef1f5;
+    --fg-muted: #9aa5b1;
+    --fg-faint: #6b7684;
+    --bg: #0d1116;
+    --bg-subtle: #171c22;
+    --bg-raised: #1a2027;
+    --border: #2a323b;
+    --border-strong: #3c4650;
 
-    --accent: #8b93f8;
-    --accent-fg: #0d0f1a;
-    --accent-hover: #a5abfa;
+    --accent: #ff5a5a;
+    --accent-fg: #1a0505;
+    --accent-hover: #ff7a7a;
     --accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
 
-    --danger: #ff8a80;
-    --danger-bg: #3a1d1a;
+    --danger: #ff8f5e;
+    --danger-bg: #3a2013;
     --success: #7fd99a;
-    --success-bg: #143223;
-    --warn: #e7b95c;
-    --warn-bg: #372a10;
+    --success-bg: #14291c;
+    --warn: #f0b429;
+    --warn-bg: #332508;
     --info: #8ec2ff;
     --info-bg: #13243a;
-    --neutral: #b7c0c9;
-    --neutral-bg: #23262d;
+    --neutral: #c3cad3;
+    --neutral-bg: #232a32;
 
     --code-kw: #c678dd;
     --code-str: #98c379;
@@ -122,31 +147,30 @@
    OS's own prefers-color-scheme. No "system" selector: that value omits the
    attribute entirely, leaving the media query above in charge. */
 :root[data-theme="dark"] {
-  --fg: #eceef4;
-  --fg-muted: #9aa2b4;
-  --fg-faint: #6b7385;
-  --bg: #0c0d11;
-  --bg-subtle: #191b21;
-  --bg-raised: #16181e;
-  --bg-sidebar: #101116;
-  --border: #282b34;
-  --border-strong: #3a3e4a;
+  --fg: #eef1f5;
+  --fg-muted: #9aa5b1;
+  --fg-faint: #6b7684;
+  --bg: #0d1116;
+  --bg-subtle: #171c22;
+  --bg-raised: #1a2027;
+  --border: #2a323b;
+  --border-strong: #3c4650;
 
-  --accent: #8b93f8;
-  --accent-fg: #0d0f1a;
-  --accent-hover: #a5abfa;
+  --accent: #ff5a5a;
+  --accent-fg: #1a0505;
+  --accent-hover: #ff7a7a;
   --accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
 
-  --danger: #ff8a80;
-  --danger-bg: #3a1d1a;
+  --danger: #ff8f5e;
+  --danger-bg: #3a2013;
   --success: #7fd99a;
-  --success-bg: #143223;
-  --warn: #e7b95c;
-  --warn-bg: #372a10;
+  --success-bg: #14291c;
+  --warn: #f0b429;
+  --warn-bg: #332508;
   --info: #8ec2ff;
   --info-bg: #13243a;
-  --neutral: #b7c0c9;
-  --neutral-bg: #23262d;
+  --neutral: #c3cad3;
+  --neutral-bg: #232a32;
 
   --code-kw: #c678dd;
   --code-str: #98c379;
@@ -162,31 +186,30 @@
 }
 
 :root[data-theme="light"] {
-  --fg: #16181d;
-  --fg-muted: #5b6472;
-  --fg-faint: #8a93a3;
-  --bg: #f7f8fa;
-  --bg-subtle: #eef0f4;
+  --fg: #14171c;
+  --fg-muted: #57616f;
+  --fg-faint: #8892a0;
+  --bg: #f4f6f8;
+  --bg-subtle: #e8ecf0;
   --bg-raised: #ffffff;
-  --bg-sidebar: #ffffff;
-  --border: #e3e6ec;
-  --border-strong: #cfd4dd;
+  --border: #d8dee5;
+  --border-strong: #b9c2cc;
 
-  --accent: #4f46e5;
+  --accent: #d7263d;
   --accent-fg: #ffffff;
-  --accent-hover: #4338ca;
+  --accent-hover: #a91c30;
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
 
-  --danger: #c0271d;
-  --danger-bg: #fdecea;
+  --danger: #7f1d1d;
+  --danger-bg: #f8e9e7;
   --success: #15803d;
   --success-bg: #e7f6ec;
-  --warn: #92600a;
-  --warn-bg: #fbf1dd;
+  --warn: #a16207;
+  --warn-bg: #fbf1d9;
   --info: #1b5da8;
   --info-bg: #e7f1fc;
-  --neutral: #48515d;
-  --neutral-bg: #e9ecf1;
+  --neutral: #4b5563;
+  --neutral-bg: #e8ecf0;
 
   --code-kw: #a626a4;
   --code-str: #50a14f;
@@ -226,15 +249,16 @@ body {
   display: flex;
 }
 
-h1, h2, h3 { line-height: 1.22; margin: 0 0 var(--space-3); letter-spacing: -0.014em; }
-h1 { font-size: var(--text-2xl); font-weight: 700; letter-spacing: -0.022em; }
+h1, h2, h3 { line-height: 1.22; margin: 0 0 var(--space-3); font-family: var(--font-display); }
+h1 { font-size: var(--text-2xl); font-weight: 600; letter-spacing: 0.01em; text-transform: uppercase; }
 h2 {
   font-size: var(--text-lg);
-  font-weight: 650;
+  font-weight: 550;
+  letter-spacing: 0.01em;
   margin-top: var(--space-8);
   margin-bottom: var(--space-4);
 }
-h3 { font-size: var(--text-base); font-weight: 650; }
+h3 { font-size: var(--text-base); font-weight: 600; letter-spacing: -0.005em; }
 p { margin: 0 0 var(--space-3); }
 
 a { color: var(--accent); text-decoration: none; }
@@ -274,8 +298,8 @@ code, pre, .mono {
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-4) var(--space-3);
-  background: var(--bg-sidebar);
-  border-right: 1px solid var(--border);
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--sidebar-border);
   z-index: 50;
 }
 
@@ -289,19 +313,21 @@ code, pre, .mono {
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-weight: 700;
+  gap: 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 600;
   font-size: var(--text-md);
-  color: var(--fg);
-  letter-spacing: -0.02em;
+  color: var(--sidebar-fg);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
-.brand:hover { text-decoration: none; color: var(--fg); }
+.brand:hover { text-decoration: none; color: var(--sidebar-fg); }
 .brand .dot {
   width: 0.6rem;
   height: 0.6rem;
   border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  background: var(--sidebar-accent);
+  box-shadow: 0 0 0 3px var(--sidebar-accent-soft), 0 0 6px 1px color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
 }
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; }
@@ -312,14 +338,15 @@ code, pre, .mono {
   gap: 0.65rem;
   padding: 0.55rem 0.7rem;
   border-radius: var(--radius-sm);
-  color: var(--fg-muted);
+  color: var(--sidebar-fg-muted);
   font-size: var(--text-sm);
   font-weight: 550;
+  letter-spacing: 0.01em;
   position: relative;
   transition: background-color 0.12s ease, color 0.12s ease;
 }
-.sidebar-nav a:hover { color: var(--fg); background: var(--bg-subtle); text-decoration: none; }
-.sidebar-nav a.active { color: var(--accent); background: var(--accent-soft); }
+.sidebar-nav a:hover { color: var(--sidebar-fg); background: var(--sidebar-bg-raised); text-decoration: none; }
+.sidebar-nav a.active { color: var(--sidebar-accent); background: var(--sidebar-accent-soft); }
 .sidebar-nav a.active::before {
   content: "";
   position: absolute;
@@ -328,24 +355,24 @@ code, pre, .mono {
   bottom: 0.4rem;
   width: 3px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--sidebar-accent);
 }
 .sidebar-nav a .badge { margin-left: auto; }
 
 .sidebar-foot {
   margin-top: auto;
   padding: var(--space-3) var(--space-2) var(--space-1);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--sidebar-border);
   font-size: var(--text-xs);
 }
 .sidebar-foot-warn {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  color: var(--warn);
+  color: var(--sidebar-accent);
   font-weight: 600;
 }
-.sidebar-foot-warn:hover { text-decoration: none; color: var(--warn); }
+.sidebar-foot-warn:hover { text-decoration: none; color: var(--sidebar-accent); }
 
 .sidebar-prefs {
   display: flex;
@@ -361,8 +388,8 @@ code, pre, .mono {
   display: flex;
   gap: 0.15rem;
   padding: 0.15rem;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
+  background: var(--sidebar-bg-raised);
+  border: 1px solid var(--sidebar-border);
   border-radius: var(--radius-sm);
   flex-shrink: 0;
 }
@@ -376,11 +403,11 @@ code, pre, .mono {
   background: transparent;
   border: none;
   border-radius: calc(var(--radius-sm) - 2px);
-  color: var(--fg-muted);
+  color: var(--sidebar-fg-muted);
   cursor: pointer;
 }
-.theme-switcher button:hover { background: var(--bg-raised); color: var(--fg); }
-.theme-switcher button.active { background: var(--accent); color: var(--accent-fg, #fff); }
+.theme-switcher button:hover { background: var(--sidebar-bg); color: var(--sidebar-fg); }
+.theme-switcher button.active { background: var(--sidebar-accent); color: #1c0505; }
 
 /* Native <select> — the conventional language-picker control, see
    base.html's comment on why this replaced a button-per-language toggle. */
@@ -390,23 +417,23 @@ code, pre, .mono {
   gap: 0.35rem;
   flex: 1;
   min-width: 0;
-  color: var(--fg-faint);
+  color: var(--sidebar-fg-faint);
 }
 .locale-select select {
   flex: 1;
   min-width: 0;
   height: 1.85rem;
   padding: 0 0.4rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
+  background: var(--sidebar-bg-raised);
+  border: 1px solid var(--sidebar-border);
   border-radius: var(--radius-sm);
-  color: var(--fg);
+  color: var(--sidebar-fg);
   font-size: var(--text-xs);
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
 }
-.locale-select select:hover { border-color: var(--border-strong); }
+.locale-select select:hover { border-color: var(--sidebar-fg-faint); }
 .locale-select noscript button { margin-left: 0.35rem; }
 
 .sr-only {
@@ -427,12 +454,15 @@ code, pre, .mono {
   justify-content: center;
   padding: 0.4rem;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid var(--sidebar-border);
   border-radius: var(--radius-sm);
-  color: var(--fg-muted);
+  color: var(--sidebar-fg-muted);
 }
-.nav-close:hover, .nav-toggle:hover { background: var(--bg-subtle); color: var(--fg); border-color: var(--border); }
+.nav-close:hover, .nav-toggle:hover { background: var(--sidebar-bg-raised); color: var(--sidebar-fg); border-color: var(--sidebar-border); }
 
+/* Same dark "chassis" panel as the desktop sidebar (see --sidebar-* tokens)
+   so the mobile top bar reads as the same equipment strip, not a
+   page-background bar that happens to hold the menu button. */
 .mobile-bar {
   display: none;
   position: sticky;
@@ -441,10 +471,10 @@ code, pre, .mono {
   align-items: center;
   gap: 0.75rem;
   padding: 0.6rem 0.9rem;
-  background: color-mix(in srgb, var(--bg) 90%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--border);
+  background: var(--sidebar-bg);
+  border-bottom: 1px solid var(--sidebar-border);
 }
+.mobile-bar .brand { color: var(--sidebar-fg); }
 
 .nav-scrim {
   position: fixed;
@@ -547,21 +577,27 @@ main {
   align-items: center;
   gap: 0.4rem;
   font-size: var(--text-xs);
-  color: var(--fg-muted);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sidebar-fg-muted);
   font-weight: 550;
 }
 
+/* An "ON AIR" lamp, not a generic status dot — --on-air is a fixed red
+   independent of theme/accent so it always reads as the same indicator
+   light on the sidebar's dark chassis. */
 .pulse-dot {
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 55%, transparent);
+  background: var(--on-air);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--on-air) 55%, transparent);
   animation: pulse-dot 2s ease-out infinite;
   flex-shrink: 0;
 }
 @keyframes pulse-dot {
-  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 45%, transparent); }
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--on-air) 45%, transparent); }
   70% { box-shadow: 0 0 0 0.4rem transparent; }
   100% { box-shadow: 0 0 0 0 transparent; }
 }
@@ -1729,8 +1765,11 @@ pre.contents {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-weight: 600;
   font-size: var(--text-lg);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   margin-bottom: var(--space-5);
 }
 .auth-brand .dot {
