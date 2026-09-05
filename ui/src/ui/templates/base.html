@@ -48,12 +48,6 @@
         <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
         {% endif %}
       {% endif %}
-      <form class="locale-switcher" method="post" action="/locale" aria-label="{{ t('common.language') }}">
-        {{ csrf_field() }}
-        <input type="hidden" name="next" value="{{ request.url.path }}">
-        <button type="submit" name="locale" value="en" class="{{ 'active' if locale() == 'en' else '' }}" {% if locale() == 'en' %}aria-current="true"{% endif %}>EN</button>
-        <button type="submit" name="locale" value="es" class="{{ 'active' if locale() == 'es' else '' }}" {% if locale() == 'es' %}aria-current="true"{% endif %}>ES</button>
-      </form>
       {% if current_user() %}
       <form class="logout-form" method="post" action="/logout">
         {{ csrf_field() }}

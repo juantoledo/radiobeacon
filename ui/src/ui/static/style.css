@@ -265,7 +265,8 @@ code, pre, .mono {
 .locale-switcher {
   display: flex;
   gap: 0.35rem;
-  margin-top: var(--space-2);
+  margin-bottom: var(--space-4);
+  max-width: 9rem;
 }
 .locale-switcher button {
   flex: 1;
