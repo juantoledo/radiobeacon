@@ -294,6 +294,38 @@ def test_dashboard_quick_toggle_rejects_key_not_on_allowlist(client, conn):
     assert get_setting("ANTHROPIC_API_KEY", "", conn=conn) == ""
 
 
+def test_dashboard_quick_toggle_ajax_returns_json_with_a_patched_fragment(client, conn):
+    # ajax-forms.js marks a fetch-driven POST with X-Requested-With: fetch —
+    # the route must skip the redirect and answer with the envelope it
+    # patches [data-cell] regions from instead of navigating.
+    set_setting(conn, "ACTIONS_AI_ENABLED", "false")
+
+    response = client.post(
+        "/dashboard/toggle",
+        data={"key": "ACTIONS_AI_ENABLED", "value": "true"},
+        headers={"X-Requested-With": "fetch"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "AI summarization" in body["message"]
+    assert 'data-cell="quick_controls"' in body["fragment"]
+    assert get_setting("ACTIONS_AI_ENABLED", conn=conn) == "true"
+
+
+def test_dashboard_quick_toggle_ajax_rejects_key_not_on_allowlist(client, conn):
+    response = client.post(
+        "/dashboard/toggle",
+        data={"key": "ANTHROPIC_API_KEY", "value": "leaked"},
+        headers={"X-Requested-With": "fetch"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert get_setting("ANTHROPIC_API_KEY", "", conn=conn) == ""
+
+
 def test_beacon_group_settings_appear_in_config(client):
     # The category landing page lists groups (linking to their edit form),
     # not individual keys — see BEACON_TYPE on the group's own form instead.

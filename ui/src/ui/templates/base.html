@@ -73,7 +73,12 @@
     </main>
   </div>
 
+  {# Feedback for a form submitted via ajax-forms.js — the AJAX counterpart
+     to the ?msg=/?error= banners above, which only apply to a fresh GET. #}
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
   <script src="{{ static_url('app-shell.js') }}" defer></script>
+  <script src="{{ static_url('ajax-forms.js') }}" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

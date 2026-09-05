@@ -67,6 +67,23 @@ def test_post_with_matching_csrf_cookie_and_field_is_accepted(csrf_client, conn)
     assert response.status_code == 303
 
 
+def test_post_with_csrf_token_as_header_is_accepted(csrf_client, conn):
+    # The AJAX path (ajax-forms.js) sends the token as X-CSRF-Token instead
+    # of the hidden form field, since a fetch() body isn't necessarily
+    # form-encoded — verify_csrf checks the header first for exactly this.
+    _insert_item(conn)
+    csrf_client.get("/items/csn/1")
+    token = csrf_client.cookies["csrf_token"]
+
+    response = csrf_client.post(
+        "/items/csn/1/rearm",
+        data={"consumer": "log"},
+        headers={"X-CSRF-Token": token},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+
+
 def test_post_with_mismatched_csrf_token_is_rejected(csrf_client, conn):
     _insert_item(conn)
     csrf_client.get("/items/csn/1")

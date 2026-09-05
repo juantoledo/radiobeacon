@@ -9,6 +9,10 @@
 // Also runs a once-a-second ticker that keeps every <time data-ago>
 // element ("3m ago") current between fetches, and drives the
 // "updated Ns ago" text in the header.
+//
+// Cell-patching itself lives in ajax-forms.js (RB.patchCells), shared with
+// the AJAX write-action responses that page also handles — base.html loads
+// it first so it's defined by the time this file runs.
 (function () {
   "use strict";
 
@@ -69,26 +73,11 @@
 
   // ---- cell patching ----------------------------------------------------
 
+  // Factored into ajax-forms.js (loaded first, see base.html) as
+  // RB.patchCells so the same diff-by-string/flash logic patches cells
+  // after a write action's AJAX response, not just this polling refresh.
   function patch(nextRoot) {
-    var changed = 0;
-    nextRoot.querySelectorAll("[data-cell]").forEach(function (nextCell) {
-      var name = nextCell.getAttribute("data-cell");
-      var cur = root.querySelector('[data-cell="' + CSS.escape(name) + '"]');
-      if (!cur) return;
-      if (cur.innerHTML.trim() !== nextCell.innerHTML.trim()) {
-        cur.innerHTML = nextCell.innerHTML;
-        cur.classList.remove("cell-flash");
-        // reflow so re-adding the class restarts the animation
-        void cur.offsetWidth;
-        cur.classList.add("cell-flash");
-        changed++;
-      }
-      // width-style cells (the queue bar) carry their value in an attribute
-      if (nextCell.style.cssText && nextCell.style.cssText !== cur.style.cssText) {
-        cur.style.cssText = nextCell.style.cssText;
-      }
-    });
-    return changed;
+    return RB.patchCells(root, nextRoot);
   }
 
   function refresh() {
