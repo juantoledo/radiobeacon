@@ -13,11 +13,17 @@
   "common.beacon_not_configured_warning": "La identidad de la baliza no está configurada — {link}. La navegación no se ve afectada; las acciones de Anular/Rearmar en las páginas de elementos están bloqueadas hasta que esto se complete.",
   "common.set_it_up": "configurarla",
   "common.language": "Idioma",
+  "common.theme": "Tema",
+  "common.theme_system": "Sistema",
+  "common.theme_light": "Claro",
+  "common.theme_dark": "Oscuro",
   "common.save": "Guardar",
   "config.leave_unchanged": "dejar sin cambios para mantener el valor actual",
   "config.not_set": "(no configurado)",
   "config.preview": "Vista previa",
   "config.reset_to_env_default": "Restablecer a env/predeterminado",
   "settings.UI_DEFAULT_LOCALE.label": "Idioma predeterminado",
-  "settings.UI_DEFAULT_LOCALE.description": "Idioma de respaldo de la interfaz cuando el navegador de un visitante no envía un Accept-Language reconocido y aún no ha elegido uno. La elección propia del visitante (el selector EN/ES) siempre tiene prioridad sobre esto, almacenada en una cookie por navegador. Se aplica en vivo — no requiere reinicio."
+  "settings.UI_DEFAULT_LOCALE.description": "Idioma de respaldo de la interfaz cuando el navegador de un visitante no envía un Accept-Language reconocido y aún no ha elegido uno. La elección propia del visitante (el selector EN/ES) siempre tiene prioridad sobre esto, almacenada en una cookie por navegador. Se aplica en vivo — no requiere reinicio.",
+  "settings.UI_DEFAULT_THEME.label": "Tema predeterminado",
+  "settings.UI_DEFAULT_THEME.description": "Tema de color de respaldo para un visitante que aún no ha elegido uno. La elección propia del visitante (el selector Sistema/Claro/Oscuro) siempre tiene prioridad sobre esto, almacenada en una cookie por navegador. \"Sistema\" sigue la preferencia del sistema operativo/navegador del visitante. Se aplica en vivo — no requiere reinicio."
 }

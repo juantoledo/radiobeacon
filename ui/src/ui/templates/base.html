@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ locale() }}">
+<html lang="{{ locale() }}"{% if theme() != 'system' %} data-theme="{{ theme() }}"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -48,6 +48,36 @@
         <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
         {% endif %}
       {% endif %}
+      <div class="sidebar-prefs">
+        {# Icon-only segmented control (System/Light/Dark) — the conventional
+           shape for a theme switcher (VS Code, GitHub, etc): three mutually
+           exclusive, always-visible options rather than a menu, since there
+           are only ever three and the current choice should be glanceable
+           without opening anything. #}
+        <form class="theme-switcher" method="post" action="/theme" role="group" aria-label="{{ t('common.theme') }}">
+          {{ csrf_field() }}
+          <input type="hidden" name="next" value="{{ request.url.path }}">
+          <button type="submit" name="theme" value="system" class="{{ 'active' if theme() == 'system' else '' }}" title="{{ t('common.theme_system') }}" aria-label="{{ t('common.theme_system') }}" {% if theme() == 'system' %}aria-current="true"{% endif %}>{{ icon('monitor', 15) }}</button>
+          <button type="submit" name="theme" value="light" class="{{ 'active' if theme() == 'light' else '' }}" title="{{ t('common.theme_light') }}" aria-label="{{ t('common.theme_light') }}" {% if theme() == 'light' %}aria-current="true"{% endif %}>{{ icon('sun', 15) }}</button>
+          <button type="submit" name="theme" value="dark" class="{{ 'active' if theme() == 'dark' else '' }}" title="{{ t('common.theme_dark') }}" aria-label="{{ t('common.theme_dark') }}" {% if theme() == 'dark' %}aria-current="true"{% endif %}>{{ icon('moon', 15) }}</button>
+        </form>
+        {# Native <select>, auto-submitting on change — the conventional
+           shape for a language picker (a button-per-language stops scaling
+           past two or three and reads oddly as a "choice among many"
+           control; a <select> is the standard affordance and stays usable
+           with JS disabled via the fallback button below). #}
+        <form class="locale-select" method="post" action="/locale" aria-label="{{ t('common.language') }}">
+          {{ csrf_field() }}
+          <input type="hidden" name="next" value="{{ request.url.path }}">
+          {{ icon('globe', 14) }}
+          <label class="sr-only" for="locale-select-input">{{ t('common.language') }}</label>
+          <select id="locale-select-input" name="locale" onchange="this.form.submit()">
+            <option value="en" {% if locale() == 'en' %}selected{% endif %}>English</option>
+            <option value="es" {% if locale() == 'es' %}selected{% endif %}>Español</option>
+          </select>
+          <noscript><button type="submit" class="btn secondary">{{ t('common.save') }}</button></noscript>
+        </form>
+      </div>
       {% if current_user() %}
       <form class="logout-form" method="post" action="/logout">
         {{ csrf_field() }}

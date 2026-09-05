@@ -240,6 +240,27 @@ def test_ai_skips_when_provider_env_var_unset_or_invalid(tmp_path, monkeypatch, 
     assert _stored_summary(conn, "senapred", "1") == "Some contents."
 
 
+def test_ai_no_provider_stores_title_when_flag_set(tmp_path, monkeypatch):
+    """AI enabled but ACTIONS_AI_PROVIDER invalid/unset -- with
+    ai_fallback_to_title on, the skip stores the item's title instead of
+    copying the full extracted_contents verbatim (same as the AI-disabled
+    and provider-failure paths)."""
+    monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
+    monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "0")
+    monkeypatch.delenv("ACTIONS_AI_PROVIDER", raising=False)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    set_adapter_instance(
+        conn, "alerts", "custom", {"code": "def fetch(config): return []", "ai_fallback_to_title": True}
+    )
+    _insert_item(conn, "alerts", "1", "Some contents.", extracted_title="A short title")
+
+    outputs = AiAction().run(_dispatched_event("alerts", "1"), conn=conn)
+
+    assert outputs[0]["summarized"] is False
+    assert outputs[0]["reason"].startswith("ACTIONS_AI_PROVIDER=")
+    assert _stored_summary(conn, "alerts", "1") == "A short title"
+
+
 def test_ai_propagates_provider_call_errors(tmp_path, monkeypatch):
     monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
     monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")

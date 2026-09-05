@@ -5,18 +5,6 @@
 {% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; {{ t('config.group_form.back_to', name=group.split(' — ')[0]) }}</a>{% endif %}
 <div class="page-header"><h1>{{ group }}</h1></div>
 
-{% if slug == 'ui' %}
-{# Quick per-browser language switch (POST /locale, a cookie — not a
-   catalog setting) — sits next to UI_DEFAULT_LOCALE below, which is the
-   server-side fallback used only when a visitor has no cookie yet. #}
-<form class="locale-switcher" method="post" action="/locale" aria-label="{{ t('common.language') }}">
-  {{ csrf_field() }}
-  <input type="hidden" name="next" value="{{ request.url.path }}">
-  <button type="submit" name="locale" value="en" class="{{ 'active' if locale() == 'en' else '' }}" {% if locale() == 'en' %}aria-current="true"{% endif %}>EN</button>
-  <button type="submit" name="locale" value="es" class="{{ 'active' if locale() == 'es' else '' }}" {% if locale() == 'es' %}aria-current="true"{% endif %}>ES</button>
-</form>
-{% endif %}
-
 {% include "_config_group_form_body.html" %}
 {% endblock %}
 

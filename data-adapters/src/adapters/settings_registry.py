@@ -67,6 +67,7 @@ SETTINGS_REGISTRY: dict[str, tuple[str, tuple[str, ...]]] = {
     "UI_DASHBOARD_REFRESH_SECONDS": ("int", ()),
     "UI_DEFAULT_CONSUMER_NAME": ("text", ()),
     "UI_DEFAULT_LOCALE": ("select", ("en", "es")),
+    "UI_DEFAULT_THEME": ("select", ("system", "light", "dark")),
     "BEACON_CALLSIGN": ("text", ()),
     "BEACON_DESCRIPTION": ("text", ()),
     "BEACON_SHORT_DESCRIPTION": ("text", ()),

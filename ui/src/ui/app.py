@@ -23,6 +23,7 @@ from .security import (
     CsrfCookieMiddleware,
     verify_csrf,
 )
+from .theme import ThemeMiddleware
 
 from .routers import (
     adapters,
@@ -39,6 +40,7 @@ from .routers import (
     policies,
     quick_settings,
     rf_conf,
+    theme,
     users,
 )
 
@@ -98,6 +100,7 @@ def _redirect_to_login(request: Request, exc: NotAuthenticated):
 # then the cross-origin POST guard, then the CSRF-cookie issuer.
 app.add_middleware(CsrfCookieMiddleware)
 app.add_middleware(LocaleMiddleware)
+app.add_middleware(ThemeMiddleware)
 app.add_middleware(CrossOriginGuardMiddleware, allowed_hosts=UI_ALLOWED_HOSTS)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=UI_ALLOWED_HOSTS)
 app.mount(
@@ -109,6 +112,7 @@ app.mount(
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(locale.router)
+app.include_router(theme.router)
 app.include_router(quick_settings.router)
 app.include_router(manual_tx.router)
 app.include_router(beacon.router)

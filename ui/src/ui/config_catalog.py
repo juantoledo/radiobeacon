@@ -451,6 +451,18 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "en",
         choices=("en", "es"),
     ),
+    SettingSpec(
+        "UI_DEFAULT_THEME",
+        "UI",
+        "Default theme",
+        "Fallback color theme for a visitor who hasn't chosen one yet. A "
+        "visitor's own choice (the System/Light/Dark toggle) always overrides "
+        "this, stored in a per-browser cookie. \"System\" follows the "
+        "visitor's OS/browser preference. Applies live — no restart needed.",
+        "select",
+        "system",
+        choices=("system", "light", "dark"),
+    ),
     # --- Beacon — Identity ---
     # The operator profile a listener actually hears/reads — required,
     # DB-only (env_fallback=False: a stray BEACON_CALLSIGN env var must

@@ -16,6 +16,7 @@ from .beacon import is_beacon_configured
 from .config_catalog import NAV_CATEGORY_ORDER, category_slug
 from .i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, translate
 from .icons import render_icon
+from .theme import DEFAULT_THEME, SUPPORTED_THEMES
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -84,6 +85,32 @@ def _locale_global(context) -> str:
 
 
 templates.env.globals["locale"] = _locale_global
+
+
+@pass_context
+def _theme_global(context) -> str:
+    """`{{ theme() }}` — the active request's resolved theme
+    ("system"/"light"/"dark"). ui.theme.ThemeMiddleware already resolved the
+    cookie half onto request.state.theme (or left it None); when that's
+    None, falls back to the DB-backed UI_DEFAULT_THEME setting using the
+    same per-request db_conn-reuse idiom as _locale_global above."""
+    request = context["request"]
+    explicit = getattr(request.state, "theme", None)
+    if explicit in SUPPORTED_THEMES:
+        return explicit
+    conn = getattr(request.state, "db_conn", None)
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        default_theme = get_setting("UI_DEFAULT_THEME", DEFAULT_THEME, conn=conn)
+    finally:
+        if owns_conn:
+            conn.close()
+    return default_theme if default_theme in SUPPORTED_THEMES else DEFAULT_THEME
+
+
+templates.env.globals["theme"] = _theme_global
 
 
 @pass_context
