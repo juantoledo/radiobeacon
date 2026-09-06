@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from adapters.api_adapter import ApiAdapter, preview_response
@@ -103,6 +104,47 @@ def test_fetch_returns_not_ok_on_network_error():
     assert reading.error
 
 
+def test_fetch_treats_object_items_path_result_as_a_single_item():
+    # A response whose root (or items_path target) is a JSON object, not a
+    # list — used to be iterated as a dict (yielding its keys as bogus
+    # "items" and logging a "'str' object is not a mapping" error per key,
+    # producing zero items). Now treated as exactly one item, the same way
+    # preview_response already displays it — this is what lets a
+    # single-object-response source (e.g. "current weather" APIs) work
+    # with items_path left empty, including via the whole-response
+    # {response} placeholder (see FieldMapping.resolve).
+    config = dict(
+        CSN_CONFIG,
+        items_path="",
+        mapping=dict(
+            CSN_CONFIG["mapping"],
+            id={"template": "openmeteo-{uuid}"},
+            contents={"template": "{response}"},
+        ),
+    )
+    response = {"latitude": -33.6, "hourly": {"temperature_2m": [1, 2]}}
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(response)):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.ok
+    assert len(reading.data) == 1
+    assert json.loads(reading.data[0].contents) == response
+
+
+def test_fetch_fails_cleanly_when_items_path_resolves_to_a_scalar():
+    # Neither a list nor a dict — genuinely can't be treated as any item(s).
+    config = dict(CSN_CONFIG, items_path="latitude")
+    with patch(
+        "adapters.api_adapter._OPENER.open",
+        return_value=_FakeResponse({"latitude": -33.6}),
+    ):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert not reading.ok
+    assert "not a list" in reading.error
+    assert reading.data == []
+
+
 def test_fetch_skips_malformed_item_without_failing_whole_batch():
     bad_and_good = [{"Fecha": None}, CSN_RESPONSE[0]]
     with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(bad_and_good)):
@@ -145,6 +187,105 @@ def test_fetch_mapping_source_name_falls_back_to_raw_key_when_unmanaged(tmp_path
         reading = ApiAdapter("quakes", config, db_path=db_path).fetch()
 
     assert reading.data[0].title == "[quakes] Test Zone"
+
+
+def test_fetch_mapping_template_can_reference_whole_item_as_json():
+    config = dict(
+        CSN_CONFIG,
+        mapping=dict(CSN_CONFIG["mapping"], contents={"template": "{raw}"}),
+    )
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE)):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.ok
+    # fetch() sorts by source_date_time descending, so match each mapped
+    # item back to its source row by Fecha rather than assuming order.
+    by_fecha = {row["Fecha"]: row for row in CSN_RESPONSE}
+    for mapped in reading.data:
+        parsed = json.loads(mapped.contents)
+        assert parsed == by_fecha[parsed["Fecha"]]
+    assert {json.loads(m.contents)["Fecha"] for m in reading.data} == set(by_fecha)
+
+
+def test_fetch_mapping_raw_falls_back_to_real_item_key_when_present():
+    config = dict(
+        CSN_CONFIG,
+        mapping=dict(CSN_CONFIG["mapping"], contents={"template": "{raw}"}),
+    )
+    response = [dict(CSN_RESPONSE[0], raw="already present")]
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(response)):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.data[0].contents == "already present"
+
+
+def test_fetch_mapping_template_can_reference_whole_response_as_json():
+    config = dict(
+        CSN_CONFIG,
+        mapping=dict(CSN_CONFIG["mapping"], contents={"template": "{response}"}),
+    )
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE)):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.ok
+    # items_path="" — the raw response IS the full list, same for every item.
+    assert json.loads(reading.data[0].contents) == CSN_RESPONSE
+    assert json.loads(reading.data[1].contents) == CSN_RESPONSE
+
+
+def test_fetch_mapping_response_falls_back_to_real_item_key_when_present():
+    config = dict(
+        CSN_CONFIG,
+        mapping=dict(CSN_CONFIG["mapping"], contents={"template": "{response}"}),
+    )
+    response = [dict(CSN_RESPONSE[0], response="already present")]
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(response)):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.data[0].contents == "already present"
+
+
+def test_fetch_mapping_template_can_reference_current_date_and_datetime():
+    fixed_now = datetime(2026, 3, 5, 12, 30, 0, tzinfo=timezone.utc)
+    config = dict(
+        CSN_CONFIG,
+        mapping=dict(CSN_CONFIG["mapping"], contents={"template": "{date} / {datetime}"}),
+    )
+    with patch("adapters.api_adapter.utc_now", return_value=fixed_now):
+        with patch(
+            "adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE[:1])
+        ):
+            reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.ok
+    assert reading.data[0].contents == "2026-03-05 / 2026-03-05T12:30:00+00:00"
+
+
+def test_fetch_date_field_can_be_set_to_current_datetime():
+    # date_field is normally a real item key, but {datetime}/{date} are
+    # pickable there too (see ApiAdapterConfig.resolve_source_date_time) —
+    # useful for a source with no per-item timestamp of its own, where
+    # every item gets stamped with this fetch's own start time instead.
+    fixed_now = datetime(2026, 3, 5, 12, 30, 0, tzinfo=timezone.utc)
+    config = dict(CSN_CONFIG, date_field="datetime", date_format=None)
+    with patch("adapters.api_adapter.utc_now", return_value=fixed_now):
+        with patch(
+            "adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE[:1])
+        ):
+            reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.ok
+    assert reading.data[0].source_date_time == fixed_now
+
+
+def test_fetch_date_field_current_datetime_falls_back_to_real_item_key_when_present():
+    config = dict(CSN_CONFIG, date_field="datetime", date_format=None)
+    response = [dict(CSN_RESPONSE[0], datetime="2020-01-01T00:00:00+00:00")]
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(response)):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.ok
+    assert reading.data[0].source_date_time == datetime(2020, 1, 1, tzinfo=timezone.utc)
 
 
 def test_fetch_does_not_touch_db_when_no_template_uses_source_placeholders(tmp_path):

@@ -91,8 +91,12 @@ window.RB = window.RB || {};
   function submitAjax(form, submitter) {
     var data = new FormData(form, submitter || undefined);
     var csrf = getCookie("csrf_token");
-    var action = form.getAttribute("action") || window.location.pathname;
-    var method = (form.getAttribute("method") || "post").toUpperCase();
+    var action = (submitter && submitter.hasAttribute("formaction"))
+      ? submitter.formAction
+      : form.getAttribute("action") || window.location.pathname;
+    var method = (submitter && submitter.hasAttribute("formmethod"))
+      ? submitter.formMethod.toUpperCase()
+      : (form.getAttribute("method") || "post").toUpperCase();
 
     fetch(action, {
       method: method,

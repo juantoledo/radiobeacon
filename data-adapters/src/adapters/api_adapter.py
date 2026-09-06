@@ -202,12 +202,20 @@ class FieldMapping:
                 if raw is None:
                     return None
                 return datetime.strptime(raw, self.field_date_format).isoformat()
-        # {uuid} is a fallback placeholder, not a reserved word — if the
-        # raw item genuinely has its own "uuid" field, that real value
-        # wins (item unpacked last/on top). `extra_context` carries the
-        # source's {source_name}/{source_url} (see ApiAdapter.fetch); the
-        # raw item still wins if it happens to have a same-named field.
-        context = {"uuid": _content_uuid(item), **(extra_context or {}), **item}
+        # {uuid}/{raw} are fallback placeholders, not reserved words — if
+        # the raw item genuinely has its own "uuid"/"raw" field, that real
+        # value wins (item unpacked last/on top). {raw} is the current
+        # item re-serialized as JSON, for templates that want to embed
+        # the whole thing rather than pick individual fields. `extra_context`
+        # carries {date}/{datetime} (this fetch's start time), the source's
+        # {source_name}/{source_url}, and {response} (the entire fetched
+        # response as JSON) — see ApiAdapter.fetch/_source_template_context;
+        # the raw item still wins if it happens to have a same-named field.
+        try:
+            raw_json = json.dumps(item)
+        except (TypeError, ValueError):
+            raw_json = ""
+        context = {"uuid": _content_uuid(item), "raw": raw_json, **(extra_context or {}), **item}
         return safe_format(self.template, f"api_adapter.{name}", **context)
 
     @classmethod
@@ -269,10 +277,22 @@ class ApiAdapterConfig:
     def mapping_for(self, name: str) -> FieldMapping:
         return self.mapping.get(name) or FieldMapping()
 
-    def resolve_source_date_time(self, item: dict[str, Any]) -> datetime | None:
-        if self.date_field is None or item.get(self.date_field) is None:
+    def resolve_source_date_time(
+        self, item: dict[str, Any], extra_context: dict[str, Any] | None = None
+    ) -> datetime | None:
+        """`date_field` is normally a real key in `item`, but it can also
+        be set to one of FieldMapping's synthesized placeholders —
+        currently only {date}/{datetime} make sense as a parseable
+        timestamp (see ApiAdapter._source_template_context) — falling back
+        to `extra_context` the same "real field wins" way FieldMapping.resolve
+        does. Picking {datetime} with no date_format gives every item this
+        fetch's own start time as its source_date_time, for sources with no
+        per-item timestamp of their own."""
+        raw = item.get(self.date_field) if self.date_field is not None else None
+        if raw is None and self.date_field is not None and extra_context is not None:
+            raw = extra_context.get(self.date_field)
+        if raw is None:
             return None
-        raw = item[self.date_field]
         dt = datetime.strptime(raw, self.date_format) if self.date_format else datetime.fromisoformat(raw)
         return to_utc(dt, assume_tz=self.source_timezone)
 
@@ -301,7 +321,7 @@ def _map_item(
     if fields["id"] is None:
         raise ValueError("mapped id is None")
     return AdapterItem(
-        source_date_time=cfg.resolve_source_date_time(item),
+        source_date_time=cfg.resolve_source_date_time(item, extra_context),
         transmit_policy=cfg.transmit_policy,
         raw=item,
         **fields,
@@ -428,25 +448,42 @@ class ApiAdapter(DataSourceAdapter):
         self.config = config
         self.db_path = db_path
 
-    def _source_template_context(self, cfg: ApiAdapterConfig) -> dict[str, str]:
-        """{source_name}/{source_url} for the field-mapping templates — the
-        source's display name / site URL from the `sources` table, the same
-        placeholders beacon & actions expose. Only hits the DB when a
-        mapping template actually references one of them (the common case
-        doesn't), so a source that doesn't use these placeholders keeps its
-        fetch path DB-free. Fail-soft: any DB trouble just yields the raw
-        source key as {source_name} and "" as {source_url}, matching
-        adapters.storage.get_source_fields' own unmanaged-source fallback,
-        so a mapping is never crashed by it."""
+    def _source_template_context(
+        self, cfg: ApiAdapterConfig, raw_response: Any, now: datetime
+    ) -> dict[str, str]:
+        """{date}/{datetime}/{source_name}/{source_url}/{response} for the
+        field-mapping templates: {date}/{datetime} are this fetch's start
+        time (same `now` as `fetched_at`, so every item from one fetch
+        shares one timestamp — same names aiprompt_adapter's prompt
+        templates already use); {source_name}/{source_url} are the
+        source's display name / site URL from the `sources` table (same
+        placeholders beacon & actions expose); {response} is the entire
+        fetched response (pre-items_path) re-serialized as JSON for
+        templates that want to embed the whole response rather than one
+        item's fields. The DB lookup and the response json.dumps are each
+        only done when a mapping template actually references them (the
+        common case references none of them), so a source that doesn't use
+        these placeholders keeps its fetch path DB-free and skips
+        re-serializing a (possibly several-MB) response. Fail-soft: any DB
+        trouble just yields the raw source key as {source_name} and "" as
+        {source_url}, matching adapters.storage.get_source_fields' own
+        unmanaged-source fallback, so a mapping is never crashed by it."""
         templates = " ".join(
             fm.template for fm in cfg.mapping.values() if fm.template is not None
         )
+        context: dict[str, str] = {"date": now.date().isoformat(), "datetime": now.isoformat()}
+        if "{response}" in templates:
+            try:
+                context["response"] = json.dumps(raw_response)
+            except (TypeError, ValueError):
+                context["response"] = ""
         if "{source_name}" not in templates and "{source_url}" not in templates:
-            return {}
+            return context
         try:
             conn = get_connection(self.db_path)
             try:
-                return get_source_fields(conn, self.source)
+                context.update(get_source_fields(conn, self.source))
+                return context
             finally:
                 conn.close()
         except Exception:
@@ -455,7 +492,8 @@ class ApiAdapter(DataSourceAdapter):
                 self.source,
                 exc_info=True,
             )
-            return {"source_name": self.source, "source_url": ""}
+            context.update({"source_name": self.source, "source_url": ""})
+            return context
 
     def _allow_private_fetch(self) -> bool:
         try:
@@ -475,7 +513,22 @@ class ApiAdapter(DataSourceAdapter):
             cfg = ApiAdapterConfig.from_dict(self.config)
             raw_response = _fetch_json(cfg, allow_private=self._allow_private_fetch())
             raw_items = _lookup_path(raw_response, cfg.items_path)
-            source_context = self._source_template_context(cfg)
+            if isinstance(raw_items, dict):
+                # items_path resolved to a single object rather than a
+                # list of them — treat the whole thing as exactly one item
+                # (mirrors preview_response's own `[resolved]` wrapping for
+                # display) instead of iterating it as a dict, which would
+                # yield its *keys* as bogus item values. This is what makes
+                # a single-object-response source (e.g. "current weather"
+                # style APIs, or a mapping built around {raw}/{response} —
+                # see FieldMapping.resolve) work with items_path left empty.
+                raw_items = [raw_items]
+            elif not isinstance(raw_items, list):
+                raise TypeError(
+                    f"items_path {cfg.items_path!r} resolves to a "
+                    f"{type(raw_items).__name__}, not a list of items"
+                )
+            source_context = self._source_template_context(cfg, raw_response, now)
             items = []
             for raw_item in raw_items:
                 try:

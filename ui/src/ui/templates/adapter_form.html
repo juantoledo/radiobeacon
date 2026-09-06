@@ -188,6 +188,24 @@
     <p class="meta-line">
       {{ t('adapter_form.help.mapping_intro') | safe }}
     </p>
+    <p>
+      <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+              data-field-name="raw" title="{{ t('adapter_form.sample.whole_item_chip_title') }}">
+        {{ t('adapter_form.sample.whole_item_chip_label') }}
+      </button>
+      <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+              data-field-name="response" title="{{ t('adapter_form.sample.whole_response_chip_title') }}">
+        {{ t('adapter_form.sample.whole_response_chip_label') }}
+      </button>
+      <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+              data-field-name="date" title="{{ t('adapter_form.sample.date_chip_title') }}">
+        {{ t('adapter_form.sample.date_chip_label') }}
+      </button>
+      <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+              data-field-name="datetime" title="{{ t('adapter_form.sample.datetime_chip_title') }}">
+        {{ t('adapter_form.sample.datetime_chip_label') }}
+      </button>
+    </p>
     <div class="table-wrap">
       <table class="kv-table">
         <thead><tr><th>{{ t('adapter_form.table.field_header') }}</th><th>{{ t('adapter_form.table.template_header') }}</th><th>{{ t('adapter_form.table.mapping_date_format_header') | safe }}</th></tr></thead>
@@ -214,7 +232,20 @@
     <table class="form-table">
       <tr>
         <th><label for="date_field">{{ t('adapter_form.field.date_field_label') }}</label></th>
-        <td><input id="date_field" name="date_field" type="text" value="{{ api_fields.date_field }}" list="sample-field-names" class="field-drop-target"></td>
+        <td>
+          <input id="date_field" name="date_field" type="text" value="{{ api_fields.date_field }}" list="sample-field-names" class="field-drop-target">
+          <div class="meta-line">
+            {{ t('adapter_form.help.date_field') | safe }}
+            <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                    data-field-name="date" title="{{ t('adapter_form.sample.date_chip_title') }}">
+              {{ t('adapter_form.sample.date_chip_label') }}
+            </button>
+            <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                    data-field-name="datetime" title="{{ t('adapter_form.sample.datetime_chip_title') }}">
+              {{ t('adapter_form.sample.datetime_chip_label') }}
+            </button>
+          </div>
+        </td>
       </tr>
       <tr>
         <th><label for="date_format">{{ t('adapter_form.field.date_format_label') }}</label></th>
