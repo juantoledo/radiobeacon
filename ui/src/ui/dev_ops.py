@@ -1,7 +1,7 @@
 """Write operations backing the Developers section (/dev) — direct
 add/edit/delete on `items`. Deliberately separate from queries.py
 (read-only) and from adapters.storage/dispatcher.* (which enforce the
-"items are immutable after insert, except summary/transmit_policy"
+"items are immutable after insert, except summary/policy"
 contract — see adapters.storage.store_reading's docstring): the
 Developers section is an explicit, clearly-labeled escape hatch around
 that contract for debugging/backfilling, not a replacement for it. Every
@@ -27,7 +27,7 @@ def create_item(
     event_key: str | None,
     type_: str | None,
     subtype: str | None,
-    transmit_policy: str | None,
+    policy: str | None,
     source_date_time: str | None,
 ) -> None:
     """Raises sqlite3.IntegrityError if (source, item_id) already exists
@@ -40,7 +40,7 @@ def create_item(
     conn.execute(
         "INSERT INTO items "
         "(source, item_id, extracted_title, extracted_contents, summary, url, "
-        "event_key, type, subtype, transmit_policy, source_date_time, "
+        "event_key, type, subtype, policy, source_date_time, "
         "fetched_at, rawdata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
@@ -53,7 +53,7 @@ def create_item(
             event_key,
             type_,
             subtype,
-            transmit_policy,
+            policy,
             source_date_time,
             utc_now().isoformat(),
             json.dumps({"_created_via": "ui.dev"}),
@@ -66,7 +66,7 @@ def create_item(
         actor="ui.dev",
         source=source,
         item_id=item_id,
-        details={"transmit_policy": transmit_policy},
+        details={"policy": policy},
     )
 
 
@@ -82,7 +82,7 @@ def update_item(
     event_key: str | None,
     type_: str | None,
     subtype: str | None,
-    transmit_policy: str | None,
+    policy: str | None,
     source_date_time: str | None,
 ) -> bool:
     """Full-row edit of every field except the primary key (source,
@@ -94,7 +94,7 @@ def update_item(
     recreate it instead. Returns whether a row was actually updated."""
     cursor = conn.execute(
         "UPDATE items SET extracted_title = ?, extracted_contents = ?, summary = ?, "
-        "url = ?, event_key = ?, type = ?, subtype = ?, transmit_policy = ?, "
+        "url = ?, event_key = ?, type = ?, subtype = ?, policy = ?, "
         "source_date_time = ? WHERE source = ? AND item_id = ?",
         (
             extracted_title,
@@ -104,7 +104,7 @@ def update_item(
             event_key,
             type_,
             subtype,
-            transmit_policy,
+            policy,
             source_date_time,
             source,
             item_id,
@@ -118,7 +118,7 @@ def update_item(
             actor="ui.dev",
             source=source,
             item_id=item_id,
-            details={"transmit_policy": transmit_policy},
+            details={"policy": policy},
         )
     return cursor.rowcount > 0
 

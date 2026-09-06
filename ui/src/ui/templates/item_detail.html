@@ -83,7 +83,7 @@
       <div class="panel-head">
         <h2>{{ icon('clock', 16) }}{{ t('item_detail.details_heading') }}</h2>
         <div class="header-badges">
-          {% if item.transmit_policy %}<span class="{{ item.transmit_policy | policy_badge }}">{{ item.transmit_policy }}</span>{% else %}<span class="muted">{{ t('item_detail.policy_unset') }}</span>{% endif %}
+          {% if item.policy %}<span class="{{ item.policy | policy_badge }}">{{ item.policy }}</span>{% else %}<span class="muted">{{ t('item_detail.policy_unset') }}</span>{% endif %}
         </div>
       </div>
       <dl class="stat-list">
@@ -96,10 +96,10 @@
     <h2>{{ icon('zap', 16) }}{{ t('item_detail.actions') }}</h2>
     <form class="action" method="post" action="/items/{{ item.source }}/{{ item.item_id }}/override">
       {{ csrf_field() }}
-      <label for="transmit_policy">{{ t('item_detail.set_transmit_policy') }}</label>
-      <select id="transmit_policy" name="transmit_policy">
+      <label for="policy">{{ t('item_detail.set_transmit_policy') }}</label>
+      <select id="policy" name="policy">
         {% for p in policies %}
-        <option value="{{ p[0] }}" {% if item.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
+        <option value="{{ p.name }}" {% if item.policy == p.name %}selected{% endif %}>{{ p.name }}</option>
         {% endfor %}
       </select>
       <button type="submit" {% if not is_beacon_configured() %}disabled{% endif %}>{{ icon('check', 14) }}{{ t('item_detail.override_button') }}</button>

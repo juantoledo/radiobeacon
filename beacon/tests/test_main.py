@@ -14,7 +14,7 @@ from adapters.storage import (
     record_audit_event,
     set_setting,
 )
-from adapters.transmit_policy import set_policy
+from adapters.policy import set_policy
 
 import beacon.__main__ as main_module
 
@@ -88,14 +88,14 @@ def _insert_chunk(conn, source, item_id, chunk_index=0, text="chunk text", chunk
 def _insert_item(
     conn, source, item_id, *,
     extracted_contents="raw", summary=None, source_date_time=None,
-    extracted_title=None, url=None, item_type=None, subtype=None, transmit_policy=None,
+    extracted_title=None, url=None, item_type=None, subtype=None, policy=None,
 ):
     conn.execute(
         "INSERT INTO items (source, item_id, extracted_contents, summary, source_date_time, "
-        "extracted_title, url, type, subtype, transmit_policy, fetched_at, rawdata) "
+        "extracted_title, url, type, subtype, policy, fetched_at, rawdata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), '{}')",
         (source, item_id, extracted_contents, summary, source_date_time, extracted_title,
-         url, item_type, subtype, transmit_policy),
+         url, item_type, subtype, policy),
     )
     conn.commit()
 
@@ -282,7 +282,7 @@ def test_drain_manual_tx_deletes_row_even_when_transmitter_fails(tmp_path):
 def test_handle_content_ready_frame_type_schedules_one_row_per_chunk(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _set_type(conn, "frame")
-    _insert_item(conn, "csn", "1", transmit_policy="informational")
+    _insert_item(conn, "csn", "1", policy="informational")
     _insert_chunk(conn, "csn", "1", 0, "chunk zero", chunk_count=3)
     _insert_chunk(conn, "csn", "1", 1, "chunk one", chunk_count=3)
     _insert_chunk(conn, "csn", "1", 2, "chunk two", chunk_count=3)
@@ -292,7 +292,7 @@ def test_handle_content_ready_frame_type_schedules_one_row_per_chunk(tmp_path):
     assert _count(conn, "frame") == 3
     assert _count(conn, "voice") == 0
     frame0 = conn.execute(
-        "SELECT ref, transmit_policy, sent_count FROM beacon_tx_schedule "
+        "SELECT ref, policy, sent_count FROM beacon_tx_schedule "
         "WHERE kind='frame' AND ref='0'"
     ).fetchone()
     assert frame0 == ("0", "informational", 0)
@@ -499,7 +499,7 @@ def test_write_heartbeat_persists_type_and_schedule_counts(tmp_path):
 def test_drain_kind_transmits_due_frame_row_and_increments_sent_count(tmp_path, _stub_frame_audio):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    set_policy(conn, "repeat", repeat_times=3, interval_seconds=60)
+    set_policy(conn, "repeat", transmit_kind="interval", transmit_count=3, transmit_interval_seconds=60)
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "repeat", "e1")
     tx = _RecordingWavTransmitter()
 
@@ -552,7 +552,7 @@ def test_drain_kind_retires_row_at_repeat_times(tmp_path):
 def test_drain_kind_respects_interval_seconds(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    set_policy(conn, "slow", repeat_times=5, interval_seconds=60)
+    set_policy(conn, "slow", transmit_kind="interval", transmit_count=5, transmit_interval_seconds=60)
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "slow", "e1")
 
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -568,13 +568,15 @@ def test_drain_kind_respects_interval_seconds(tmp_path):
 def test_drain_kind_counts_failed_attempts_against_budget(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
     _insert_chunk(conn, "csn", "1", 0, "chunk text")
-    set_policy(conn, "twice", repeat_times=2, interval_seconds=0)
+    set_policy(conn, "twice", transmit_kind="interval", transmit_count=2, transmit_interval_seconds=30)
     add_tx_schedule_unit(conn, "csn", "1", "frame", "0", "twice", "e1")
     tx = _RecordingWavTransmitter(result=False)  # every hand-off fails
 
     base = datetime(2026, 1, 1, tzinfo=timezone.utc)
     main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(wav_transmitter=tx), 0.0)
-    main_module._drain_kind(threading.Event(), conn, "frame", base, _ctx(wav_transmitter=tx), 0.0)
+    main_module._drain_kind(
+        threading.Event(), conn, "frame", base + timedelta(seconds=31), _ctx(wav_transmitter=tx), 0.0
+    )
 
     assert _count(conn, "frame") == 0
 

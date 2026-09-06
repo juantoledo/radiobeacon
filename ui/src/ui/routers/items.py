@@ -5,7 +5,7 @@ from urllib.parse import urlencode
 from adapters.storage import get_setting, schedule_retransmit
 from dispatcher.mq_publisher import PUBLISHED_EVENT_TYPES
 from dispatcher.override import override_item, rearm_item
-from adapters.transmit_policy import list_policies
+from adapters.policy import list_policies
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import FileResponse, RedirectResponse
 
@@ -28,7 +28,7 @@ def list_items_page(
     request: Request,
     source: str | None = None,
     type: str | None = None,
-    transmit_policy: str | None = None,
+    policy: str | None = None,
     event_key: str | None = None,
     q: str | None = None,
     page: int = 1,
@@ -41,7 +41,7 @@ def list_items_page(
         conn,
         source=source or None,
         type_=type or None,
-        transmit_policy=transmit_policy or None,
+        policy=policy or None,
         event_key=event_key or None,
         q=q or None,
         limit=page_size,
@@ -62,7 +62,7 @@ def list_items_page(
             "filters": {
                 "source": source or "",
                 "type": type or "",
-                "transmit_policy": transmit_policy or "",
+                "policy": policy or "",
                 "event_key": event_key or "",
                 "q": q or "",
             },
@@ -122,16 +122,16 @@ def item_audio(
 def override_item_action(
     source: str,
     item_id: str,
-    transmit_policy: str = Form(...),
+    policy: str = Form(...),
     conn: sqlite3.Connection = Depends(get_db),
 ):
     if not is_beacon_configured(conn):
-        error = "beacon identity not configured — set it up before overriding transmit_policy"
+        error = "beacon identity not configured — set it up before re-pointing the Policy"
         return RedirectResponse(
             url=f"/items/{source}/{item_id}?{urlencode({'error': error})}", status_code=303
         )
-    updated = override_item(conn, source, item_id, transmit_policy=transmit_policy)
-    msg = "transmit_policy updated" if updated else "item not found — nothing updated"
+    updated = override_item(conn, source, item_id, policy=policy)
+    msg = "policy updated" if updated else "item not found — nothing updated"
     return RedirectResponse(
         url=f"/items/{source}/{item_id}?{urlencode({'msg': msg})}", status_code=303
     )

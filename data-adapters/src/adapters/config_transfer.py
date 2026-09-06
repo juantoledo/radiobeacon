@@ -5,7 +5,7 @@ policies, source display metadata, and per-source adapter definitions
 both as one logical adapter — see ui.routers.adapters.adapter_save_action).
 
 Both directions go through the exact same functions the UI/CLI already use
-for a single hand edit (get_setting/set_setting, transmit_policy.set_policy,
+for a single hand edit (get_setting/set_setting, policy.set_policy,
 set_source, set_adapter_instance) — so a bulk import is indistinguishable
 from the same edits made one at a time, right down to the audit_log rows
 and the optional MQTT publish (register_audit_event_hook). No raw SQL here.
@@ -39,11 +39,11 @@ from .storage import (
     set_source,
 )
 from .timeutil import utc_now
-from .transmit_policy import DEFAULT_POLICY_NAME, list_policies, set_policy
+from .policy import DEFAULT_POLICY_NAME, list_policies, set_policy
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
-_SECTIONS = ("settings", "transmit_policies", "sources", "adapter_instances")
+_SECTIONS = ("settings", "policies", "sources", "adapter_instances")
 _ADAPTER_TYPES = ("api", "custom", "aiprompt")
 
 
@@ -91,12 +91,18 @@ def build_export(conn: sqlite3.Connection, *, actor: str) -> dict[str, Any]:
 
     policies = [
         {
-            "name": name,
-            "repeat_times": repeat_times,
-            "interval_seconds": interval_seconds,
-            "description": description,
+            "name": p.name,
+            "fetch_kind": p.fetch_kind,
+            "fetch_interval_seconds": p.fetch_interval_seconds,
+            "fetch_cron": p.fetch_cron,
+            "process_mode": p.process_mode,
+            "transmit_kind": p.transmit_kind,
+            "transmit_count": p.transmit_count,
+            "transmit_interval_seconds": p.transmit_interval_seconds,
+            "transmit_cron": p.transmit_cron,
+            "description": p.description,
         }
-        for name, repeat_times, interval_seconds, description in list_policies(conn)
+        for p in list_policies(conn)
     ]
 
     all_sources: dict[str, tuple[str, str | None]] = {
@@ -111,7 +117,7 @@ def build_export(conn: sqlite3.Connection, *, actor: str) -> dict[str, Any]:
             "source": row["source"],
             "adapter_type": row["adapter_type"],
             "enabled": bool(row["enabled"]),
-            "interval_seconds": row["interval_seconds"],
+            "policy": row["policy"],
             "config": json.loads(row["config"]),
         }
         linked = all_sources.get(row["source"])
@@ -138,7 +144,7 @@ def build_export(conn: sqlite3.Connection, *, actor: str) -> dict[str, Any]:
         # install (get_setting's own env_fallback=False -> default).
         "source_install": get_setting("BEACON_CALLSIGN", None, conn=conn, env_fallback=False),
         "settings": settings,
-        "transmit_policies": policies,
+        "policies": policies,
         "sources": orphan_sources,
         "adapter_instances": adapter_instances,
     }
@@ -148,7 +154,7 @@ def build_export(conn: sqlite3.Connection, *, actor: str) -> dict[str, Any]:
         actor=actor,
         details={
             "settings": len(settings),
-            "transmit_policies": len(policies),
+            "policies": len(policies),
             "sources": len(orphan_sources),
             "adapter_instances": len(adapter_instances),
         },
@@ -176,7 +182,7 @@ def _import_settings(
     results: list[ImportItemResult] = []
     for key, raw in entries.items():
         # Each record's own try/except (mirrors storage.
-        # _migrate_adapter_instances_config's per-row isolation): the
+        # per-row isolation): the
         # explicit checks below cover every anticipated bad-input shape
         # (secret key, unknown key, wrong type/choice) via a plain
         # `continue`; this is the safety net for anything they didn't
@@ -237,10 +243,10 @@ def _import_settings(
     return results
 
 
-def _import_transmit_policies(
+def _import_policies(
     conn: sqlite3.Connection, entries: list[Any], *, dry_run: bool
 ) -> tuple[list[ImportItemResult], set[str]]:
-    existing = {row[0] for row in list_policies(conn)}
+    existing = {p.name for p in list_policies(conn)}
     known = set(existing)  # grows as valid records are accepted, dry_run or not
     results: list[ImportItemResult] = []
     for entry in entries:
@@ -248,41 +254,36 @@ def _import_transmit_policies(
         try:
             if not isinstance(entry, dict):
                 results.append(
-                    ImportItemResult("transmit_policies", "?", "skipped", reason="not an object")
+                    ImportItemResult("policies", "?", "skipped", reason="not an object")
                 )
                 continue
             if not name:
                 results.append(
-                    ImportItemResult("transmit_policies", "?", "skipped", reason="missing 'name'")
-                )
-                continue
-            try:
-                repeat_times = int(entry["repeat_times"])
-                interval_seconds = int(entry["interval_seconds"])
-            except (KeyError, TypeError, ValueError) as e:
-                results.append(
-                    ImportItemResult(
-                        "transmit_policies", name, "skipped",
-                        reason=f"repeat_times/interval_seconds must be integers ({e})",
-                    )
-                )
-                continue
-            if repeat_times < 1 or interval_seconds < 0:
-                results.append(
-                    ImportItemResult(
-                        "transmit_policies", name, "skipped",
-                        reason="repeat_times must be >= 1 and interval_seconds >= 0",
-                    )
+                    ImportItemResult("policies", "?", "skipped", reason="missing 'name'")
                 )
                 continue
 
             action = "updated" if name in existing else "created"
             if not dry_run:
-                set_policy(conn, name, repeat_times, interval_seconds, entry.get("description"))
+                # set_policy validates kinds / crons / counts and raises
+                # ValueError on an incoherent record -> caught below.
+                set_policy(
+                    conn,
+                    name,
+                    fetch_kind=entry.get("fetch_kind", "interval"),
+                    fetch_interval_seconds=entry.get("fetch_interval_seconds"),
+                    fetch_cron=entry.get("fetch_cron"),
+                    process_mode=entry.get("process_mode", "on_new_data"),
+                    transmit_kind=entry.get("transmit_kind", "once"),
+                    transmit_count=int(entry.get("transmit_count", 1)),
+                    transmit_interval_seconds=int(entry.get("transmit_interval_seconds", 0)),
+                    transmit_cron=entry.get("transmit_cron"),
+                    description=entry.get("description"),
+                )
             known.add(name)
-            results.append(ImportItemResult("transmit_policies", name, action))
+            results.append(ImportItemResult("policies", name, action))
         except Exception as e:  # noqa: BLE001
-            results.append(ImportItemResult("transmit_policies", name, "skipped", reason=str(e)))
+            results.append(ImportItemResult("policies", name, "skipped", reason=str(e)))
     return results, known
 
 
@@ -370,29 +371,17 @@ def _import_adapter_instances(
                     )
                 )
                 continue
-            interval_seconds = entry.get("interval_seconds")
-            if interval_seconds is not None:
-                try:
-                    interval_seconds = int(interval_seconds)
-                except (TypeError, ValueError):
-                    results.append(
-                        ImportItemResult(
-                            "adapter_instances", source, "skipped",
-                            reason="'interval_seconds' must be an integer or null",
-                        )
-                    )
-                    continue
+            policy_name = entry.get("policy")
 
             warnings: list[str] = []
-            policy_name = config.get("transmit_policy")
             if (
                 policy_name
                 and policy_name != DEFAULT_POLICY_NAME
                 and policy_name not in known_policy_names
             ):
                 warnings.append(
-                    f"transmit_policy {policy_name!r} not found on the target — items will "
-                    f"fall back to {DEFAULT_POLICY_NAME!r} until a policy with that name exists"
+                    f"policy {policy_name!r} not found on the target — items will "
+                    f"fall back to {DEFAULT_POLICY_NAME!r} until a Policy with that name exists"
                 )
 
             action = "updated" if source in existing else "created"
@@ -403,7 +392,7 @@ def _import_adapter_instances(
                     adapter_type,
                     config,
                     enabled=bool(entry.get("enabled", True)),
-                    interval_seconds=interval_seconds,
+                    policy=policy_name,
                 )
                 display_name = entry.get("display_name")
                 if display_name:
@@ -431,14 +420,13 @@ def import_config(
     via the same set_setting/set_policy/set_source/set_adapter_instance
     functions a manual edit uses — never deletes anything absent from the
     file. Each record is validated and applied independently, in its own
-    try/except (mirrors storage._migrate_adapter_instances_config's
-    per-row isolation), so one malformed record never aborts the import;
-    it's just recorded as "skipped" with a reason.
+    try/except, so one malformed record never aborts the import; it's just
+    recorded as "skipped" with a reason.
 
-    Order matters: settings, then transmit_policies, then sources, then
-    adapter_instances — policies land before adapters so an adapter's
-    `config.transmit_policy` cross-reference can resolve against a policy
-    defined earlier in the *same* file, not just what predates it in the DB.
+    Order matters: settings, then policies, then sources, then
+    adapter_instances — Policies land before adapters so an adapter's
+    `policy` cross-reference can resolve against a Policy defined earlier
+    in the *same* file, not just what predates it in the DB.
 
     dry_run=True runs every validation (including correct created-vs-
     updated classification, which only needs read-only lookups) but makes
@@ -446,15 +434,15 @@ def import_config(
     records one `config.imported` audit event with the resulting
     ImportSummary.counts().
 
-    Raises ValueError if `data["schema_version"]` is newer than this build
-    understands (a future export could carry a section this code can't
-    validate) — every version <= SCHEMA_VERSION is accepted, so an export
-    from an older radiobeacon stays importable indefinitely."""
-    version = data.get("schema_version", 1)
-    if not isinstance(version, int) or version > SCHEMA_VERSION:
+    Raises ValueError if `data["schema_version"]` is not exactly
+    SCHEMA_VERSION — the Policy schema changed shape, so pre-v2 exports
+    (flat `transmit_policies` / per-row `interval_seconds`) are no longer
+    importable."""
+    version = data.get("schema_version")
+    if version != SCHEMA_VERSION:
         raise ValueError(
-            f"config export schema_version {version!r} is newer than this build "
-            f"understands (max {SCHEMA_VERSION}) -- cannot import"
+            f"config export schema_version {version!r} is not supported "
+            f"(this build imports v{SCHEMA_VERSION} only)"
         )
 
     results: list[ImportItemResult] = []
@@ -463,8 +451,8 @@ def import_config(
         _import_settings(conn, data.get("settings") or {}, actor=actor, dry_run=dry_run)
     )
 
-    policy_results, known_policy_names = _import_transmit_policies(
-        conn, data.get("transmit_policies") or [], dry_run=dry_run
+    policy_results, known_policy_names = _import_policies(
+        conn, data.get("policies") or [], dry_run=dry_run
     )
     results.extend(policy_results)
 

@@ -66,7 +66,7 @@ BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT = "{callsign} watermark {date}"
 
 # Manual transmission: a one-shot message an operator types into the
 # dashboard and sends immediately (see beacon.__main__._drain_manual_tx and
-# ui.routers.manual_tx). It has no item and no transmit_policy — it's sent
+# ui.routers.manual_tx). It has no item and no Policy — it's sent
 # once, on the next tick, and dropped. This outer template wraps the typed
 # text for the voice channel so the callsign is always spoken; {callsign}
 # and {text} are the placeholders (rendered via adapters.templating.

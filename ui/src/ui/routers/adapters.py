@@ -5,7 +5,6 @@ import sqlite3
 from typing import Any
 from urllib.parse import urlencode
 
-from adapters import cron
 from adapters.aiprompt_adapter import AiPromptAdapter
 from adapters.api_adapter import ApiAdapter, FieldMapping, preview_response
 from adapters.custom_adapter import CustomAdapter
@@ -20,7 +19,7 @@ from adapters.storage import (
     set_adapter_instance,
     set_source,
 )
-from adapters.transmit_policy import DEFAULT_POLICY_NAME, list_policies
+from adapters.policy import DEFAULT_POLICY_NAME, describe_policy, list_policies, resolve_policy
 from fastapi import APIRouter, Depends, HTTPException, Request
 from markupsafe import Markup
 from starlette.datastructures import FormData
@@ -60,8 +59,6 @@ def _guard_custom_adapter(adapter_type: str, conn: sqlite3.Connection) -> None:
 # MAPPED_FIELDS' role for the API type — see _config_to_fields / _form_to_fields.
 AIPROMPT_FIELDS = (
     "prompt",
-    "cron",
-    "transmit_policy",
     "title_template",
     "type",
     "subtype",
@@ -75,11 +72,11 @@ AIPROMPT_FIELDS = (
 MAPPED_FIELDS = ("id", "title", "contents", "url", "event_key", "type", "subtype")
 
 
-def _build_test_adapter(source: str, adapter_type: str, config: dict):
+def _build_test_adapter(source: str, adapter_type: str, config: dict, policy=None):
     adapter_class = _ADAPTER_CLASSES.get(adapter_type)
     if adapter_class is None:
         raise HTTPException(status_code=400, detail=f"unknown adapter_type {adapter_type!r}")
-    return adapter_class(source=source, config=config)
+    return adapter_class(source=source, config=config, policy=policy)
 
 
 def _item_to_dict(item) -> dict:
@@ -147,8 +144,6 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
     if adapter_type == "aiprompt":
         return {
             "prompt": config.get("prompt", ""),
-            "cron": config.get("cron", ""),
-            "transmit_policy": config.get("transmit_policy", "") or DEFAULT_POLICY_NAME,
             "title_template": config.get("title_template", ""),
             "type": config.get("type", ""),
             "subtype": config.get("subtype", ""),
@@ -168,9 +163,6 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
             "date_format": fm.field_date_format or "",
         }
 
-    # Back-compat: an unmigrated config may still hold the removed threshold
-    # rule — surface its non-escalated branch as the plain policy selection.
-    legacy_rule = config.get("transmit_policy_rule") or config.get("dispatch_policy_rule") or {}
     return {
         "url": config.get("url") or "",
         "method": config.get("method") or "GET",
@@ -182,11 +174,6 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
         "date_field": config.get("date_field") or "",
         "date_format": config.get("date_format") or "",
         "source_timezone": config.get("source_timezone") or "",
-        "transmit_policy": (
-            config.get("transmit_policy")
-            or legacy_rule.get("if_false")
-            or DEFAULT_POLICY_NAME
-        ),
     }
 
 
@@ -226,14 +213,13 @@ def _form_to_fields(adapter_type: str, form: FormData) -> dict:
         "date_field": form.get("date_field") or "",
         "date_format": form.get("date_format") or "",
         "source_timezone": form.get("source_timezone") or "",
-        "transmit_policy": form.get("transmit_policy") or DEFAULT_POLICY_NAME,
     }
 
 
 def _form_to_config(adapter_type: str, form: FormData) -> dict:
     """Posted form -> the config dict to store/test — the inverse of
     _config_to_fields. Raises ValueError on bad input (missing URL, a
-    non-integer max_tokens, an invalid aiprompt cron); callers catch it
+    non-integer number, a missing prompt); callers catch it
     and re-render via _form_to_fields so nothing the user typed is lost."""
     fields = _form_to_fields(adapter_type, form)
     if adapter_type == "custom":
@@ -243,19 +229,11 @@ def _form_to_config(adapter_type: str, form: FormData) -> dict:
         prompt = fields["prompt"].strip()
         if not prompt:
             raise ValueError("Prompt is required.")
-        cron_expr = fields["cron"].strip()
-        if not cron_expr:
-            raise ValueError("A cron expression is required.")
-        if not cron.is_valid_cron(cron_expr):
-            raise ValueError(f"Cron expression {cron_expr!r} is not valid.")
-        config = {"prompt": prompt, "cron": cron_expr}
+        config = {"prompt": prompt}
         for key in ("title_template", "type", "subtype", "event_key_template"):
             value = fields[key].strip()
             if value:
                 config[key] = value
-        policy = fields["transmit_policy"].strip()
-        if policy and policy != DEFAULT_POLICY_NAME:
-            config["transmit_policy"] = policy
         return config
 
     if not fields["url"].strip():
@@ -291,10 +269,6 @@ def _form_to_config(adapter_type: str, form: FormData) -> dict:
             config["date_format"] = fields["date_format"].strip()
         if fields["source_timezone"].strip():
             config["source_timezone"] = fields["source_timezone"].strip()
-    # Omit when it's just the default, to keep the stored blob tidy — a NULL
-    # items.transmit_policy resolves to DEFAULT_POLICY_NAME anyway.
-    if fields["transmit_policy"] and fields["transmit_policy"] != DEFAULT_POLICY_NAME:
-        config["transmit_policy"] = fields["transmit_policy"]
     return config
 
 
@@ -306,7 +280,7 @@ def _form_context(
     site_url: str,
     adapter_type: str,
     enabled: bool,
-    interval_seconds: str,
+    policy: str,
     ai_prompt: str,
     ai_prompt_default: str,
     ai_fallback_to_title: bool,
@@ -324,7 +298,7 @@ def _form_context(
         "site_url": site_url,
         "adapter_type": adapter_type,
         "enabled": enabled,
-        "interval_seconds": interval_seconds,
+        "policy": policy,
         "ai_prompt": ai_prompt,
         # Shown (read-only) as the textarea's placeholder so an operator can
         # see what the summarizer will use when this box is left blank — the
@@ -337,8 +311,7 @@ def _form_context(
         "api_fields": api_fields,
         "custom_fields": custom_fields,
         "aiprompt_fields": aiprompt_fields,
-        # (name, repeat_times, interval_seconds, description) rows for the
-        # transmit-policy <select>s in the api / aiprompt fieldsets.
+        # PolicyRow list for the single Policy <select>.
         "policies": policies,
         "default_policy_name": DEFAULT_POLICY_NAME,
         "test_result": test_result,
@@ -409,7 +382,7 @@ def adapter_new_page(request: Request, conn: sqlite3.Connection = Depends(get_db
             site_url="",
             adapter_type="api",
             enabled=True,
-            interval_seconds="",
+            policy=DEFAULT_POLICY_NAME,
             ai_prompt="",
             ai_prompt_default=_default_prompt_placeholder(conn),
             ai_fallback_to_title=False,
@@ -440,7 +413,7 @@ def adapter_edit_page(request: Request, source: str, conn: sqlite3.Connection = 
             site_url=source_fields["source_url"],
             adapter_type=row["adapter_type"],
             enabled=bool(row["enabled"]),
-            interval_seconds=str(row["interval_seconds"]) if row["interval_seconds"] else "",
+            policy=row["policy"] or DEFAULT_POLICY_NAME,
             ai_prompt=config.get("ai_prompt", ""),
             ai_prompt_default=_default_prompt_placeholder(conn),
             ai_fallback_to_title=bool(config.get("ai_fallback_to_title", False)),
@@ -467,7 +440,7 @@ async def _read_common_form(request: Request) -> tuple[FormData, dict]:
         "site_url": (form.get("site_url") or "").strip(),
         "adapter_type": (form.get("adapter_type") or "api").strip(),
         "enabled": form.get("enabled") == "on",
-        "interval_seconds": (form.get("interval_seconds") or "").strip(),
+        "policy": (form.get("policy") or "").strip() or DEFAULT_POLICY_NAME,
         "ai_prompt": (form.get("ai_prompt") or "").strip(),
         "ai_fallback_to_title": form.get("ai_fallback_to_title") == "on",
     }
@@ -484,7 +457,7 @@ def _error_context(
         site_url=common["site_url"],
         adapter_type=common["adapter_type"],
         enabled=common["enabled"],
-        interval_seconds=common["interval_seconds"],
+        policy=common["policy"],
         ai_prompt=common["ai_prompt"],
         ai_prompt_default=_default_prompt_placeholder(conn),
         ai_fallback_to_title=common["ai_fallback_to_title"],
@@ -514,7 +487,10 @@ async def adapter_test_action(request: Request, conn: sqlite3.Connection = Depen
 
     context = _error_context(common, form, None, conn=conn)
     try:
-        adapter = _build_test_adapter(common["source"], common["adapter_type"], config)
+        adapter = _build_test_adapter(
+            common["source"], common["adapter_type"], config,
+            policy=resolve_policy(conn, common["policy"]),
+        )
         reading = adapter.fetch()
     except HTTPException:
         raise
@@ -627,21 +603,40 @@ async def adapter_save_action(
     if common["ai_fallback_to_title"]:
         config["ai_fallback_to_title"] = True
 
-    interval_seconds = int(common["interval_seconds"]) if common["interval_seconds"] else None
-
     set_adapter_instance(
         conn,
         source,
         common["adapter_type"],
         config,
         enabled=common["enabled"],
-        interval_seconds=interval_seconds,
+        policy=common["policy"] or None,
     )
     if common["display_name"]:
         set_source(conn, source, common["display_name"], common["site_url"] or None)
 
-    msg = urlencode({"msg": f"adapter '{source}' saved"})
-    return RedirectResponse(url=f"/config/adapters?{msg}", status_code=303)
+    msg = f"adapter '{source}' saved"
+    warning = _supersede_guard_rail(conn, common["adapter_type"], common["policy"], config)
+    if warning:
+        msg = f"{msg} — {warning}"
+    return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)
+
+
+def _supersede_guard_rail(conn, adapter_type: str, policy_name: str, config: dict) -> str | None:
+    """Warn when a repeating (interval/cron) transmit Policy is assigned to
+    an adapter whose items won't carry a stable event_key — so beacon's
+    supersede can't engage and every fetch adds a separate item that airs
+    on its own full schedule. api: needs a mapped event_key. aiprompt: its
+    event_key defaults to the stable occurrence key, so it's fine. custom:
+    can't tell statically — skip."""
+    sched = resolve_policy(conn, policy_name).transmit
+    if sched.kind not in ("interval", "cron"):
+        return None
+    if adapter_type == "api" and not (config.get("mapping") or {}).get("event_key"):
+        return (
+            "this Policy repeats transmissions but the adapter maps no event_key — "
+            "a fresher item can't supersede an older one, so they'll overlap on air"
+        )
+    return None
 
 
 @router.post("/config/adapters/{source}/delete")

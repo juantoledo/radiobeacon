@@ -8,28 +8,23 @@ the deployment's configured AI provider exactly as the summarizer does
 `OPENAI_API_KEY` — see `adapters.llm.resolve_provider_call`); there are no
 per-instance provider/model overrides.
 
-The item id is keyed to the current `cron` occurrence AND a fingerprint of
+The regeneration schedule ("when to run the prompt again") is the assigned
+Policy's fetch stage — the Policy must have `fetch_kind='cron'`, and the
+runner wakes this adapter once per occurrence. Everything else about how
+the generated item behaves (how it is aired) is the same Policy's transmit
+stage.
+
+The item id is keyed to the current cron occurrence AND a fingerprint of
 the prompt template: fetch() skips the LLM call entirely when an item with
 that id already exists. So an unchanged prompt costs one call per
-occurrence no matter how often the adapter polls, but editing the prompt
-mints a new id and regenerates on the very next poll rather than waiting
-for the next occurrence.
-
-An AI-prompt item is *regenerated* every cycle, never re-aired — so the
-schedule that matters ("when to run the prompt again") lives here, as
-`cron`, not on the transmit policy. Each generated item still carries a
-normal transmit policy for airing (`transmit_policy`, a name — the UI
-defaults it to `informational` = air once).
+occurrence, but editing the prompt mints a new id and regenerates on the
+very next wake rather than waiting for the next occurrence.
 
 `config` (JSON blob in adapter_instances.config):
 
     prompt              REQUIRED. instruction sent to the model.
                         safe_format'd with {date} {datetime} {source_name}
                         {source_url}.
-    cron                REQUIRED. regeneration schedule, e.g. "0 6 * * *".
-                        Evaluated in DISPLAY_TIMEZONE; one item per occurrence.
-    transmit_policy     names a transmit_policies row (how each generated
-                        item is aired). Default: unset -> "informational".
     title_template      safe_format'd -> AdapterItem.title
     type / subtype      static passthrough -> items.type / items.subtype
     event_key_template  safe_format'd -> AdapterItem.event_key (default: the
@@ -37,9 +32,7 @@ defaults it to `informational` = air once).
                         across prompt edits — groups together)
 
 Like the API adapter, `config` is parsed fresh on every fetch(), so a UI
-edit takes effect on the next poll with no restart. Set the adapter row's
-interval_seconds well below the cron period so each occurrence is picked
-up promptly; between occurrences every poll is a cheap item_exists no-op.
+edit takes effect on the next wake with no restart.
 """
 import hashlib
 import logging
@@ -59,8 +52,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AiPromptAdapterConfig:
     prompt: str
-    cron: str
-    transmit_policy: str = ""
     title_template: str = ""
     type: str = ""
     subtype: str = ""
@@ -71,15 +62,8 @@ class AiPromptAdapterConfig:
         prompt = (config.get("prompt") or "").strip()
         if not prompt:
             raise ValueError("aiprompt adapter config requires a non-empty 'prompt'")
-        cron_expr = (config.get("cron") or "").strip()
-        if not cron_expr:
-            raise ValueError("aiprompt adapter config requires a 'cron' expression")
-        if not cron.is_valid_cron(cron_expr):
-            raise ValueError(f"cron expression {cron_expr!r} is not valid")
         return cls(
             prompt=prompt,
-            cron=cron_expr,
-            transmit_policy=(config.get("transmit_policy") or "").strip(),
             title_template=(config.get("title_template") or "").strip(),
             type=(config.get("type") or "").strip(),
             subtype=(config.get("subtype") or "").strip(),
@@ -91,10 +75,19 @@ class AiPromptAdapter(DataSourceAdapter):
     """See module docstring. One item per cron occurrence, LLM call skipped
     when that item already exists."""
 
-    def __init__(self, source: str, config: dict[str, Any], *, db_path=DEFAULT_DB_PATH):
+    def __init__(self, source: str, config: dict[str, Any], *, policy=None, db_path=DEFAULT_DB_PATH):
         self.source = source
         self.config = config
+        self.policy = policy
         self.db_path = db_path
+
+    def _cron_expr(self) -> str | None:
+        """The regeneration schedule now lives on the assigned Policy's
+        fetch stage (fetch_kind='cron'), not in this adapter's config."""
+        fetch = getattr(self.policy, "fetch", None)
+        if fetch is None or fetch.kind != "cron" or not fetch.cron:
+            return None
+        return fetch.cron
 
     def fetch(self) -> SourceReading:
         now = utc_now()
@@ -104,16 +97,22 @@ class AiPromptAdapter(DataSourceAdapter):
             logger.error("source=%s: bad aiprompt config: %s", self.source, e)
             return SourceReading(source=self.source, fetched_at=now, ok=False, data=[], error=str(e))
 
+        cron_expr = self._cron_expr()
+        if cron_expr is None:
+            msg = "aiprompt adapter requires a Policy whose fetch stage is a cron schedule"
+            logger.error("source=%s: %s", self.source, msg)
+            return SourceReading(source=self.source, fetched_at=now, ok=False, data=[], error=msg)
+
         conn = get_connection(self.db_path)
         try:
-            occurrence = cron.latest_fire_at_or_before(cfg.cron, now, conn=conn)
+            occurrence = cron.latest_fire_at_or_before(cron_expr, now, conn=conn)
             if occurrence is None:
                 return SourceReading(
                     source=self.source,
                     fetched_at=now,
                     ok=False,
                     data=[],
-                    error=f"could not evaluate cron expression {cfg.cron!r}",
+                    error=f"could not evaluate cron expression {cron_expr!r}",
                 )
             # The id is keyed to BOTH the cron occurrence and a fingerprint of
             # the prompt template, so editing the prompt mints a new id and
@@ -175,7 +174,6 @@ class AiPromptAdapter(DataSourceAdapter):
             event_key=event_key,
             type=cfg.type or None,
             subtype=cfg.subtype or None,
-            transmit_policy=cfg.transmit_policy or None,
             source_date_time=now,
             raw={"prompt": prompt, "provider": provider, "model": model},
         )

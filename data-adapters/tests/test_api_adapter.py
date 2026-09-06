@@ -23,7 +23,6 @@ CSN_CONFIG = {
     "date_field": "Fecha",
     "date_format": "%Y-%m-%d %H:%M:%S",
     "source_timezone": "America/Santiago",
-    "transmit_policy": "urgent",
 }
 
 CSN_RESPONSE = [
@@ -68,8 +67,6 @@ def test_fetch_maps_fields_from_config():
     assert newest.title == "Sismo M3.0 - Other Zone"
     assert newest.url == "https://www.sismologia.cl/"
     assert newest.type == "Sismo"
-    assert newest.transmit_policy == "urgent"  # the configured policy name, verbatim
-    assert oldest.transmit_policy == "urgent"
     assert oldest.raw["Magnitud"] == "5.0"
 
 

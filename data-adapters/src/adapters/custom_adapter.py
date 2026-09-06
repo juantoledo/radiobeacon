@@ -23,7 +23,7 @@ _ITEM_FIELDS = (
     "event_key",
     "type",
     "subtype",
-    "transmit_policy",
+    "policy",
     "source_date_time",
     "raw",
 )
@@ -53,12 +53,6 @@ def _build_item(raw_dict: dict[str, Any]) -> AdapterItem:
     if raw_dict.get("id") is None:
         raise ValueError("item missing required 'id'")
     fields = {name: raw_dict.get(name) for name in _ITEM_FIELDS}
-    # Back-compat: a snippet stored before the rename may still emit the old
-    # "dispatch_policy" key. adapters.storage._migrate_adapter_instances_config
-    # rewrites seeded snippets, but an operator's hand-edited one is honored
-    # here too.
-    if fields.get("transmit_policy") is None and raw_dict.get("dispatch_policy") is not None:
-        fields["transmit_policy"] = raw_dict.get("dispatch_policy")
     return AdapterItem(**fields)
 
 
@@ -77,9 +71,10 @@ class CustomAdapter(DataSourceAdapter):
     call, so editing a snippet via the UI takes effect on the very next
     poll, with no process restart required."""
 
-    def __init__(self, source: str, config: dict[str, Any]):
+    def __init__(self, source: str, config: dict[str, Any], *, policy=None):
         self.source = source
         self.config = config
+        self.policy = policy
 
     def fetch(self) -> SourceReading:
         now = utc_now()

@@ -46,7 +46,7 @@ PROMPT_ITEM_FIELDS = (
     "event_key",
     "type",
     "subtype",
-    "transmit_policy",
+    "policy",
     "source_date_time",
     "fetched_at",
     "captured_at",

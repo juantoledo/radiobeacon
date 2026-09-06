@@ -112,21 +112,31 @@ packet stages then use; the original text is kept untouched.
   text. A source can instead opt to fall back to its plain title
   (SENAPRED does).
 - **Not a filter or a decision-maker** — it never chooses what to transmit,
-  changes a transmit policy, or edits station identity. It only shortens
+  changes a Policy, or edits station identity. It only shortens
   text that a human-defined source already selected.
 
 The model output is not length-capped after the fact — the prompt asks for
 a complete short summary — so a badly-behaved model can still be caught by
 the per-mode length limits downstream.
 
-### Repeat behaviour
+### Policies
 
-Each item is put on air a set number of times, a set interval apart —
-these two numbers are a named **transmit policy**. Policies are edited
-from the dashboard; an operator can override the policy on a single item,
-or re-arm an item that has already finished its repeats. Every attempt
-counts toward the repeat total, so a bulletin does not transmit forever if
-the link is failing. The queue is stored on disk and survives a restart.
+One named **Policy** is the whole definition of how an item behaves,
+across three stages:
+
+1. **Fetch** — how often the source is polled: once, every N seconds, or
+   on a cron schedule.
+2. **Process** — event-driven: the chunk + AI summary run once when new
+   data arrives.
+3. **Transmit** — how the item goes on air: once, N times a set interval
+   apart, or on a cron schedule; every attempt counts toward the total, so
+   a bulletin does not transmit forever if the link is failing.
+
+An adapter points at exactly one Policy; a fresher item for the same
+`event_key` supersedes an older one still queued. Policies are edited from
+the dashboard; an operator can re-point a single item to a different whole
+Policy, re-air it (same content), or reprocess it (re-run the AI). The
+transmit queue is stored on disk and survives a restart.
 
 ---
 
@@ -140,8 +150,8 @@ console:
 - recent items and the on-air audit trail (what was transmitted, when, and
   the result);
 - enable/disable transmission and switch mode without a restart;
-- browse/search items, override a transmit policy, re-arm an item;
-- manage sources and transmit policies.
+- browse/search items, re-point an item to another Policy, re-air or reprocess it;
+- manage sources and Policies.
 
 Time is disciplined by the operating system's own NTP client. The beacon
 additionally measures its clock offset against a public NTP server purely
@@ -176,7 +186,7 @@ database (`storage/radiobeacon.db`) and, optionally, a local MQTT broker.
 Each has its own README with the details.
 
 `data-adapters/` doubles as the shared library — settings, the DB schema,
-`timeutil`, `transmit_policy`, the LLM helpers — so every other component
+`timeutil`, `policy`, the LLM helpers — so every other component
 installs it (`-e ../data-adapters` in its `requirements.txt`, which
 `start.sh` picks up); `dispatcher/` is likewise installed by `ui/`. No
 runtime coupling beyond that and the database.
@@ -215,7 +225,7 @@ environment — a stray `BEACON_CALLSIGN` in the shell can't put a wrong
 callsign on air. The beacon refuses to transmit until every identity field
 is filled in.
 
-The whole DB-backed config — settings, adapters, transmit policies, and
+The whole DB-backed config — settings, adapters, Policies, and
 source names, secrets always excluded — can be snapshotted to a JSON file
 and restored from one, from the dashboard
 ([`/config/import-export`](ui/README.md#import--export-config-configimport-export))

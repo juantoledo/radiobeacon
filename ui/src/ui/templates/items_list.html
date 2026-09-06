@@ -3,7 +3,7 @@
 {% block content %}
 <div class="page-header"><h1>{{ t('items_list.title') }}</h1><span class="muted">{{ t('items_list.count', n=total) }}</span></div>
 
-{% set has_filters = filters.q or filters.source or filters.type or filters.transmit_policy or filters.event_key %}
+{% set has_filters = filters.q or filters.source or filters.type or filters.policy or filters.event_key %}
 <form class="filters" method="get" action="/items">
   <input type="text" name="q" placeholder="{{ t('items_list.search_placeholder') }}" value="{{ filters.q }}" aria-label="{{ t('items_list.search_placeholder') }}">
   <select name="source" aria-label="{{ t('items_list.col_source') }}">
@@ -18,10 +18,10 @@
     <option value="{{ t_ }}" {% if filters.type == t_ %}selected{% endif %}>{{ t_ }}</option>
     {% endfor %}
   </select>
-  <select name="transmit_policy" aria-label="{{ t('items_list.col_policy') }}">
+  <select name="policy" aria-label="{{ t('items_list.col_policy') }}">
     <option value="">{{ t('items_list.any_policy') }}</option>
     {% for p in policies %}
-    <option value="{{ p[0] }}" {% if filters.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
+    <option value="{{ p.name }}" {% if filters.policy == p.name %}selected{% endif %}>{{ p.name }}</option>
     {% endfor %}
   </select>
   <input type="text" name="event_key" placeholder="{{ t('items_list.event_key_placeholder') }}" value="{{ filters.event_key }}" aria-label="{{ t('items_list.event_key_placeholder') }}">
@@ -41,7 +41,7 @@
       <td data-label="{{ t('items_list.col_item') }}" class="mono"><a href="/items/{{ item.source }}/{{ item.item_id }}">{{ item.item_id }}</a></td>
       <td data-label="{{ t('items_list.col_title') }}" class="wrap">{{ item.extracted_title or "—" }}</td>
       <td data-label="{{ t('items_list.col_type') }}">{% if item.type %}<span class="badge badge-neutral">{{ item.type }}</span>{% endif %}</td>
-      <td data-label="{{ t('items_list.col_policy') }}">{% if item.transmit_policy %}<span class="{{ item.transmit_policy | policy_badge }}">{{ item.transmit_policy }}</span>{% endif %}</td>
+      <td data-label="{{ t('items_list.col_policy') }}">{% if item.policy %}<span class="{{ item.policy | policy_badge }}">{{ item.policy }}</span>{% endif %}</td>
       <td data-label="{{ t('items_list.col_date') }}" class="muted">{{ item.source_date_time | display_dt }}</td>
     </tr>
     {% else %}

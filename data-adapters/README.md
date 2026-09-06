@@ -16,7 +16,7 @@ that interprets `config`:
 - **`api`** (`src/adapters/api_adapter.py`, `ApiAdapter`) — calls an HTTP
   endpoint (`url`, `method`, `headers`, `query_params`, `body`) and maps the
   JSON response onto the item contract below entirely from `config`, parsed
-  into the typed `ApiAdapterConfig`/`FieldMapping`/`DispatchPolicyRule`
+  into the typed `ApiAdapterConfig`/`FieldMapping`
   dataclasses (same module) rather than read via ad hoc `dict.get(...)`
   calls: locate the item list (`items_path`), then map each of the 7
   contract fields (`mapping.<name>`) via a single `str.format` **template**
@@ -41,8 +41,8 @@ that interprets `config`:
   `FieldMapping` in `api_adapter.py`); it's ignored for any other template
   shape. Separately: convert a raw timestamp field to UTC (`date_field`/
   `date_format`/`source_timezone`) for `source_date_time`, and pick a
-  `transmit_policy` — a named row from the `transmit_policies` table (the
-  UI shows a dropdown; blank/omitted resolves to `informational`). No code
+  `policy` — the adapter instance points at one named row from the
+  `policies` table (the UI shows a dropdown; unset resolves to `default`). No code
   required — a brand-new API-type source is entirely a config row, edited
   in the UI as discrete fields (url, method, header/query-param rows, a
   7-row mapping table with drag-and-drop from a live response preview, date
@@ -78,8 +78,8 @@ that interprets `config`:
   an operator-written `prompt` (a `str.format` template over `{date}`,
   `{datetime}`, `{source_name}`, `{source_url}`; unknown placeholders
   render blank) on a **`cron` schedule** (required). Optional config:
-  `transmit_policy` (a named policy for airing each generated item — the UI
-  defaults it to `informational`, "air once", since the content is
+  its assigned Policy (the aiprompt regeneration schedule is the Policy's
+  cron fetch stage; each generated item airs per its transmit stage — the content is
   replaced rather than repeated), `title_template`, `type`, `subtype`,
   `event_key_template`.
 
@@ -126,8 +126,8 @@ hand-written adapter modules:
   so the seeded config derives `id`/`event_key` from the raw `Fecha`
   timestamp field (`mapping.id.field_date_format`), and every item's `url`
   is a constant pointing at the sismologia.cl homepage. The seeded config
-  sets no `transmit_policy`, so every item resolves to the default
-  `informational` policy; an operator can pick a different named policy at
+  sets no `policy`, so every item resolves to the default
+  an operator can pick a different Policy at
   `/adapters` if they want quakes on a different tier.
 
 - **senapred** (`custom`) — active early-warning alerts from senapred.cl.
@@ -145,7 +145,7 @@ hand-written adapter modules:
   by every item belonging to the same event, so its full timeline can be
   reconstructed with `WHERE event_key = ? ORDER BY source_date_time` (see
   [query_history.sh](../query_history.sh) at the repo root).
-  The seeded snippet assigns every item `transmit_policy = "informational"`.
+  The seeded senapred instance points at the `default` Policy.
 
 If this operator's database already had `ADAPTERS_CSN_*`/
 `ADAPTERS_SENAPRED_*` settings overridden via the old `/config` groups
@@ -222,7 +222,7 @@ generic contract `storage.store_reading()` has always read via
 | `url` | public link for the item, if any |
 | `event_key` | groups items that are updates to the same ongoing thing |
 | `type`, `subtype` | generic two-level category (raw API type + finer category) |
-| `transmit_policy` | names a row in the `transmit_policies` table (owned by this package — created + seeded by `get_connection()`, same as `sources`) — a soft reference that centralizes how many times, and how far apart, [beacon](../beacon/README.md) puts the item on air |
+| `policy` | names a row in the `policies` table (owned by this package) — a soft reference to the single definition of how the item is fetched, processed, and transmitted; usually left unset so it inherits `adapter_instances.policy` |
 | `source_date_time` | when the source says the item happened/was published |
 | `raw` | the original, unmapped item as returned by the source — carried alongside the mapped fields so `rawdata` (`store_reading` dumps the whole `AdapterItem`) keeps the true raw payload, not just its mapped view |
 
@@ -230,7 +230,7 @@ Items are immutable once stored — `store_reading()` uses `INSERT OR
 IGNORE`, so an already-known `id` is never touched or refreshed, only
 genuinely new items get inserted. This assumes an adapter never reuses an
 id for content that changes over time (true for SENAPRED, see above).
-`transmit_policy` is the exception: like `summary`, adapters only ever
+`policy` is the exception: like `summary`, adapters only ever
 propose an initial value for it — it may be updated afterward by a
 separate actor (see
 [dispatcher/override_item.py](../dispatcher/README.md#manual-overrides--rearm)).
@@ -267,7 +267,7 @@ the form, so a new or edited instance can be validated before saving.
 ### Import / Export
 
 `adapters/config_transfer.py` is the shared module behind the whole-DB
-config snapshot (settings + `adapter_instances` + `transmit_policies` +
+config snapshot (settings + `adapter_instances` + `policies` +
 `sources`, secrets always excluded) — used identically by the UI's
 `/config/import-export` page and by the `export_config.py`/`import_config.py`
 CLI pair. The CLI itself lives in `dispatcher/` rather than here, even

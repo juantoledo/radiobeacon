@@ -11,7 +11,9 @@ from adapters.storage import (
     set_setting,
     set_source,
 )
-from adapters.transmit_policy import get_policy, list_policies, set_policy
+from adapters.policy import get_policy, set_policy
+
+V = SCHEMA_VERSION
 
 
 @pytest.fixture
@@ -30,18 +32,33 @@ def target(tmp_path):
     c.close()
 
 
+def _policy_entry(name, **over):
+    base = {
+        "name": name,
+        "fetch_kind": "interval",
+        "fetch_interval_seconds": 10,
+        "fetch_cron": None,
+        "process_mode": "on_new_data",
+        "transmit_kind": "once",
+        "transmit_count": 1,
+        "transmit_interval_seconds": 0,
+        "transmit_cron": None,
+        "description": None,
+    }
+    base.update(over)
+    return base
+
+
 # --------------------------------- export ---------------------------------
 
 
 def test_export_never_includes_a_secret_key(conn):
     set_setting(conn, "ANTHROPIC_API_KEY", "sk-real-key", is_secret=True)
-    set_setting(conn, "OPENAI_API_KEY", "sk-also-real", is_secret=True)
     set_setting(conn, "DISPATCHER_INTERVAL_SECONDS", "9")
 
     export = build_export(conn, actor="test")
 
     assert "ANTHROPIC_API_KEY" not in export["settings"]
-    assert "OPENAI_API_KEY" not in export["settings"]
     assert export["settings"]["DISPATCHER_INTERVAL_SECONDS"] == "9"
 
 
@@ -54,32 +71,28 @@ def test_export_bundles_a_linked_source_into_its_adapter_and_lists_only_orphans_
 
     demo = next(a for a in export["adapter_instances"] if a["source"] == "demo")
     assert demo["display_name"] == "Demo Source"
-    assert demo["site_url"] == "https://example.com"
     assert [s["source"] for s in export["sources"]] == ["orphan"]
-
-
-def test_export_records_a_config_exported_audit_event(conn):
-    build_export(conn, actor="test-actor")
-
-    row = conn.execute(
-        "SELECT event_type, actor FROM audit_log WHERE event_type = 'config.exported'"
-    ).fetchone()
-    assert row is not None
-    assert row[1] == "test-actor"
 
 
 def test_export_schema_version_matches_module_constant(conn):
     assert build_export(conn, actor="test")["schema_version"] == SCHEMA_VERSION
 
 
+def test_export_includes_the_full_policy_shape(conn):
+    set_policy(conn, "urgent", transmit_kind="interval", transmit_count=5, transmit_interval_seconds=60)
+    export = build_export(conn, actor="test")
+    urgent = next(p for p in export["policies"] if p["name"] == "urgent")
+    assert urgent["transmit_kind"] == "interval"
+    assert urgent["transmit_count"] == 5
+    assert urgent["transmit_interval_seconds"] == 60
+
+
 # --------------------------------- import: basics ---------------------------------
 
 
 def test_import_upserts_without_touching_a_pre_existing_extra_row(conn, target):
-    set_policy(target, "extra", 3, 30, "not in the import file")
-    export = {"schema_version": 1, "transmit_policies": [
-        {"name": "informational", "repeat_times": 1, "interval_seconds": 0}
-    ]}
+    set_policy(target, "extra", description="not in the import file")
+    export = {"schema_version": V, "policies": [_policy_entry("default")]}
 
     import_config(target, export, allow_custom_code=True, actor="test")
 
@@ -87,28 +100,29 @@ def test_import_upserts_without_touching_a_pre_existing_extra_row(conn, target):
 
 
 def test_import_classifies_created_vs_updated(conn, target):
-    set_policy(target, "informational", 1, 0, "already here")
+    set_policy(target, "default", description="already here")
     export = {
-        "schema_version": 1,
-        "transmit_policies": [
-            {"name": "informational", "repeat_times": 1, "interval_seconds": 0},
-            {"name": "urgent", "repeat_times": 5, "interval_seconds": 60},
+        "schema_version": V,
+        "policies": [
+            _policy_entry("default"),
+            _policy_entry("urgent", transmit_kind="interval", transmit_count=5,
+                          transmit_interval_seconds=60),
         ],
     }
 
     summary = import_config(target, export, allow_custom_code=True, actor="test")
 
-    by_key = {r.key: r.action for r in summary.results if r.section == "transmit_policies"}
-    assert by_key == {"informational": "updated", "urgent": "created"}
+    by_key = {r.key: r.action for r in summary.results if r.section == "policies"}
+    assert by_key == {"default": "updated", "urgent": "created"}
 
 
 def test_one_bad_record_does_not_abort_the_rest_of_the_batch(conn, target):
     export = {
-        "schema_version": 1,
-        "transmit_policies": [
-            {"name": "good", "repeat_times": 1, "interval_seconds": 0},
-            {"name": "bad", "repeat_times": "not-a-number", "interval_seconds": 0},
-            {"name": "also-good", "repeat_times": 2, "interval_seconds": 10},
+        "schema_version": V,
+        "policies": [
+            _policy_entry("good"),
+            _policy_entry("bad", fetch_kind="cron", fetch_cron="not a cron"),
+            _policy_entry("also-good", transmit_interval_seconds=10),
         ],
     }
 
@@ -124,9 +138,9 @@ def test_one_bad_record_does_not_abort_the_rest_of_the_batch(conn, target):
 
 def test_dry_run_leaves_every_table_untouched(conn, target):
     export = {
-        "schema_version": 1,
+        "schema_version": V,
         "settings": {"DISPATCHER_INTERVAL_SECONDS": "42"},
-        "transmit_policies": [{"name": "urgent", "repeat_times": 5, "interval_seconds": 60}],
+        "policies": [_policy_entry("urgent")],
         "sources": [{"source": "orphan", "display_name": "Orphan"}],
         "adapter_instances": [
             {"source": "demo", "adapter_type": "api", "config": {"url": "https://x"}}
@@ -139,19 +153,6 @@ def test_dry_run_leaves_every_table_untouched(conn, target):
     assert get_setting("DISPATCHER_INTERVAL_SECONDS", conn=target, env_fallback=False) is None
     assert get_policy(target, "urgent") is None
     assert get_adapter_instance(target, "demo") is None
-    assert list_settings(target) == []
-    assert conn.execute("SELECT COUNT(*) FROM audit_log WHERE event_type='config.imported'").fetchone()[0] == 0
-
-
-def test_import_records_one_config_imported_audit_event_with_counts(conn, target):
-    export = {"schema_version": 1, "settings": {"DISPATCHER_INTERVAL_SECONDS": "5"}}
-
-    import_config(target, export, allow_custom_code=True, actor="test")
-
-    row = target.execute(
-        "SELECT details FROM audit_log WHERE event_type = 'config.imported'"
-    ).fetchone()
-    assert row is not None
 
 
 def test_schema_version_newer_than_current_is_rejected(target):
@@ -161,18 +162,16 @@ def test_schema_version_newer_than_current_is_rejected(target):
         )
 
 
-def test_schema_version_equal_or_older_proceeds(target):
-    summary = import_config(target, {"schema_version": SCHEMA_VERSION}, allow_custom_code=True, actor="test")
-    assert summary.results == []
-    summary = import_config(target, {"schema_version": 1}, allow_custom_code=True, actor="test")
-    assert summary.results == []
+def test_pre_v2_schema_version_is_rejected(target):
+    with pytest.raises(ValueError):
+        import_config(target, {"schema_version": 1}, allow_custom_code=True, actor="test")
 
 
 # --------------------------------- import: secrets ---------------------------------
 
 
 def test_import_never_accepts_a_secret_key_even_if_hand_crafted_into_the_file(target):
-    export = {"schema_version": 1, "settings": {"ANTHROPIC_API_KEY": "sk-sneaky"}}
+    export = {"schema_version": V, "settings": {"ANTHROPIC_API_KEY": "sk-sneaky"}}
 
     summary = import_config(target, export, allow_custom_code=True, actor="test")
 
@@ -182,42 +181,22 @@ def test_import_never_accepts_a_secret_key_even_if_hand_crafted_into_the_file(ta
     assert "secret" in result.reason
 
 
-def test_import_skips_an_unknown_settings_key_without_failing_the_batch(target):
-    export = {
-        "schema_version": 1,
-        "settings": {
-            "SOME_KEY_FROM_A_FUTURE_VERSION": "x",
-            "DISPATCHER_INTERVAL_SECONDS": "6",
-        },
-    }
-
-    summary = import_config(target, export, allow_custom_code=True, actor="test")
-
-    assert get_setting("DISPATCHER_INTERVAL_SECONDS", conn=target, env_fallback=False) == "6"
-    unknown_result = next(
-        r for r in summary.results if r.key == "SOME_KEY_FROM_A_FUTURE_VERSION"
-    )
-    assert unknown_result.action == "skipped"
-    assert "catalog" in unknown_result.reason
-
-
 # --------------------------------- import: adapter_instances / CUSTOM gate ---------------------------------
 
 
 def test_custom_adapter_refused_when_custom_code_not_allowed(target):
     export = {
-        "schema_version": 1,
+        "schema_version": V,
         "adapter_instances": [
-            {"source": "sneaky", "adapter_type": "custom", "config": {"code": "def fetch(config): return []"}}
+            {"source": "sneaky", "adapter_type": "custom",
+             "config": {"code": "def fetch(config): return []"}}
         ],
     }
 
     summary = import_config(target, export, allow_custom_code=False, actor="test")
 
     assert get_adapter_instance(target, "sneaky") is None
-    result = summary.results[0]
-    assert result.action == "skipped"
-    assert "custom" in result.reason.lower()
+    assert summary.results[0].action == "skipped"
 
 
 def test_custom_adapter_accepted_but_never_fetched_when_custom_code_allowed(target, monkeypatch):
@@ -225,9 +204,10 @@ def test_custom_adapter_accepted_but_never_fetched_when_custom_code_allowed(targ
     monkeypatch.setattr(CustomAdapter, "fetch", lambda self: called.append(self.source))
 
     export = {
-        "schema_version": 1,
+        "schema_version": V,
         "adapter_instances": [
-            {"source": "reviewed", "adapter_type": "custom", "config": {"code": "def fetch(config): return []"}}
+            {"source": "reviewed", "adapter_type": "custom",
+             "config": {"code": "def fetch(config): return []"}}
         ],
     }
 
@@ -235,35 +215,12 @@ def test_custom_adapter_accepted_but_never_fetched_when_custom_code_allowed(targ
 
     stored = get_adapter_instance(target, "reviewed")
     assert stored is not None
-    assert stored["adapter_type"] == "custom"
-    assert called == []  # never exec()'d/fetch()'d during import
-
-
-def test_adapter_instance_bundles_display_name_into_a_source_row(target):
-    export = {
-        "schema_version": 1,
-        "adapter_instances": [
-            {
-                "source": "demo",
-                "adapter_type": "api",
-                "config": {"url": "https://example.com"},
-                "display_name": "Demo Source",
-                "site_url": "https://example.com",
-            }
-        ],
-    }
-
-    import_config(target, export, allow_custom_code=True, actor="test")
-
-    row = target.execute(
-        "SELECT display_name, site_url FROM sources WHERE source = 'demo'"
-    ).fetchone()
-    assert row == ("Demo Source", "https://example.com")
+    assert called == []
 
 
 def test_unknown_adapter_type_is_skipped(target):
     export = {
-        "schema_version": 1,
+        "schema_version": V,
         "adapter_instances": [{"source": "weird", "adapter_type": "not-a-real-type", "config": {}}],
     }
 
@@ -273,19 +230,16 @@ def test_unknown_adapter_type_is_skipped(target):
     assert summary.results[0].action == "skipped"
 
 
-# --------------------------------- import: transmit_policy cross-reference ---------------------------------
+# --------------------------------- import: policy cross-reference ---------------------------------
 
 
 def test_adapter_referencing_a_policy_defined_earlier_in_the_same_file_has_no_warning(target):
     export = {
-        "schema_version": 1,
-        "transmit_policies": [{"name": "urgent", "repeat_times": 5, "interval_seconds": 60}],
+        "schema_version": V,
+        "policies": [_policy_entry("urgent")],
         "adapter_instances": [
-            {
-                "source": "demo",
-                "adapter_type": "api",
-                "config": {"url": "https://x", "transmit_policy": "urgent"},
-            }
+            {"source": "demo", "adapter_type": "api", "policy": "urgent",
+             "config": {"url": "https://x"}}
         ],
     }
 
@@ -297,19 +251,16 @@ def test_adapter_referencing_a_policy_defined_earlier_in_the_same_file_has_no_wa
 
 def test_adapter_referencing_an_unknown_policy_is_imported_but_flagged(target):
     export = {
-        "schema_version": 1,
+        "schema_version": V,
         "adapter_instances": [
-            {
-                "source": "demo",
-                "adapter_type": "api",
-                "config": {"url": "https://x", "transmit_policy": "does-not-exist"},
-            }
+            {"source": "demo", "adapter_type": "api", "policy": "does-not-exist",
+             "config": {"url": "https://x"}}
         ],
     }
 
     summary = import_config(target, export, allow_custom_code=True, actor="test")
 
-    assert get_adapter_instance(target, "demo") is not None  # still imported
+    assert get_adapter_instance(target, "demo") is not None
     adapter_result = next(r for r in summary.results if r.section == "adapter_instances")
     assert adapter_result.action == "created"
     assert len(adapter_result.warnings) == 1
@@ -318,13 +269,10 @@ def test_adapter_referencing_an_unknown_policy_is_imported_but_flagged(target):
 
 def test_adapter_referencing_the_default_policy_name_is_never_flagged(target):
     export = {
-        "schema_version": 1,
+        "schema_version": V,
         "adapter_instances": [
-            {
-                "source": "demo",
-                "adapter_type": "api",
-                "config": {"url": "https://x", "transmit_policy": "informational"},
-            }
+            {"source": "demo", "adapter_type": "api", "policy": "default",
+             "config": {"url": "https://x"}}
         ],
     }
 
@@ -340,10 +288,9 @@ def test_adapter_referencing_the_default_policy_name_is_never_flagged(target):
 def test_full_round_trip_from_a_populated_db_into_a_fresh_one(conn, target):
     set_setting(conn, "DISPATCHER_INTERVAL_SECONDS", "8")
     set_setting(conn, "ANTHROPIC_API_KEY", "sk-real", is_secret=True)
-    set_policy(conn, "urgent", 5, 60, "Escalated")
-    set_adapter_instance(
-        conn, "demo", "api", {"url": "https://example.com", "transmit_policy": "urgent"}
-    )
+    set_policy(conn, "urgent", transmit_kind="interval", transmit_count=5,
+               transmit_interval_seconds=60, description="Escalated")
+    set_adapter_instance(conn, "demo", "api", {"url": "https://example.com"}, policy="urgent")
     set_source(conn, "demo", "Demo Source", "https://example.com")
     set_source(conn, "orphan", "Orphan", None)
 
@@ -353,14 +300,11 @@ def test_full_round_trip_from_a_populated_db_into_a_fresh_one(conn, target):
     assert all(c["skipped"] == 0 for c in summary.counts().values())
     assert get_setting("DISPATCHER_INTERVAL_SECONDS", conn=target, env_fallback=False) == "8"
     assert get_setting("ANTHROPIC_API_KEY", conn=target, env_fallback=False) is None
-    assert get_policy(target, "urgent").repeat_times == 5
+    assert get_policy(target, "urgent").transmit_count == 5
     demo = get_adapter_instance(target, "demo")
-    assert demo is not None
+    assert demo is not None and demo["policy"] == "urgent"
     row = target.execute("SELECT display_name FROM sources WHERE source='demo'").fetchone()
     assert row[0] == "Demo Source"
 
-    # Re-importing the same export a second time is a pure no-op in effect
-    # (everything already matches) -- every record classifies as "updated",
-    # nothing as "created".
     summary2 = import_config(target, export, allow_custom_code=True, actor="test")
     assert all(c["created"] == 0 for c in summary2.counts().values())

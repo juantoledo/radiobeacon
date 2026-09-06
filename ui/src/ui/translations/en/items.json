@@ -23,7 +23,7 @@
   "item_detail.summary": "Summary",
   "item_detail.contents": "Contents",
   "item_detail.actions": "Actions",
-  "item_detail.set_transmit_policy": "Set transmit_policy",
+  "item_detail.set_transmit_policy": "Set policy",
   "item_detail.override_button": "Override",
   "item_detail.requires_beacon_identity": "Requires {link} to be configured.",
   "item_detail.beacon_identity_link_text": "beacon identity",

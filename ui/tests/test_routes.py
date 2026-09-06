@@ -1,12 +1,12 @@
 from adapters.storage import set_setting
-from adapters.transmit_policy import set_policy
+from adapters.policy import set_policy
 
 
-def _insert_item(conn, source, item_id, *, transmit_policy="informational"):
+def _insert_item(conn, source, item_id, *, policy="informational"):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_title, fetched_at, transmit_policy, rawdata) "
+        "INSERT INTO items (source, item_id, extracted_title, fetched_at, policy, rawdata) "
         "VALUES (?, ?, 'Title', datetime('now'), ?, '{}')",
-        (source, item_id, transmit_policy),
+        (source, item_id, policy),
     )
     conn.commit()
 
@@ -105,21 +105,21 @@ def test_item_detail_returns_200_for_known_item(client, conn):
 
 def test_override_action_redirects_and_updates_row(client, conn):
     _configure_beacon(conn)
-    _insert_item(conn, "csn", "1", transmit_policy="informational")
+    _insert_item(conn, "csn", "1", policy="informational")
 
     response = client.post(
-        "/items/csn/1/override", data={"transmit_policy": "urgent"}, follow_redirects=False
+        "/items/csn/1/override", data={"policy": "urgent"}, follow_redirects=False
     )
 
     assert response.status_code == 303
     assert response.headers["location"].startswith("/items/csn/1")
     row = conn.execute(
-        "SELECT transmit_policy FROM items WHERE source='csn' AND item_id='1'"
+        "SELECT policy FROM items WHERE source='csn' AND item_id='1'"
     ).fetchone()
     assert row[0] == "urgent"
 
 
-def test_override_action_missing_transmit_policy_is_rejected(client, conn):
+def test_override_action_missing_policy_is_rejected(client, conn):
     _configure_beacon(conn)
     _insert_item(conn, "csn", "1")
 
@@ -129,16 +129,16 @@ def test_override_action_missing_transmit_policy_is_rejected(client, conn):
 
 
 def test_override_action_blocked_when_beacon_not_configured(client, conn):
-    _insert_item(conn, "csn", "1", transmit_policy="informational")
+    _insert_item(conn, "csn", "1", policy="informational")
 
     response = client.post(
-        "/items/csn/1/override", data={"transmit_policy": "urgent"}, follow_redirects=False
+        "/items/csn/1/override", data={"policy": "urgent"}, follow_redirects=False
     )
 
     assert response.status_code == 303
     assert "error=" in response.headers["location"]
     row = conn.execute(
-        "SELECT transmit_policy FROM items WHERE source='csn' AND item_id='1'"
+        "SELECT policy FROM items WHERE source='csn' AND item_id='1'"
     ).fetchone()
     assert row[0] == "informational"
 
@@ -254,8 +254,8 @@ def test_retransmit_action_blocked_when_beacon_not_configured(client, conn):
 def test_policies_list_returns_200(client):
     response = client.get("/config/policies")
     assert response.status_code == 200
-    # a fresh install seeds only informational (see adapters.transmit_policy)
-    assert "informational" in response.text
+    # a fresh install seeds only `default` (see adapters.policy)
+    assert "default" in response.text
 
 
 def test_legacy_policies_url_redirects_under_config(client):
@@ -269,8 +269,11 @@ def test_policy_create_redirects_and_persists(client, conn):
         "/config/policies",
         data={
             "name": "critical",
-            "repeat_times": "10",
-            "interval_seconds": "30",
+            "fetch_kind": "interval",
+            "fetch_interval_seconds": "10",
+            "transmit_kind": "interval",
+            "transmit_count": "10",
+            "transmit_interval_seconds": "30",
             "description": "test policy",
         },
         follow_redirects=False,
@@ -279,13 +282,13 @@ def test_policy_create_redirects_and_persists(client, conn):
     assert response.status_code == 303
     assert response.headers["location"].startswith("/config/policies")
     row = conn.execute(
-        "SELECT repeat_times, interval_seconds FROM transmit_policies WHERE name='critical'"
+        "SELECT transmit_count, transmit_interval_seconds FROM policies WHERE name='critical'"
     ).fetchone()
     assert tuple(row) == (10, 30)
 
 
 def test_policy_edit_page_returns_200_for_known_policy(client, conn):
-    set_policy(conn, "custom", 2, 15, "desc")
+    set_policy(conn, "custom", transmit_kind="interval", transmit_count=2, transmit_interval_seconds=15, description="desc")
 
     response = client.get("/config/policies/custom/edit")
 
@@ -299,12 +302,12 @@ def test_policy_edit_page_returns_404_for_unknown_policy(client):
 
 
 def test_policy_delete_redirects(client, conn):
-    set_policy(conn, "temp", 1, 0)
+    set_policy(conn, "temp")
 
     response = client.post("/config/policies/temp/delete", follow_redirects=False)
 
     assert response.status_code == 303
-    row = conn.execute("SELECT 1 FROM transmit_policies WHERE name='temp'").fetchone()
+    row = conn.execute("SELECT 1 FROM policies WHERE name='temp'").fetchone()
     assert row is None
 
 

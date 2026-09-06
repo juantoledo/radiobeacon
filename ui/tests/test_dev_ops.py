@@ -14,14 +14,14 @@ def _insert_item(conn, source, item_id, **overrides):
         "event_key": None,
         "type": None,
         "subtype": None,
-        "transmit_policy": "informational",
+        "policy": "informational",
         "source_date_time": None,
     }
     fields.update(overrides)
     conn.execute(
         "INSERT INTO items "
         "(source, item_id, extracted_title, extracted_contents, summary, url, "
-        "event_key, type, subtype, transmit_policy, source_date_time, fetched_at, rawdata) "
+        "event_key, type, subtype, policy, source_date_time, fetched_at, rawdata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), '{}')",
         (
             source,
@@ -33,7 +33,7 @@ def _insert_item(conn, source, item_id, **overrides):
             fields["event_key"],
             fields["type"],
             fields["subtype"],
-            fields["transmit_policy"],
+            fields["policy"],
             fields["source_date_time"],
         ),
     )
@@ -51,7 +51,7 @@ def _create_kwargs(**overrides):
         event_key=None,
         type_=None,
         subtype=None,
-        transmit_policy="informational",
+        policy="informational",
         source_date_time=None,
     )
     kwargs.update(overrides)
@@ -62,7 +62,7 @@ def test_create_item_inserts_row(conn):
     dev_ops.create_item(conn, **_create_kwargs())
 
     row = conn.execute(
-        "SELECT extracted_title, transmit_policy FROM items WHERE source='csn' AND item_id='1'"
+        "SELECT extracted_title, policy FROM items WHERE source='csn' AND item_id='1'"
     ).fetchone()
     assert tuple(row) == ("Hand-made", "informational")
 
@@ -94,7 +94,7 @@ def test_create_item_records_audit_event(conn):
 
 
 def test_update_item_changes_fields(conn):
-    _insert_item(conn, "csn", "1", extracted_title="Old", transmit_policy="informational")
+    _insert_item(conn, "csn", "1", extracted_title="Old", policy="informational")
 
     updated = dev_ops.update_item(
         conn,
@@ -107,14 +107,14 @@ def test_update_item_changes_fields(conn):
         event_key="ek",
         type_="Evento",
         subtype="Sismo",
-        transmit_policy="urgent",
+        policy="urgent",
         source_date_time="2026-01-01T00:00:00+00:00",
     )
 
     assert updated is True
     row = conn.execute(
         "SELECT extracted_title, extracted_contents, summary, url, event_key, type, subtype, "
-        "transmit_policy, source_date_time FROM items WHERE source='csn' AND item_id='1'"
+        "policy, source_date_time FROM items WHERE source='csn' AND item_id='1'"
     ).fetchone()
     assert tuple(row) == (
         "New",
@@ -143,7 +143,7 @@ def test_update_item_does_not_change_primary_key_columns(conn):
         event_key=None,
         type_=None,
         subtype=None,
-        transmit_policy=None,
+        policy=None,
         source_date_time=None,
     )
 
@@ -163,7 +163,7 @@ def test_update_item_returns_false_for_unknown_item(conn):
         event_key=None,
         type_=None,
         subtype=None,
-        transmit_policy=None,
+        policy=None,
         source_date_time=None,
     )
     assert updated is False
@@ -183,7 +183,7 @@ def test_update_item_records_audit_event(conn):
         event_key=None,
         type_=None,
         subtype=None,
-        transmit_policy="urgent",
+        policy="urgent",
         source_date_time=None,
     )
 
@@ -214,7 +214,7 @@ def test_delete_item_cascades_to_chunks_and_dispatch_state(conn):
         "VALUES ('log', 'csn', '1')"
     )
     conn.execute(
-        "INSERT INTO item_policy_state (consumer, source, item_id, transmit_policy) "
+        "INSERT INTO item_policy_state (consumer, source, item_id, policy) "
         "VALUES ('log', 'csn', '1', 'informational')"
     )
     conn.execute(

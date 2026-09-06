@@ -8,17 +8,17 @@ signal. On each item.content_ready, beacon schedules transmit rows for the
 ONE configured beacon type (BEACON_TYPE): either a single kind="voice" row,
 or one kind="frame" row per existing `chunks` row. Rows go into the durable
 `beacon_tx_schedule` table (adapters.storage), snapshotting the item's
-`transmit_policy` NAME. That table — not an in-memory queue — is the source
-of truth for what still has to go on air and how many more times, so a
-beacon restart no longer loses pending transmissions.
+Policy NAME. That table — not an in-memory queue — is the source of truth
+for what still has to go on air and how many more times, so a beacon
+restart no longer loses pending transmissions.
 
 How often each row is transmitted, and how far apart, is resolved live
-every cycle from `transmit_policy` via adapters.transmit_policy.policy_for
-(repeat_times / interval_seconds) — so editing a tier in `transmit_policies`
-(dispatcher/policies.sh or the ui's /policies) changes in-flight behavior
-on the next cycle. A row is deleted once sent_count >= repeat_times. Every
-transmission *attempt* counts against the budget (a run of failures still
-retires the row).
+every cycle from the Policy's transmit stage via adapters.policy.policy_for
+(kind once/interval/cron, count, interval_seconds, cron) — so editing a
+Policy (dispatcher/policies.sh or the ui's /config/policies) changes
+in-flight behavior on the next cycle. A row is deleted once sent_count
+reaches transmit_count. Every transmission *attempt* counts against the
+budget (a run of failures still retires the row).
 
 Both beacon types end the same way: a WAV file is rendered (piper/espeak
 for voice, Direwolf's `gen_packets` CLI for frame) and handed to
@@ -98,8 +98,9 @@ from adapters.storage import (
     record_tx_schedule_sent,
     set_beacon_status,
 )
+from adapters.cron import latest_fire_at_or_before
 from adapters.timeutil import to_display_tz, utc_now
-from adapters.transmit_policy import policy_for
+from adapters.policy import policy_for
 
 from beacon import content, formatters, frame_audio, mq, ntp, transmit, voice
 
@@ -154,26 +155,79 @@ def _already_enqueued(conn, event_id: str | None) -> bool:
     return row is not None
 
 
+def _superseded_by_newer(conn, source: str, item_id: str, event_key: str, kind: str) -> bool:
+    """True if a *newer* item for the same (source, event_key) already has a
+    live beacon_tx_schedule row of this kind — so this (older) item must not
+    be scheduled. Keyed on event_key, which means "the same ongoing thing";
+    a null event_key never reaches here."""
+    row = conn.execute(
+        "SELECT 1 FROM beacon_tx_schedule s JOIN items i "
+        "ON i.source = s.source AND i.item_id = s.item_id "
+        "WHERE s.source = ? AND s.kind = ? AND i.event_key = ? AND s.item_id != ? "
+        "AND i.source_date_time > (SELECT source_date_time FROM items WHERE source=? AND item_id=?) "
+        "LIMIT 1",
+        (source, kind, event_key, item_id, source, item_id),
+    ).fetchone()
+    return row is not None
+
+
+def _retire_older_for_event_key(conn, source: str, item_id: str, event_key: str, kind: str) -> None:
+    """Delete pending beacon_tx_schedule rows for *older* items sharing this
+    (source, event_key) — the fresher item takes over. Already-sent airings
+    stand; only pending rows go."""
+    older = conn.execute(
+        "SELECT s.item_id, s.ref FROM beacon_tx_schedule s JOIN items i "
+        "ON i.source = s.source AND i.item_id = s.item_id "
+        "WHERE s.source = ? AND s.kind = ? AND i.event_key = ? AND s.item_id != ? "
+        "AND i.source_date_time < (SELECT source_date_time FROM items WHERE source=? AND item_id=?)",
+        (source, kind, event_key, item_id, source, item_id),
+    ).fetchall()
+    for old_item_id, ref in older:
+        conn.execute(
+            "DELETE FROM beacon_tx_schedule "
+            "WHERE source = ? AND item_id = ? AND kind = ? AND ref = ?",
+            (source, old_item_id, kind, ref),
+        )
+        record_audit_event(
+            conn, event_type="beacon.tx.superseded", actor="beacon",
+            source=source, item_id=old_item_id,
+            details={"kind": kind, "ref": ref, "superseded_by": item_id, "event_key": event_key},
+        )
+    if older:
+        conn.commit()
+
+
 def _handle_content_ready_event(
     conn, source: str, item_id: str, event_id: str | None,
     wake_event: threading.Event | None = None,
 ) -> None:
     """Schedules beacon_tx_schedule rows for an item, for the ONE configured
     BEACON_TYPE: a single kind="voice" row, or one kind="frame" row per existing
-    `chunks` row. wake_event (optional -- None from
-    _reconcile_missed_content_ready) is set after scheduling so the transmit
-    loop's tick-wait returns immediately."""
+    `chunks` row. A fresher item for the same event_key supersedes older
+    pending rows; an already-superseded item is skipped. wake_event
+    (optional -- None from _reconcile_missed_content_ready) is set after
+    scheduling so the transmit loop's tick-wait returns immediately."""
     if _already_enqueued(conn, event_id):
         logger.info("beacon: content_ready event_id=%s already scheduled, skipping", event_id)
         return
 
     beacon_type = _resolve_beacon_type(conn)
 
-    policy_row = conn.execute(
-        "SELECT transmit_policy FROM items WHERE source = ? AND item_id = ?",
+    item_row = conn.execute(
+        "SELECT policy, event_key, source_date_time FROM items WHERE source = ? AND item_id = ?",
         (source, item_id),
     ).fetchone()
-    transmit_policy = policy_row[0] if policy_row is not None else None
+    policy = item_row[0] if item_row is not None else None
+    event_key = item_row[1] if item_row is not None else None
+
+    if event_key and _superseded_by_newer(conn, source, item_id, event_key, beacon_type):
+        record_audit_event(
+            conn, event_type="beacon.tx.supersede_skip", actor="beacon",
+            source=source, item_id=item_id, details={"event_key": event_key},
+        )
+        return
+    if event_key:
+        _retire_older_for_event_key(conn, source, item_id, event_key, beacon_type)
 
     max_size = int(get_setting("BEACON_QUEUE_MAX_SIZE", BEACON_QUEUE_MAX_SIZE_DEFAULT, conn=conn))
 
@@ -186,12 +240,12 @@ def _handle_content_ready_event(
         for (chunk_index,) in rows:
             add_tx_schedule_unit(
                 conn, source, item_id, "frame", str(chunk_index),
-                transmit_policy, event_id, max_size=max_size,
+                policy, event_id, max_size=max_size,
             )
         frame_count = len(rows)
     else:
         add_tx_schedule_unit(
-            conn, source, item_id, "voice", "", transmit_policy, event_id, max_size=max_size
+            conn, source, item_id, "voice", "", policy, event_id, max_size=max_size
         )
 
     if wake_event is not None:
@@ -529,7 +583,7 @@ def _watermark_fields(ctx: dict) -> dict[str, str]:
 def _transmit_watermark(conn, beacon_type: str, ctx: dict, now_dt: datetime) -> bool:
     """Renders and transmits the periodic watermark message for whichever
     beacon type is currently active. Independent of beacon_tx_schedule --
-    no row, no transmit_policy repeat/interval budget, just the caller's
+    no row, no Policy transmit budget, just the caller's
     own BEACON_WATERMARK_INTERVAL_SECONDS timer. Returns whether it was
     actually sent."""
     callsign = ctx["callsign"]
@@ -608,7 +662,7 @@ def _transmit_watermark(conn, beacon_type: str, ctx: dict, now_dt: datetime) -> 
 
 def _transmit_manual_unit(conn, row: dict, beacon_type: str, ctx: dict, now_dt: datetime) -> bool:
     """Renders and transmits one operator-typed manual message
-    (beacon_manual_tx). No item, no transmit_policy — sent once. The row is
+    (beacon_manual_tx). No item, no Policy — sent once. The row is
     deleted by the caller regardless of the outcome."""
     callsign = ctx["callsign"]
     text = (row["text"] or "").strip()
@@ -719,23 +773,46 @@ KIND_TRANSMITTERS = {
 }
 
 
+def _transmit_due(conn, sched, row: dict, now_dt: datetime) -> bool:
+    """Whether this schedule row is due to air now under its transmit
+    Schedule. `once` -> only if never sent. `interval` -> last + spacing.
+    `cron` -> a cron occurrence strictly after `last_transmitted_at or
+    created_at` (so an item armed mid-day first airs at the next slot, not
+    immediately, deliberately unlike fetch-cron which catches up on start)."""
+    last = row["last_transmitted_at"]
+    if sched.kind == "cron":
+        since = (last or row["created_at"] or "").replace(" ", "T")
+        occ = latest_fire_at_or_before(sched.cron or "", now_dt, conn=conn)
+        if occ is None:
+            return False
+        return occ.isoformat() > since
+    if sched.kind == "interval":
+        if last is None:
+            return True
+        return now_dt >= datetime.fromisoformat(last) + timedelta(seconds=sched.interval_seconds)
+    # once
+    return last is None
+
+
 def _drain_kind(
     stop_event: threading.Event, conn, kind: str, now_dt: datetime, ctx: dict, inter_tx_delay: float,
 ) -> int:
     """Transmits every currently-due beacon_tx_schedule row of `kind`,
     decrementing the repeat budget and retiring rows at
-    sent_count >= repeat_times. Due-ness and retirement are computed live
-    against each row's current policy (adapters.transmit_policy.policy_for),
-    so editing a tier stays reactive. Every attempt counts. Returns the
-    number of rows transmitted (mainly for tests)."""
+    sent_count >= transmit_count. Due-ness and retirement are computed live
+    against each row's current Policy transmit stage
+    (adapters.policy.policy_for) — kind once/interval/cron — so editing a
+    Policy stays reactive. Every attempt counts. Returns the number of
+    rows transmitted (mainly for tests)."""
     transmit_fn = KIND_TRANSMITTERS[kind]
     attempted = 0
     for row in due_tx_schedule_rows(conn, kind):
         if stop_event.is_set():
             break
-        policy = policy_for(conn, row["transmit_policy"])
+        sched = policy_for(conn, row["policy"])
+        cap = sched.count if sched.count is not None else 1
 
-        if row["sent_count"] >= policy.repeat_times:
+        if row["sent_count"] >= cap:
             record_tx_schedule_sent(
                 conn, row["source"], row["item_id"], kind, row["ref"],
                 now_iso=now_dt.isoformat(), retire=True,
@@ -743,19 +820,15 @@ def _drain_kind(
             _record_retired(conn, row, kind)
             continue
 
-        if row["last_transmitted_at"] is not None:
-            due_at = datetime.fromisoformat(row["last_transmitted_at"]) + timedelta(
-                seconds=policy.interval_seconds
-            )
-            if now_dt < due_at:
-                continue  # not due yet under the current policy
+        if not _transmit_due(conn, sched, row, now_dt):
+            continue
 
         if attempted > 0:
             stop_event.wait(inter_tx_delay)
         transmit_fn(conn, row, ctx)
         attempted += 1
 
-        retire = row["sent_count"] + 1 >= policy.repeat_times
+        retire = row["sent_count"] + 1 >= cap
         record_tx_schedule_sent(
             conn, row["source"], row["item_id"], kind, row["ref"],
             now_iso=now_dt.isoformat(), retire=retire,

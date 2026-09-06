@@ -2,20 +2,22 @@ from adapters.aiprompt_adapter import AiPromptAdapter
 from adapters.__main__ import load_enabled_adapters
 from adapters.api_adapter import ApiAdapter
 from adapters.custom_adapter import CustomAdapter
+from adapters.policy import set_policy
 from adapters.storage import get_connection, set_adapter_instance
 
 
 def test_load_enabled_adapters_builds_api_and_custom_types(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
+    set_policy(conn, "aip", fetch_kind="cron", fetch_cron="0 6 * * *")
     set_adapter_instance(conn, "fake-api", "api", {"url": "https://example.test"})
     set_adapter_instance(
         conn, "fake-custom", "custom", {"code": "def fetch(config):\n    return []\n"}
     )
     set_adapter_instance(
-        conn, "fake-ai", "aiprompt", {"prompt": "Give a fact.", "cron": "0 6 * * *"}
+        conn, "fake-ai", "aiprompt", {"prompt": "Give a fact."}, policy="aip"
     )
 
-    loaded = {source: (adapter, interval) for source, adapter, interval in load_enabled_adapters(conn)}
+    loaded = {source: (adapter, policy) for source, adapter, policy in load_enabled_adapters(conn)}
 
     assert isinstance(loaded["fake-api"][0], ApiAdapter)
     assert isinstance(loaded["fake-custom"][0], CustomAdapter)
@@ -31,25 +33,25 @@ def test_load_enabled_adapters_skips_disabled_rows(tmp_path):
     assert "off" not in loaded
 
 
-def test_load_enabled_adapters_interval_falls_back_to_default(tmp_path, monkeypatch):
+def test_load_enabled_adapters_resolves_policy_by_name(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
-    monkeypatch.delenv("ADAPTERS_DEFAULT_INTERVAL_SECONDS", raising=False)
-    set_adapter_instance(conn, "no-interval", "api", {"url": "https://example.test"})
+    set_policy(conn, "slow", fetch_kind="interval", fetch_interval_seconds=42)
+    set_adapter_instance(conn, "s1", "api", {"url": "https://example.test"}, policy="slow")
 
-    intervals = {source: interval for source, _, interval in load_enabled_adapters(conn)}
+    policies = {source: policy for source, _, policy in load_enabled_adapters(conn)}
 
-    assert intervals["no-interval"] == 10
+    assert policies["s1"].name == "slow"
+    assert policies["s1"].fetch.interval_seconds == 42
 
 
-def test_load_enabled_adapters_uses_row_interval_when_set(tmp_path):
+def test_load_enabled_adapters_unset_policy_falls_back_to_default(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
-    set_adapter_instance(
-        conn, "custom-interval", "api", {"url": "https://example.test"}, interval_seconds=42
-    )
+    set_adapter_instance(conn, "no-policy", "api", {"url": "https://example.test"})
 
-    intervals = {source: interval for source, _, interval in load_enabled_adapters(conn)}
+    policies = {source: policy for source, _, policy in load_enabled_adapters(conn)}
 
-    assert intervals["custom-interval"] == 42
+    assert policies["no-policy"].name == "default"
+    assert policies["no-policy"].fetch.interval_seconds == 10
 
 
 def test_load_enabled_adapters_skips_unknown_adapter_type(tmp_path):

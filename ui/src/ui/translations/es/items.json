@@ -23,7 +23,7 @@
   "item_detail.summary": "Resumen",
   "item_detail.contents": "Contenido",
   "item_detail.actions": "Acciones",
-  "item_detail.set_transmit_policy": "Establecer transmit_policy",
+  "item_detail.set_transmit_policy": "Establecer política",
   "item_detail.override_button": "Anular",
   "item_detail.requires_beacon_identity": "Requiere que {link} esté configurada.",
   "item_detail.beacon_identity_link_text": "la identidad de la baliza",

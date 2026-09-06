@@ -17,9 +17,9 @@ Every poll:
 1. **Discover** — any row in `items` with a `rowid` past this consumer's
    watermark is newly seen, and gets armed for delivery.
 2. **Sync policy changes** — every row in `items` (not just newly
-   discovered ones) has its `transmit_policy` compared against what this
+   discovered ones) has its `policy` compared against what this
    consumer last recorded for it; a mismatch arms it too — this is what
-   makes a `transmit_policy` edit re-flow through the pipeline even for an
+   makes a `policy` edit re-flow through the pipeline even for an
    item that's already delivered/retired, or one that predates this
    consumer entirely (see below).
 3. **Dispatch** — every armed item is passed to every handler **exactly
@@ -28,11 +28,11 @@ Every poll:
 The dispatcher does not repeat deliveries. "Put this item on air N times,
 spaced out" is a *transmit* concern and lives in
 [beacon](../beacon/README.md)'s `beacon_tx_schedule`, downstream of content
-preparation — see "Transmit policy" below.
+preparation — see "Policy" below.
 
 **First run skips the backlog**: a brand-new consumer's watermark starts
 at the database's current max `rowid`, not `0`, and every item's
-`transmit_policy` is silently baselined (not treated as a change) the
+`policy` is silently baselined (not treated as a change) the
 first time step 2 sees it — so pointing `dispatcher` at an already-populated
 database doesn't immediately fire on every historical row. To
 intentionally replay history for a consumer, delete its rows from the
@@ -58,82 +58,86 @@ excluded no matter how long this process keeps running afterward. An
 item with no `source_date_time` at all is never treated as stale (there's
 nothing to compare).
 
-## Transmit policy (`transmit_policy`)
+## Policy (`items.policy`)
 
-Every item carries a `transmit_policy` column (a name, set by the adapter
-that produced it — see
+Every item carries a `policy` column (a name, set by the adapter that
+produced it, from `adapter_instances.policy` — see
 [data-adapters/README.md](../data-adapters/README.md#adapter-contract)) that's a
-soft reference (not a SQL `FOREIGN KEY`) into the `transmit_policies`
-table. That table is **owned by `data-adapters`**
+soft reference (not a SQL `FOREIGN KEY`) into the `policies` table. That
+table is **owned by `data-adapters`**
 ([`adapters.storage`](../data-adapters/src/adapters/storage.py) creates and
-seeds it, same as `sources`), so every package reaches it through the same
-`get_connection()`:
+seeds it, same as `sources`); a Policy is the single definition of how an
+item behaves end to end — see
+[`adapters.policy`](../data-adapters/src/adapters/policy.py):
 
 ```sql
-CREATE TABLE transmit_policies (
-    name TEXT PRIMARY KEY,
-    repeat_times INTEGER NOT NULL,
-    interval_seconds INTEGER NOT NULL,
-    description TEXT
+CREATE TABLE policies (
+    name                      TEXT PRIMARY KEY,
+    fetch_kind                TEXT NOT NULL DEFAULT 'interval',   -- once | interval | cron
+    fetch_interval_seconds    INTEGER,
+    fetch_cron                TEXT,
+    process_mode              TEXT NOT NULL DEFAULT 'on_new_data',
+    transmit_kind             TEXT NOT NULL DEFAULT 'once',       -- once | interval | cron
+    transmit_count            INTEGER NOT NULL DEFAULT 1,
+    transmit_interval_seconds INTEGER NOT NULL DEFAULT 0,
+    transmit_cron             TEXT,
+    description               TEXT
 );
 ```
 
-Seeded on first run with a single tier:
+Seeded on first run with a single Policy, `default` (fetch every 10s /
+process on new data / air once). Any further Policy is added by an
+operator (see below), not seeded.
 
-| name | repeat_times | interval_seconds |
-|---|---|---|
-| `informational` | 1 | 0 |
-
-Any further tier is added by an operator (see below), not seeded.
-
-**The dispatcher doesn't act on `repeat_times`/`interval_seconds` at all** —
-it delivers each item once. Those numbers are read by
-[beacon](../beacon/README.md), which schedules `repeat_times` on-air
-transmissions of the item spaced `interval_seconds` apart (see
-`beacon_tx_schedule` in [beacon/README.md](../beacon/README.md)). An item
-with no `transmit_policy`, an unrecognized one, or one that's been deleted
-falls back to `informational`; if even that row is gone, a hardcoded
-`(1, 0)` is used as an absolute last resort.
+**The dispatcher acts on none of these fields** — it delivers each item
+once (`process_mode = on_new_data`). The fetch fields are read by the
+[data-adapters](../data-adapters/README.md) runner; the transmit fields by
+[beacon](../beacon/README.md), which schedules `transmit_count` on-air
+transmissions spaced `transmit_interval_seconds` apart, or one per
+`transmit_cron` occurrence (see `beacon_tx_schedule` in
+[beacon/README.md](../beacon/README.md)). An item with no `policy`, an
+unrecognized one, or a deleted one falls back to `default`; if even that
+row is gone, a hardcoded interval-fetch / air-once Policy is the last
+resort.
 
 ### Managing policies
 
 ```bash
 ./policies.sh list
-./policies.sh set <name> --repeat-times N --interval-seconds N [--description TEXT]
+./policies.sh set <name> [--fetch-kind ...] [--fetch-interval-seconds N] [--fetch-cron EXPR] \
+                         [--transmit-kind ...] [--transmit-count N] \
+                         [--transmit-interval-seconds N] [--transmit-cron EXPR] [--description TEXT]
 ./policies.sh delete <name>
 ```
 
-(also editable at the ui's `/policies` page). Adding a new named tier
-(e.g. `urgent` at 5x/60s, or `critical` at 10x/30s) is a `set` call, not a
-code change — any adapter can then point items at it, or an operator can
-point an existing item at it via `override_item.sh` (below). An API adapter
-can also assign a tier per item from a numeric threshold via the
-`transmit_policy_rule` in its config (e.g. earthquakes at/above a magnitude
-threshold → `urgent`) — see
-[data-adapters/README.md](../data-adapters/README.md#adapter-plugin-types),
-editable at `/adapters`. No seeded adapter sets one by default.
+(also editable at the ui's `/config/policies` page). Adding a Policy
+(e.g. `urgent` = air 5x/60s, `weather-forecast` = fetch on a cron) is a
+`set` call, not a code change — an adapter points at it by name, or an
+operator re-points an existing item to it via `override_item.sh` (below).
 
 ### Manual overrides / rearm
 
-`transmit_policy` is the sanctioned exception to `items` rows being
-immutable once stored — like `summary`, a separate actor (the ui, or a
-manual write) may update this column after the fact. **Reassigning it**
-(via `override_item.sh`, the ui, or any direct write to `items`) is caught
-by the "sync policy changes" step every poll, comparing against
-`item_policy_state` — a mismatch arms one fresh dispatch, which re-flows
-the pipeline so beacon re-schedules the item's transmissions under the new
-tier, **regardless of the item's current state** (armed, already retired,
-or backlog).
+`items.policy` is the sanctioned exception to `items` rows being immutable
+once stored — like `summary`, a separate actor (the ui, or a manual write)
+may update this column after the fact. **Re-pointing it to a different
+whole Policy** (via `override_item.sh`, the ui, or any direct write to
+`items`) is caught by the "sync policy changes" step every poll, comparing
+against `item_policy_state` — a mismatch arms one fresh dispatch, which
+re-flows the pipeline so beacon re-schedules the item's transmissions
+under the new tier, **regardless of the item's current state** (armed,
+already retired, or backlog). Only the transmit stage changes: the item's
+data was already fetched and its content already processed.
 
-`--rearm` covers the one thing a `transmit_policy` change doesn't:
-re-sending an item under the *same* policy it's already on.
+`--rearm` (Reprocess) re-runs the `ai` + `chunk` actions for an item under
+its current Policy — for a bad summary, an edited prompt, or edited item
+contents.
 
 ```bash
-./override_item.sh <source> <item_id> --transmit-policy NAME [--rearm] [--consumer NAME]
+./override_item.sh <source> <item_id> --policy NAME [--rearm] [--consumer NAME]
 ```
 
-- `--transmit-policy` updates the item's column to any policy name
-  (doesn't need to already exist in `transmit_policies` — same
+- `--policy` updates the item's column to any Policy name
+  (doesn't need to already exist in `policies` — same
   soft-reference/fallback behavior as an adapter-set one).
 - `--rearm` re-inserts a `trigger_dispatches` row for `--consumer`
   (defaults to `DISPATCHER_CONSUMER_NAME`) — only has an effect if the item
@@ -155,14 +159,14 @@ incorrect bookkeeping while debugging, not a normal delivery control.
 ./import_config.sh INPUT [--db PATH] [--dry-run]
 ```
 
-A whole-DB config snapshot — settings overrides, `transmit_policies`,
+A whole-DB config snapshot — settings overrides, `policies`,
 source display names, and every `adapter_instances` row (bundled with its
 `sources` row) — as one JSON file. Logic lives in
 [data-adapters](../data-adapters/README.md)'s `adapters.config_transfer`
 (shared with the ui's `/config/import-export` page); this CLI pair lives
 here rather than there only because registering the MQ audit-event hook
 needs `dispatcher.mq_publisher`, same reason `policies.sh` lives here
-instead of next to `adapters/transmit_policy.py`.
+instead of next to `adapters/policy.py`.
 
 Secrets (`ANTHROPIC_API_KEY`/`OPENAI_API_KEY`) are never exported, not even
 as a placeholder key. Import is merge/upsert-only — a record overwrites an
@@ -186,7 +190,7 @@ itself:
   published — this is what drives `actions/` and, downstream, beacon.
 - `item.dispatch_failed` — every failed handler call.
 - `item.discovered` — a new item armed for delivery.
-- `item.policy_drifted` — an item's `transmit_policy` changed since last seen.
+- `item.policy_drifted` — an item's `policy` changed since last seen.
 - `item.policy_overridden`, `item.rearmed` — via `override_item.sh` / the ui.
 
 `adapter.fetch`, `item.stored`, `policy.set`, `policy.deleted` are
@@ -223,7 +227,7 @@ envelope, e.g.:
     "actor": "log_handler",
     "details": {
       "consumer": "log",
-      "transmit_policy": "informational"
+      "policy": "default"
     }
   }
 }
@@ -266,13 +270,13 @@ repeat/interval config is **not** here — see "Managing policies" above.
 ## State
 
 Three tables, owned by this package (separate from `items`, which stays
-adapter-owned, and `transmit_policies`, owned by `data-adapters`):
+adapter-owned, and `policies`, owned by `data-adapters`):
 
 - `dispatcher_state (consumer, last_seen_rowid)` — the discovery watermark.
 - `trigger_dispatches (consumer, source, item_id)` — the "this item is
   armed for one delivery" marker. Deleted the moment it's delivered.
-- `item_policy_state (consumer, source, item_id, transmit_policy)` — the
-  `transmit_policy` this consumer last saw for *every* item it's ever
+- `item_policy_state (consumer, source, item_id, policy)` — the
+  `policy` this consumer last saw for *every* item it's ever
   looked at — the baseline the "sync policy changes" step compares against
   to detect an edit, including on already-retired or backlog items.
 

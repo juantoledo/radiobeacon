@@ -21,7 +21,7 @@ register_audit_event_hook(publish_cloud_event)
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Override an item's transmit_policy (e.g. from the UI, or "
+        description="Re-point an item at a different Policy (e.g. from the UI, or "
         "manually), and optionally re-arm it for delivery if it's already been "
         "delivered/retired."
     )
@@ -29,8 +29,8 @@ def main() -> None:
     parser.add_argument("item_id")
     parser.add_argument("--db", default=str(DEFAULT_DB_PATH), help="Path to radiobeacon.db")
     parser.add_argument(
-        "--transmit-policy",
-        help="Name of a row in transmit_policies (see dispatcher/policies.sh list)",
+        "--policy",
+        help="Name of a row in `policies` (see dispatcher/policies.sh list)",
     )
     parser.add_argument(
         "--rearm",
@@ -48,12 +48,12 @@ def main() -> None:
 
     conn = get_connection(args.db)
 
-    if args.transmit_policy is not None:
+    if args.policy is not None:
         updated = override_item(
             conn,
             args.source,
             args.item_id,
-            transmit_policy=args.transmit_policy,
+            policy=args.policy,
         )
         if not updated:
             logger.error("no item found for source=%s item_id=%s", args.source, args.item_id)

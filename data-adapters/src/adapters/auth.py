@@ -1,6 +1,6 @@
 """Login accounts, password hashing, and session lifecycle for ui/'s
 authentication — sits on top of storage.py's users/sessions schema the same
-way adapters.transmit_policy sits on top of _CREATE_TRANSMIT_POLICIES.
+way adapters.policy sits on top of _CREATE_POLICIES.
 
 hashlib.scrypt (stdlib since Python 3.6) is used instead of bcrypt/argon2/
 passlib: nothing else in this repo pulls in a password-hashing dependency,

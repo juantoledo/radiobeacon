@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS items (
     event_key TEXT,
     type TEXT,
     subtype TEXT,
-    transmit_policy TEXT,
+    policy TEXT,
     source_date_time TEXT,
     fetched_at TEXT NOT NULL,
     captured_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS items (
 # to it exclusively through record_audit_event() below, never directly, so
 # the column set/contract stays uniform regardless of which package or
 # event produced a row. `source`/`item_id` are nullable: some events (e.g.
-# a transmit_policies edit) aren't about any one item.
+# a policies edit) aren't about any one item.
 _CREATE_AUDIT_LOG = """
 CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +104,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 # below. `key` is the exact env var name (e.g.
 # "ADAPTERS_CSN_API_URL"), reusing this repo's existing
 # naming convention as the row identifier instead of a separate id, same idea
-# as transmit_policies' `name` PK. `is_secret` drives UI masking and stops
+# as policies' `name` PK. `is_secret` drives UI masking and stops
 # set_setting from ever writing a secret's plaintext into audit_log.details.
 _CREATE_SETTINGS = """
 CREATE TABLE IF NOT EXISTS settings (
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS item_readiness (
 # {source_name}/{source_url} template rendering) -- lives here, not in
 # either of those sibling packages, for the same reason adapters.
 # templating/adapters.ax25 do: no import exists between actions and
-# beacon. Same shape as the transmit_policies table (also owned by this
+# beacon. Same shape as the policies table (also owned by this
 # module), just keyed by `source` instead of `name`, and seeded here (see
 # _ensure_sources_seeded), since every package reaches this table via the
 # same get_connection() every other table here already goes through.
@@ -223,16 +223,16 @@ _SEED_SOURCES = (
 # items.source/sources.source. `adapter_type` selects which generic adapter
 # class (adapters.api_adapter.ApiAdapter / adapters.custom_adapter.CustomAdapter)
 # interprets `config` (a JSON blob whose shape depends on adapter_type — see
-# those modules). `interval_seconds` NULL falls back to
-# ADAPTERS_DEFAULT_INTERVAL_SECONDS, same fallback the old per-adapter
-# interval lookup used. Read/written by adapters.__main__'s DB-driven loader
-# and by ui's /adapters CRUD pages.
+# those modules). `policy` names a row in `policies` (adapters.policy) — the
+# single definition of how this instance's items behave (fetch cadence,
+# process, transmit). NULL resolves to DEFAULT_POLICY_NAME. Read/written by
+# adapters.__main__'s DB-driven loader and by ui's /adapters CRUD pages.
 _CREATE_ADAPTER_INSTANCES = """
 CREATE TABLE IF NOT EXISTS adapter_instances (
     source TEXT PRIMARY KEY,
     adapter_type TEXT NOT NULL,
     enabled INTEGER NOT NULL DEFAULT 1,
-    interval_seconds INTEGER,
+    policy TEXT,
     config TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_by TEXT
@@ -475,7 +475,6 @@ def fetch(config):
                 "event_key": url_access,
                 "type": item_type,
                 "subtype": variable_riesgo.get("nombre"),
-                "transmit_policy": "informational",
                 "source_date_time": to_utc(datetime.fromisoformat(item["fechaHora"])),
                 "raw": item,
             }
@@ -594,7 +593,7 @@ _SEED_ADAPTER_INSTANCES = (
             "date_format": "%Y-%m-%d %H:%M:%S",
             "source_timezone": get("ADAPTERS_CSN_SOURCE_TZ", "America/Santiago"),
         },
-        lambda get: int(get("ADAPTERS_CSN_INTERVAL_SECONDS", "0") or 0) or None,
+        "default",
     ),
     (
         "senapred",
@@ -625,24 +624,29 @@ _SEED_ADAPTER_INSTANCES = (
                 query_limit=int(get("ADAPTERS_SENAPRED_QUERY_LIMIT", "20")),
             ),
         },
-        lambda get: int(get("ADAPTERS_SENAPRED_INTERVAL_SECONDS", "0") or 0) or None,
+        "default",
     ),
 )
 
 
-# transmit_policies is the centralized repeat/interval config that
-# items.transmit_policy references by name — how many times, and how far
-# apart, beacon/ should put a given item on air. Owned by this module (not
-# beacon/ or dispatcher/) so every package reaches it through the same
-# get_connection() as every other table here. Was `dispatch_policies`,
-# owned by dispatcher/, before the repeat concept moved from dispatcher's
-# redelivery loop into beacon's transmit schedule.
-_CREATE_TRANSMIT_POLICIES = """
-CREATE TABLE IF NOT EXISTS transmit_policies (
-    name TEXT PRIMARY KEY,
-    repeat_times INTEGER NOT NULL,
-    interval_seconds INTEGER NOT NULL,
-    description TEXT
+# `policies` is the single definition of how an item behaves end to end —
+# fetch cadence, process (event-driven, no tunable yet), and transmit
+# (how many times / how far apart / on a cron). items.policy and
+# adapter_instances.policy reference a row here by name. Owned by this
+# module (not beacon/ or dispatcher/) so every package reaches it through
+# the same get_connection() as every other table. See adapters.policy.
+_CREATE_POLICIES = """
+CREATE TABLE IF NOT EXISTS policies (
+    name                      TEXT PRIMARY KEY,
+    fetch_kind                TEXT    NOT NULL DEFAULT 'interval',
+    fetch_interval_seconds    INTEGER,
+    fetch_cron                TEXT,
+    process_mode              TEXT    NOT NULL DEFAULT 'on_new_data',
+    transmit_kind             TEXT    NOT NULL DEFAULT 'once',
+    transmit_count            INTEGER NOT NULL DEFAULT 1,
+    transmit_interval_seconds INTEGER NOT NULL DEFAULT 0,
+    transmit_cron             TEXT,
+    description               TEXT
 );
 """
 
@@ -653,11 +657,11 @@ CREATE TABLE IF NOT EXISTS transmit_policies (
 # beacon type it belongs to ("frame" | "voice"), matching BEACON_TYPE — only
 # one kind is ever scheduled/drained at a time. `ref` distinguishes units
 # within a kind for one item (frame = str(chunk_index), voice = "").
-# `transmit_policy` is a NAME snapshot; the actual
-# repeat_times/interval_seconds are resolved live every cycle via
-# adapters.transmit_policy.policy_for, so editing a tier stays reactive.
-# `sent_count` is stored progress; a row is deleted once
-# sent_count >= repeat_times. A rearm / policy change re-inserts the row
+# `policy` is a NAME snapshot; the actual transmit schedule
+# (kind/count/interval_seconds/cron) is resolved live every cycle via
+# adapters.policy.policy_for, so editing a Policy stays reactive.
+# `sent_count` is stored progress; a row is deleted once it reaches the
+# policy's transmit_count. A rearm / policy change re-inserts the row
 # (PK upsert) resetting sent_count and last_transmitted_at.
 _CREATE_BEACON_TX_SCHEDULE = """
 CREATE TABLE IF NOT EXISTS beacon_tx_schedule (
@@ -665,7 +669,7 @@ CREATE TABLE IF NOT EXISTS beacon_tx_schedule (
     item_id             TEXT NOT NULL,
     kind                TEXT NOT NULL,
     ref                 TEXT NOT NULL DEFAULT '',
-    transmit_policy     TEXT,
+    policy              TEXT,
     sent_count          INTEGER NOT NULL DEFAULT 0,
     last_transmitted_at TEXT,
     enqueued_event_id   TEXT,
@@ -683,7 +687,7 @@ _CREATE_BEACON_TX_SCHEDULE_KIND_INDEX = (
 # dashboard's "Transmit now" action (ui.routers.manual_tx) for beacon/ to
 # put on air on its next tick (beacon.__main__._drain_manual_tx). Unlike
 # beacon_tx_schedule these carry their own literal `text` (there's no item
-# to resolve it from), have no transmit_policy (sent exactly once), and are
+# to resolve it from), have no policy (sent exactly once), and are
 # deleted the moment they've been attempted — success or failure. `kind`
 # ("voice" | "frame") is the beacon type the message was composed for; the
 # beacon only drains rows matching the currently-active BEACON_TYPE, so a
@@ -706,7 +710,6 @@ _COLUMN_RENAMES = (
     ("title", "extracted_title"),
     ("contents", "extracted_contents"),
     ("url_access", "event_key"),
-    ("dispatch_policy", "transmit_policy"),
 )
 _NEW_TEXT_COLUMNS = (
     "extracted_title",
@@ -716,14 +719,10 @@ _NEW_TEXT_COLUMNS = (
     "event_key",
     "type",
     "subtype",
-    "transmit_policy",
+    "policy",
     "source_date_time",
 )
-# Columns from an older schema — dropped on migration if present: two
-# summarized_* columns replaced by the single `summary` column, and
-# urgency/repeat_times/repeat_interval_seconds replaced by the single
-# transmit_policy column (see adapters.transmit_policy for the centralized
-# repeat/interval config it now points at).
+# Columns from an older schema — dropped on migration if present.
 _DROPPED_COLUMNS = (
     "summarized_title",
     "summarized_contents",
@@ -776,47 +775,27 @@ def _migrate_items_table(conn: sqlite3.Connection) -> None:
             columns.discard(column)
 
 
-def _migrate_transmit_policies_table(conn: sqlite3.Connection) -> None:
-    """dispatch_policies was renamed to transmit_policies when the repeat
-    concept moved out of dispatcher/'s redelivery loop into beacon/'s
-    transmit schedule. Existing databases still have the old-named table
-    with any operator-customized rows in it — that data is the source of
-    truth, so it's renamed in place rather than dropped. Mirrors
-    dispatcher.watcher._migrate_trigger_state_table; the per-statement
-    try/except covers the concurrent-first-open race the same way
-    _migrate_items_table does."""
-    has_old = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dispatch_policies'"
-    ).fetchone()
-    has_new = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'transmit_policies'"
-    ).fetchone()
-    if has_old and not has_new:
-        try:
-            conn.execute("ALTER TABLE dispatch_policies RENAME TO transmit_policies")
-        except sqlite3.OperationalError:
-            logger.debug("dispatch_policies already renamed to transmit_policies")
-
-
-def _ensure_transmit_policies_table(conn: sqlite3.Connection) -> None:
+def _ensure_policies_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — same pattern as
     _ensure_sources_table."""
-    conn.execute(_CREATE_TRANSMIT_POLICIES)
+    conn.execute(_CREATE_POLICIES)
 
 
-def _ensure_transmit_policies_seeded(conn: sqlite3.Connection) -> None:
-    """Inserts the starting tiers only if the table is empty — mirrors
-    _ensure_sources_seeded. An operator's later edits (or deletions) via
-    dispatcher/policies.sh or the ui's /policies page are never overwritten
-    on a subsequent get_connection() call."""
-    _ensure_transmit_policies_table(conn)
-    count = conn.execute("SELECT COUNT(*) FROM transmit_policies").fetchone()[0]
+def _ensure_policies_seeded(conn: sqlite3.Connection) -> None:
+    """Inserts the seed Policy (`default`) only if the table is empty —
+    mirrors _ensure_sources_seeded. An operator's later edits (or
+    deletions) via dispatcher/policies.sh or the ui's /config/policies page
+    are never overwritten on a subsequent get_connection() call."""
+    _ensure_policies_table(conn)
+    count = conn.execute("SELECT COUNT(*) FROM policies").fetchone()[0]
     if count == 0:
-        from adapters.transmit_policy import SEED_POLICIES
+        from adapters.policy import SEED_POLICIES
 
         conn.executemany(
-            "INSERT INTO transmit_policies "
-            "(name, repeat_times, interval_seconds, description) VALUES (?, ?, ?, ?)",
+            "INSERT INTO policies "
+            "(name, fetch_kind, fetch_interval_seconds, fetch_cron, process_mode, "
+            "transmit_kind, transmit_count, transmit_interval_seconds, transmit_cron, description) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             SEED_POLICIES,
         )
         conn.commit()
@@ -835,68 +814,6 @@ def _ensure_beacon_manual_tx_table(conn: sqlite3.Connection) -> None:
     helpers below call this themselves, same pattern as
     _ensure_beacon_tx_schedule_table."""
     conn.execute(_CREATE_BEACON_MANUAL_TX)
-
-
-def _migrate_adapter_instances_config(conn: sqlite3.Connection) -> None:
-    """One-time, best-effort cleanup of existing adapter_instances.config rows:
-
-    - the dispatch_policy -> transmit_policy rename (seeded csn's
-      `dispatch_policy_rule` key, seeded senapred's `"dispatch_policy"` item
-      field in its `code` string);
-    - the api adapter's threshold rule (`transmit_policy_rule` /
-      `dispatch_policy_rule`) -> a plain `transmit_policy` name: the rule is
-      gone, so an existing rule collapses to its non-escalated branch
-      (`if_false`, default "informational").
-
-    Per-row try/except so one malformed config never blocks startup."""
-    _ensure_adapter_instances_table(conn)
-    try:
-        rows = conn.execute(
-            "SELECT source, adapter_type, config FROM adapter_instances"
-        ).fetchall()
-    except sqlite3.OperationalError:
-        return
-
-    for source, adapter_type, config_text in rows:
-        try:
-            cfg = json.loads(config_text)
-        except (TypeError, ValueError):
-            continue
-        changed = False
-        migration = "dispatch_policy -> transmit_policy"
-        if isinstance(cfg, dict):
-            # Collapse the removed threshold rule to a plain policy name.
-            rule = cfg.pop("transmit_policy_rule", None)
-            legacy_rule = cfg.pop("dispatch_policy_rule", None)
-            rule = rule or legacy_rule
-            if isinstance(rule, dict):
-                cfg.setdefault("transmit_policy", rule.get("if_false") or "informational")
-                changed = True
-                migration = "transmit_policy_rule -> transmit_policy"
-            if (
-                adapter_type == "custom"
-                and isinstance(cfg.get("code"), str)
-                and '"dispatch_policy"' in cfg["code"]
-            ):
-                cfg["code"] = cfg["code"].replace('"dispatch_policy"', '"transmit_policy"')
-                changed = True
-        if not changed:
-            continue
-        try:
-            conn.execute(
-                "UPDATE adapter_instances SET config = ? WHERE source = ?",
-                (json.dumps(cfg), source),
-            )
-            conn.commit()
-            record_audit_event(
-                conn,
-                event_type="adapter_instance.config_migrated",
-                actor="adapters.storage",
-                source=source,
-                details={"rename": migration},
-            )
-        except sqlite3.OperationalError:
-            logger.debug("adapter_instances.%s config migration skipped (locked)", source)
 
 
 def _backfill_senapred_ai_fallback_to_title(conn: sqlite3.Connection) -> None:
@@ -979,14 +896,12 @@ def get_connection(
         _ensure_item_readiness_table(conn)
         _ensure_sources_table(conn)
         _ensure_sources_seeded(conn)
+        _ensure_policies_table(conn)
+        _ensure_policies_seeded(conn)
         _ensure_adapter_instances_table(conn)
         _ensure_adapter_instances_seeded(conn)
-        _migrate_transmit_policies_table(conn)
-        _ensure_transmit_policies_table(conn)
-        _ensure_transmit_policies_seeded(conn)
         _ensure_beacon_tx_schedule_table(conn)
         _ensure_beacon_manual_tx_table(conn)
-        _migrate_adapter_instances_config(conn)
         _backfill_senapred_ai_fallback_to_title(conn)
         conn.commit()
     except Exception:
@@ -1321,7 +1236,7 @@ def get_item_ready_published_at(conn: sqlite3.Connection, source: str, item_id: 
 
 
 _BEACON_TX_SCHEDULE_COLUMNS = (
-    "source", "item_id", "kind", "ref", "transmit_policy",
+    "source", "item_id", "kind", "ref", "policy",
     "sent_count", "last_transmitted_at", "enqueued_event_id",
     "created_at", "updated_at",
 )
@@ -1340,7 +1255,7 @@ def add_tx_schedule_unit(
     item_id: str,
     kind: str,
     ref: str,
-    transmit_policy: str | None,
+    policy: str | None,
     enqueued_event_id: str | None,
     *,
     max_size: int | None = None,
@@ -1355,14 +1270,14 @@ def add_tx_schedule_unit(
     _ensure_beacon_tx_schedule_table(conn)
     conn.execute(
         "INSERT INTO beacon_tx_schedule "
-        "(source, item_id, kind, ref, transmit_policy, enqueued_event_id) "
+        "(source, item_id, kind, ref, policy, enqueued_event_id) "
         "VALUES (?, ?, ?, ?, ?, ?) "
         "ON CONFLICT (source, item_id, kind, ref) DO UPDATE SET "
-        "transmit_policy = excluded.transmit_policy, "
+        "policy = excluded.policy, "
         "enqueued_event_id = excluded.enqueued_event_id, "
         "sent_count = 0, last_transmitted_at = NULL, "
         "updated_at = datetime('now')",
-        (source, item_id, kind, ref, transmit_policy, enqueued_event_id),
+        (source, item_id, kind, ref, policy, enqueued_event_id),
     )
     if max_size is not None and max_size > 0:
         conn.execute(
@@ -1389,12 +1304,12 @@ def schedule_retransmit(conn: sqlite3.Connection, source: str, item_id: str) -> 
     new dependency on the beacon package. Returns {"kind": None,
     "scheduled": 0} if the item doesn't exist — nothing to retransmit."""
     policy_row = conn.execute(
-        "SELECT transmit_policy FROM items WHERE source = ? AND item_id = ?",
+        "SELECT policy FROM items WHERE source = ? AND item_id = ?",
         (source, item_id),
     ).fetchone()
     if policy_row is None:
         return {"kind": None, "scheduled": 0}
-    transmit_policy = policy_row[0]
+    policy = policy_row[0]
 
     beacon_type = (get_setting("BEACON_TYPE", BEACON_TYPE_DEFAULT, conn=conn) or "").strip().lower()
     if beacon_type not in ("voice", "frame"):
@@ -1407,11 +1322,11 @@ def schedule_retransmit(conn: sqlite3.Connection, source: str, item_id: str) -> 
         ).fetchall()
         for (chunk_index,) in rows:
             add_tx_schedule_unit(
-                conn, source, item_id, "frame", str(chunk_index), transmit_policy, None
+                conn, source, item_id, "frame", str(chunk_index), policy, None
             )
         scheduled = len(rows)
     else:
-        add_tx_schedule_unit(conn, source, item_id, "voice", "", transmit_policy, None)
+        add_tx_schedule_unit(conn, source, item_id, "voice", "", policy, None)
         scheduled = 1
 
     record_audit_event(
@@ -1453,7 +1368,7 @@ def delete_stale_tx_schedule(
     `max_age_seconds <= 0`. `now_iso` is the caller's "now" (utc_now()),
     passed in for testability. Same policy-agnostic style as
     due_tx_schedule_rows — staleness is a wall-clock concern, unrelated to
-    transmit_policy repeat/interval."""
+    the Policy's transmit count/interval/cron."""
     if max_age_seconds <= 0:
         return []
     _ensure_beacon_tx_schedule_table(conn)
@@ -1608,7 +1523,7 @@ def _ensure_sources_table(conn: sqlite3.Connection) -> None:
 
 def _ensure_sources_seeded(conn: sqlite3.Connection) -> None:
     """Inserts _SEED_SOURCES only if the table is empty — mirrors
-    _ensure_transmit_policies_seeded exactly, so a fresh database starts
+    _ensure_policies_seeded exactly, so a fresh database starts
     with csn/senapred already present, but an operator's later edits (or
     deletions) via sources.sh are never overwritten on a subsequent
     get_connection() call."""
@@ -1645,7 +1560,7 @@ def set_source(
 ) -> None:
     """Creates or replaces a source's display metadata — the actual
     "manage these directly" surface (see data-adapters/sources.py).
-    Mirrors adapters.transmit_policy.set_policy's upsert-then-audit shape."""
+    Mirrors adapters.policy.set_policy's upsert-then-audit shape."""
     _ensure_sources_table(conn)
     conn.execute(
         "INSERT INTO sources (source, display_name, site_url, updated_at) "
@@ -1676,7 +1591,7 @@ def list_sources(conn: sqlite3.Connection) -> list[tuple[str, str, str | None]]:
 
 def delete_source(conn: sqlite3.Connection, source: str) -> bool:
     """Returns whether a row was actually deleted (False if unknown).
-    Mirrors adapters.transmit_policy.delete_policy."""
+    Mirrors adapters.policy.delete_policy."""
     _ensure_sources_table(conn)
     cursor = conn.execute("DELETE FROM sources WHERE source = ?", (source,))
     conn.commit()
@@ -1701,7 +1616,8 @@ def _ensure_adapter_instances_seeded(conn: sqlite3.Connection) -> None:
     operator's live DB already had any of the legacy ADAPTERS_CSN_*/
     ADAPTERS_SENAPRED_* settings rows (set via the old /config groups),
     those values carry into the seeded row's JSON config instead of
-    silently reverting to the hardcoded default."""
+    silently reverting to the hardcoded default. Both seeded rows point at
+    the seeded `default` Policy."""
     _ensure_adapter_instances_table(conn)
     count = conn.execute("SELECT COUNT(*) FROM adapter_instances").fetchone()[0]
     if count != 0:
@@ -1710,15 +1626,15 @@ def _ensure_adapter_instances_seeded(conn: sqlite3.Connection) -> None:
     def get(key: str, default: str) -> str:
         return get_setting(key, default, conn=conn) or default
 
-    for source, adapter_type, config_builder, interval_builder in _SEED_ADAPTER_INSTANCES:
+    for source, adapter_type, config_builder, policy in _SEED_ADAPTER_INSTANCES:
         conn.execute(
             "INSERT INTO adapter_instances "
-            "(source, adapter_type, enabled, interval_seconds, config) "
+            "(source, adapter_type, enabled, policy, config) "
             "VALUES (?, ?, 1, ?, ?)",
             (
                 source,
                 adapter_type,
-                interval_builder(get),
+                policy,
                 json.dumps(config_builder(get)),
             ),
         )
@@ -1726,7 +1642,7 @@ def _ensure_adapter_instances_seeded(conn: sqlite3.Connection) -> None:
 
 
 _ADAPTER_INSTANCE_COLUMNS = (
-    "source", "adapter_type", "enabled", "interval_seconds", "config", "updated_at", "updated_by",
+    "source", "adapter_type", "enabled", "policy", "config", "updated_at", "updated_by",
 )
 
 
@@ -1768,26 +1684,27 @@ def set_adapter_instance(
     config: dict[str, Any],
     *,
     enabled: bool = True,
-    interval_seconds: int | None = None,
+    policy: str | None = None,
     actor: str = "ui.adapters",
 ) -> None:
     """Creates or replaces one adapter_instances row. Mirrors
     set_source's upsert-then-audit shape. `config` is passed as a dict and
     serialized here (not by the caller) so every writer produces
-    consistently-formatted JSON."""
+    consistently-formatted JSON. `policy` names a row in `policies`
+    (NULL resolves to DEFAULT_POLICY_NAME)."""
     _ensure_adapter_instances_table(conn)
     conn.execute(
         "INSERT INTO adapter_instances "
-        "(source, adapter_type, enabled, interval_seconds, config, updated_at, updated_by) "
+        "(source, adapter_type, enabled, policy, config, updated_at, updated_by) "
         "VALUES (?, ?, ?, ?, ?, datetime('now'), ?) "
         "ON CONFLICT(source) DO UPDATE SET "
         "adapter_type = excluded.adapter_type, "
         "enabled = excluded.enabled, "
-        "interval_seconds = excluded.interval_seconds, "
+        "policy = excluded.policy, "
         "config = excluded.config, "
         "updated_at = excluded.updated_at, "
         "updated_by = excluded.updated_by",
-        (source, adapter_type, int(enabled), interval_seconds, json.dumps(config), actor),
+        (source, adapter_type, int(enabled), policy, json.dumps(config), actor),
     )
     conn.commit()
     record_audit_event(
@@ -1795,14 +1712,14 @@ def set_adapter_instance(
         event_type="adapter_instance.set",
         actor=actor,
         source=source,
-        details={"adapter_type": adapter_type, "enabled": enabled, "interval_seconds": interval_seconds},
+        details={"adapter_type": adapter_type, "enabled": enabled, "policy": policy},
     )
 
 
 def delete_adapter_instance(conn: sqlite3.Connection, source: str, *, actor: str = "ui.adapters") -> bool:
     """Returns whether a row was actually deleted. Mirrors delete_source —
     leaves historical `items` rows and the `sources` display-metadata row
-    untouched, same as deleting a transmit_policy doesn't delete items."""
+    untouched, same as deleting a Policy doesn't delete items."""
     _ensure_adapter_instances_table(conn)
     cursor = conn.execute("DELETE FROM adapter_instances WHERE source = ?", (source,))
     conn.commit()
@@ -1866,30 +1783,28 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
     "Hidrometeorologico"). Any adapter with a similar broad/fine category
     split can use the same two columns.
 
-    `transmit_policy` (where an adapter has one) names how often beacon/
-    should put this item on air — e.g. "urgent" or "informational".
-    Meaningless to this package: it's a soft reference (not a SQL FOREIGN
-    KEY) to the `name` column of the `transmit_policies` table (also owned
-    by this module), which centralizes the actual repeat count/interval
-    config a name maps to (see adapters.transmit_policy). A row with no
-    `transmit_policy` (adapter doesn't implement it, value missing, or the
-    name doesn't exist in `transmit_policies`) falls back to the default
-    policy.
+    `policy` names the Policy this item behaves under — a soft reference
+    (not a SQL FOREIGN KEY) to `policies.name` (see adapters.policy). It is
+    set to whatever the item itself carried (a custom snippet may set one
+    per item), else the adapter instance's own `policy`
+    (adapter_instances.policy), else left NULL — resolving to
+    DEFAULT_POLICY_NAME at read time. It can be re-pointed to a different
+    whole Policy afterward by a human/UI (dispatcher/override_item.py) —
+    unlike the rest of the row, not immutable-forever, only
+    adapter-untouched-after-insert.
 
-    `summary`, like `transmit_policy`, is never touched here — adapters
-    only propose an initial value (or leave it NULL/unset); a separate
-    actor updates it afterward. `summary` starts NULL and stays that way
-    until a separate actor sets it.
-    `transmit_policy` starts at whatever the adapter proposed and can be
-    overridden afterward by a human/UI (via dispatcher/override_item.py) —
-    unlike the rest of the row, this column is not meant to be
-    immutable-forever, only adapter-untouched-after-insert.
+    `summary`, like `policy`, is never touched here beyond the initial
+    insert — a separate actor sets `summary` afterward; it starts NULL.
 
     Returns the number of newly stored (previously unseen) items."""
     stored = 0
     skipped_no_id = 0
     failed = 0
     items = reading.data if isinstance(reading.data, list) else []
+    instance_policy = conn.execute(
+        "SELECT policy FROM adapter_instances WHERE source = ?", (reading.source,)
+    ).fetchone()
+    instance_policy = instance_policy[0] if instance_policy is not None else None
     for item in items:
         item_id = getattr(item, "id", None)
         if item_id is None:
@@ -1899,7 +1814,7 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
             cursor = conn.execute(
                 "INSERT OR IGNORE INTO items "
                 "(source, item_id, extracted_title, extracted_contents, "
-                "summary, url, event_key, type, subtype, transmit_policy, "
+                "summary, url, event_key, type, subtype, policy, "
                 "source_date_time, fetched_at, rawdata) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
@@ -1912,7 +1827,7 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
                     _as_text(getattr(item, "event_key", None)),
                     _as_text(getattr(item, "type", None)),
                     _as_text(getattr(item, "subtype", None)),
-                    _as_text(getattr(item, "transmit_policy", None)),
+                    _as_text(getattr(item, "policy", None)) or instance_policy,
                     _as_text(getattr(item, "source_date_time", None)),
                     reading.fetched_at.isoformat(),
                     json.dumps(item, default=_json_default),

@@ -57,7 +57,6 @@ def test_adapter_create_persists_structured_api_config(client, conn):
             "site_url": "https://example.test/",
             "adapter_type": "api",
             "enabled": "on",
-            "interval_seconds": "30",
             "url": "https://example.test/api",
             "method": "GET",
             "items_path": "",
@@ -65,7 +64,7 @@ def test_adapter_create_persists_structured_api_config(client, conn):
             "header_value": ["application/json"],
             "map_id_template": "{Id}",
             "map_title_template": "{Name}",
-            "transmit_policy": "urgent",
+            "policy": "urgent",
         },
         follow_redirects=False,
     )
@@ -77,14 +76,13 @@ def test_adapter_create_persists_structured_api_config(client, conn):
     assert row is not None
     assert row["adapter_type"] == "api"
     assert row["enabled"] == 1
-    assert row["interval_seconds"] == 30
+    assert row["policy"] == "urgent"
     config = json.loads(row["config"])
     assert config["url"] == "https://example.test/api"
     assert config["headers"] == {"Accept": "application/json"}
     assert config["mapping"]["id"] == {"template": "{Id}"}
     assert config["mapping"]["title"] == {"template": "{Name}"}
     assert "contents" not in config["mapping"]  # left blank -> omitted entirely
-    assert config["transmit_policy"] == "urgent"
     assert get_source_fields(conn, "new-source") == {
         "source_name": "New Source", "source_url": "https://example.test/",
     }
@@ -120,8 +118,8 @@ def test_adapter_create_rejects_missing_url(client, conn):
     assert get_adapter_instance(conn, "broken") is None
 
 
-def test_adapter_create_api_transmit_policy_defaults_are_omitted(client, conn):
-    """The default policy name resolves from a NULL items.transmit_policy
+def test_adapter_create_api_policy_defaults_are_omitted(client, conn):
+    """The default policy name resolves from a NULL items.policy
     anyway, so it's left out of the stored blob."""
     client.post(
         "/config/adapters",
@@ -131,13 +129,13 @@ def test_adapter_create_api_transmit_policy_defaults_are_omitted(client, conn):
             "adapter_type": "api",
             "url": "https://example.test/",
             "map_id_template": "{Id}",
-            "transmit_policy": "informational",
+            "policy": "informational",
         },
         follow_redirects=False,
     )
 
     config = json.loads(get_adapter_instance(conn, "plain")["config"])
-    assert "transmit_policy" not in config
+    assert "policy" not in config
 
 
 def test_adapter_edit_updates_existing_instance(client, conn):
@@ -244,7 +242,7 @@ def test_adapter_test_action_shows_every_mapped_field(client):
                 "    return [{\n"
                 "        'id': '1', 'title': 'T', 'contents': 'C', 'url': 'https://example.test/',\n"
                 "        'event_key': 'E', 'type': 'Alerta', 'subtype': 'Viento',\n"
-                "        'transmit_policy': 'urgent', 'raw': {'Original': 'Field'},\n"
+                "        'policy': 'urgent', 'raw': {'Original': 'Field'},\n"
                 "    }]\n"
             ),
         },
@@ -634,20 +632,18 @@ def test_adapter_create_persists_aiprompt_config(client, conn):
             "source": "wx",
             "adapter_type": "aiprompt",
             "aip_prompt": "Weather report for {date}.",
-            "aip_cron": "0 6 * * *",
-            "aip_transmit_policy": "informational",
             "aip_title_template": "Weather — {date}",
             "aip_type": "weather",
+            "policy": "default",
         },
         follow_redirects=False,
     )
 
     assert response.status_code == 303
     config = json.loads(get_adapter_instance(conn, "wx")["config"])
-    # transmit_policy == the default -> omitted from the stored blob
+    # cron + policy now live on the assigned Policy, not the adapter config
     assert config == {
         "prompt": "Weather report for {date}.",
-        "cron": "0 6 * * *",
         "title_template": "Weather — {date}",
         "type": "weather",
     }
@@ -671,35 +667,16 @@ def test_adapter_create_aiprompt_requires_prompt(client, conn):
     assert get_adapter_instance(conn, "broken-ai") is None
 
 
-def test_adapter_create_aiprompt_rejects_bad_cron(client, conn):
-    response = client.post(
-        "/config/adapters",
-        data={
-            "mode": "create",
-            "source": "broken-ai",
-            "adapter_type": "aiprompt",
-            "aip_prompt": "Weather report.",
-            "aip_cron": "not a cron",
-        },
-        follow_redirects=False,
-    )
-
-    assert response.status_code == 400
-    assert "cron" in response.text.lower()
-    assert get_adapter_instance(conn, "broken-ai") is None
-
-
 def test_adapter_edit_page_prefills_aiprompt_fields(client, conn):
     set_adapter_instance(
         conn,
         "wx",
         "aiprompt",
-        {"prompt": "MARKER-PROMPT {date}", "cron": "0 6 * * *", "type": "weather"},
+        {"prompt": "MARKER-PROMPT {date}", "type": "weather"},
     )
 
     response = client.get("/config/adapters/wx/edit")
 
     assert response.status_code == 200
     assert "MARKER-PROMPT {date}" in response.text
-    assert 'value="0 6 * * *"' in response.text
     assert 'value="weather"' in response.text

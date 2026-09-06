@@ -45,10 +45,15 @@
       <td><label><input id="enabled" name="enabled" type="checkbox" {% if enabled %}checked{% endif %}> {{ t('adapter_form.field.enabled_checkbox_label') }}</label></td>
     </tr>
     <tr>
-      <th><label for="interval_seconds">{{ t('adapter_form.field.interval_label') }}</label></th>
+      <th><label for="policy">{{ t('adapter_form.field.policy_label') }}</label></th>
       <td>
-        <input id="interval_seconds" name="interval_seconds" type="number" min="1" value="{{ interval_seconds }}"
-               placeholder="{{ t('adapter_form.field.interval_placeholder') }}">
+        <select id="policy" name="policy">
+          {% for p in policies %}
+          <option value="{{ p.name }}" {% if policy == p.name %}selected{% endif %}>{{ p.name }}</option>
+          {% endfor %}
+        </select>
+        <a class="meta-line" href="/config/policies/new">+ {{ t('adapter_form.field.policy_new') }}</a>
+        <div class="meta-line">{{ t('adapter_form.field.policy_help') }}</div>
       </td>
     </tr>
     <tr>
@@ -258,21 +263,6 @@
                    placeholder="{{ t('adapter_form.field.source_timezone_placeholder') }}"></td>
       </tr>
     </table>
-
-    <h3>{{ t('adapter_form.section.transmit_policy') }}</h3>
-    <table class="form-table">
-      <tr>
-        <th><label for="api_transmit_policy">{{ t('adapter_form.field.transmit_policy_label') }}</label></th>
-        <td>
-          <select id="api_transmit_policy" name="transmit_policy">
-            {% for p in policies %}
-            <option value="{{ p[0] }}" {% if api_fields.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
-            {% endfor %}
-          </select>
-          <div class="meta-line">{{ t('adapter_form.help.api_transmit_policy') | safe }}</div>
-        </td>
-      </tr>
-    </table>
   </fieldset>
 
   <fieldset id="custom-fields">
@@ -298,23 +288,7 @@
         </td>
       </tr>
       <tr>
-        <th><label for="aip_cron">{{ t('adapter_form.field.aip_cron_label') }}</label></th>
-        <td>
-          <input id="aip_cron" name="aip_cron" type="text" value="{{ aiprompt_fields.cron }}"
-                 placeholder="{{ t('adapter_form.field.aip_cron_placeholder') }}">
-          <div class="meta-line">{{ t('adapter_form.help.aip_cron') | safe }}</div>
-        </td>
-      </tr>
-      <tr>
-        <th><label for="aip_transmit_policy">{{ t('adapter_form.field.transmit_policy_label') }}</label></th>
-        <td>
-          <select id="aip_transmit_policy" name="aip_transmit_policy">
-            {% for p in policies %}
-            <option value="{{ p[0] }}" {% if aiprompt_fields.transmit_policy == p[0] %}selected{% endif %}>{{ p[0] }}</option>
-            {% endfor %}
-          </select>
-          <div class="meta-line">{{ t('adapter_form.help.aip_transmit_policy', policy_name=(default_policy_name | e)) | safe }}</div>
-        </td>
+        <td colspan="2"><div class="meta-line">{{ t('adapter_form.help.aip_cron_policy') }}</div></td>
       </tr>
       <tr>
         <th><label for="aip_title_template">{{ t('adapter_form.field.aip_title_template_label') }}</label></th>
@@ -356,7 +330,7 @@
 <table>
   <thead><tr>
     <th>id</th><th>title</th><th>contents</th><th>url</th><th>event_key</th>
-    <th>type</th><th>subtype</th><th>transmit_policy</th><th>source_date_time</th><th>raw</th>
+    <th>type</th><th>subtype</th><th>policy</th><th>source_date_time</th><th>raw</th>
   </tr></thead>
   <tbody>
     {% for item in test_result.sample_items %}
@@ -368,7 +342,7 @@
       <td class="mono">{{ item.event_key or "" }}</td>
       <td>{{ item.type or "" }}</td>
       <td>{{ item.subtype or "" }}</td>
-      <td>{{ item.transmit_policy or "" }}</td>
+      <td>{{ item.policy or "" }}</td>
       <td>{{ item.source_date_time or "" }}</td>
       <td>
         <details>

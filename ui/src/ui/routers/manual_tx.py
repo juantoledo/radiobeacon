@@ -4,7 +4,7 @@ message for the beacon to put on air on its next tick.
 Like every other write action in this auth-less app it only writes DB
 state (adapters.storage.enqueue_manual_tx); the beacon process does the
 actual TTS / AX.25 render and keys the radio (beacon.__main__._drain_manual_tx).
-The message is sent once and dropped — there's no transmit_policy and no
+The message is sent once and dropped — there's no Policy and no
 retry. It only goes on air while BEACON_ENABLED is on; queued while it's
 off, sent when the operator turns it back on.
 """

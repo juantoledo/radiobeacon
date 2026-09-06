@@ -332,17 +332,17 @@ templates.env.filters["time_ago"] = _time_ago
 
 
 def _policy_badge_class(name: str | None) -> str:
-    """Maps a transmit_policy name to a badge color — purely presentational,
-    not a schema concept: a fresh install only seeds "informational" (see
-    adapters.transmit_policy). "urgent" is the conventional name for an
-    escalation tier an operator may add via the policy form, so it keeps a
-    dedicated color; any other name falls back to a neutral badge rather
-    than guessing at its severity."""
+    """Maps a Policy name to a badge color — purely presentational, not a
+    schema concept: a fresh install only seeds "default" (see
+    adapters.policy). "urgent" is the conventional name for an escalation
+    tier an operator may add via the policy form, so it keeps a dedicated
+    color; any other name falls back to a neutral badge rather than
+    guessing at its severity."""
     if not name:
         return "badge badge-neutral"
     if name == "urgent":
         return "badge badge-urgent"
-    if name == "informational":
+    if name == "default":
         return "badge badge-info"
     return "badge badge-neutral"
 

@@ -5,6 +5,8 @@
 <a class="crumb" href="/config/policies">&larr; {{ t('policy_form.back_to_policies') }}</a>
 <div class="page-header"><h1>{% if mode == "edit" %}{{ t('policy_form.edit_title') }}{% else %}{{ t('policy_form.new_title') }}{% endif %}</h1></div>
 
+<p class="hint">{{ t('policy_form.intro') }}</p>
+
 <form method="post" action="/config/policies">
   {{ csrf_field() }}
   <table class="form-table">
@@ -12,24 +14,84 @@
       <th><label for="name">{{ t('policy_form.name_label') }}</label></th>
       <td>
         <input id="name" name="name" type="text" required
-               value="{{ policy[0] if policy else '' }}"
+               value="{{ policy.name if policy else '' }}"
                {% if mode == "edit" %}readonly{% endif %}>
       </td>
     </tr>
-    <tr>
-      <th><label for="repeat_times">repeat_times</label></th>
-      <td><input id="repeat_times" name="repeat_times" type="number" min="1" required
-                 value="{{ policy[1] if policy else 1 }}"></td>
-    </tr>
-    <tr>
-      <th><label for="interval_seconds">interval_seconds</label></th>
-      <td><input id="interval_seconds" name="interval_seconds" type="number" min="0" required
-                 value="{{ policy[2] if policy else 0 }}"></td>
-    </tr>
+  </table>
+
+  <fieldset>
+    <legend>{{ t('policy_form.fetch_legend') }}</legend>
+    <table class="form-table">
+      <tr>
+        <th><label for="fetch_kind">{{ t('policy_form.kind_label') }}</label></th>
+        <td>
+          <select id="fetch_kind" name="fetch_kind">
+            {% set fk = policy.fetch_kind if policy else 'interval' %}
+            <option value="once" {% if fk == 'once' %}selected{% endif %}>once</option>
+            <option value="interval" {% if fk == 'interval' %}selected{% endif %}>interval</option>
+            <option value="cron" {% if fk == 'cron' %}selected{% endif %}>cron</option>
+          </select>
+        </td>
+      </tr>
+      <tr>
+        <th><label for="fetch_interval_seconds">{{ t('policy_form.interval_seconds_label') }}</label></th>
+        <td><input id="fetch_interval_seconds" name="fetch_interval_seconds" type="number" min="1"
+                   value="{{ policy.fetch_interval_seconds if policy and policy.fetch_interval_seconds else '' }}"
+                   placeholder="10"></td>
+      </tr>
+      <tr>
+        <th><label for="fetch_cron">{{ t('policy_form.cron_label') }}</label></th>
+        <td><input id="fetch_cron" name="fetch_cron" type="text"
+                   value="{{ policy.fetch_cron if policy and policy.fetch_cron else '' }}"
+                   placeholder="0 6 * * *"></td>
+      </tr>
+    </table>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ t('policy_form.process_legend') }}</legend>
+    <p class="hint">{{ t('policy_form.process_note') }}</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>{{ t('policy_form.transmit_legend') }}</legend>
+    <table class="form-table">
+      <tr>
+        <th><label for="transmit_kind">{{ t('policy_form.kind_label') }}</label></th>
+        <td>
+          <select id="transmit_kind" name="transmit_kind">
+            {% set tk = policy.transmit_kind if policy else 'once' %}
+            <option value="once" {% if tk == 'once' %}selected{% endif %}>once</option>
+            <option value="interval" {% if tk == 'interval' %}selected{% endif %}>interval</option>
+            <option value="cron" {% if tk == 'cron' %}selected{% endif %}>cron</option>
+          </select>
+        </td>
+      </tr>
+      <tr>
+        <th><label for="transmit_count">{{ t('policy_form.count_label') }}</label></th>
+        <td><input id="transmit_count" name="transmit_count" type="number" min="1"
+                   value="{{ policy.transmit_count if policy else 1 }}"></td>
+      </tr>
+      <tr>
+        <th><label for="transmit_interval_seconds">{{ t('policy_form.interval_seconds_label') }}</label></th>
+        <td><input id="transmit_interval_seconds" name="transmit_interval_seconds" type="number" min="0"
+                   value="{{ policy.transmit_interval_seconds if policy else 0 }}"></td>
+      </tr>
+      <tr>
+        <th><label for="transmit_cron">{{ t('policy_form.cron_label') }}</label></th>
+        <td><input id="transmit_cron" name="transmit_cron" type="text"
+                   value="{{ policy.transmit_cron if policy and policy.transmit_cron else '' }}"
+                   placeholder="0 7,19 * * *"></td>
+      </tr>
+    </table>
+  </fieldset>
+
+  <table class="form-table">
     <tr>
       <th><label for="description">{{ t('policy_form.description_label') }}</label></th>
       <td><input id="description" name="description" type="text"
-                 value="{{ policy[3] if policy and policy[3] else '' }}"></td>
+                 value="{{ policy.description if policy and policy.description else '' }}"></td>
     </tr>
   </table>
   <button type="submit">{{ t('common.save') }}</button>

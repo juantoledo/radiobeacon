@@ -1,5 +1,5 @@
 """GET/POST /config/import-export — the UI half of adapters.config_transfer,
-covering the whole DB-backed config (settings + transmit_policies + sources
+covering the whole DB-backed config (settings + policies + sources
 + adapter_instances) in one JSON snapshot. Secrets are always excluded on
 export; import is merge/upsert-only (never deletes) and goes through the
 exact same import_config() the CLI pair (dispatcher/export_config.py /

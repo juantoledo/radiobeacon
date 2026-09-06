@@ -45,7 +45,7 @@ def get_db(request: Request) -> Iterator[sqlite3.Connection]:
     # dispatcher_state/trigger_dispatches/item_policy_state aren't created
     # by get_connection() alone, only by dispatcher.watcher._ensure_tables
     # — called unconditionally here, same as override_item.py already does
-    # regardless of which action is actually requested. (transmit_policies
+    # regardless of which action is actually requested. (policies
     # is created + seeded by get_connection() itself now.)
     _ensure_tables(conn)
     # Stashed so templating.py's is_beacon_configured Jinja global can

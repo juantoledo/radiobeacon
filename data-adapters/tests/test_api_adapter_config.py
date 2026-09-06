@@ -124,7 +124,6 @@ def test_api_adapter_config_from_dict_minimal():
     assert cfg.query_params == {}
     assert cfg.items_path == ""
     assert cfg.mapping == {}
-    assert cfg.transmit_policy is None
 
 
 def test_api_adapter_config_from_dict_full():
@@ -140,7 +139,6 @@ def test_api_adapter_config_from_dict_full():
             "date_field": "Date",
             "date_format": "%Y-%m-%d",
             "source_timezone": "America/Santiago",
-            "transmit_policy": "urgent",
         }
     )
 
@@ -152,7 +150,6 @@ def test_api_adapter_config_from_dict_full():
     assert cfg.mapping_for("id") == FieldMapping(template="{Id}")
     assert cfg.mapping_for("title") == FieldMapping(template="fixed")
     assert cfg.mapping_for("contents") == FieldMapping()  # unconfigured -> empty, not KeyError
-    assert cfg.transmit_policy == "urgent"
 
 
 def test_api_adapter_config_resolve_source_date_time_none_when_unconfigured():

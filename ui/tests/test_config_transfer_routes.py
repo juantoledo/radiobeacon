@@ -1,7 +1,7 @@
 import json
 
 from adapters.storage import get_adapter_instance, get_setting, set_adapter_instance, set_setting
-from adapters.transmit_policy import get_policy, set_policy
+from adapters.policy import get_policy, set_policy
 
 
 def _upload(client, payload, url="/config/import-export/preview"):
@@ -34,11 +34,11 @@ def test_download_excludes_secrets_and_is_an_attachment(client, conn):
     data = r.json()
     assert "ANTHROPIC_API_KEY" not in data["settings"]
     assert data["settings"]["DISPATCHER_INTERVAL_SECONDS"] == "9"
-    assert data["schema_version"] == 1
+    assert data["schema_version"] == 2
 
 
 def test_preview_of_plain_settings_file_shows_summary_and_no_custom_banner(client):
-    payload = {"schema_version": 1, "settings": {"DISPATCHER_INTERVAL_SECONDS": "11"}}
+    payload = {"schema_version": 2, "settings": {"DISPATCHER_INTERVAL_SECONDS": "11"}}
 
     r = _upload(client, payload)
 
@@ -50,7 +50,7 @@ def test_preview_of_plain_settings_file_shows_summary_and_no_custom_banner(clien
 
 
 def test_apply_without_overwrite_confirmation_is_rejected_and_writes_nothing(client, conn):
-    payload = {"schema_version": 1, "settings": {"DISPATCHER_INTERVAL_SECONDS": "13"}}
+    payload = {"schema_version": 2, "settings": {"DISPATCHER_INTERVAL_SECONDS": "13"}}
 
     r = client.post("/config/import-export/apply", data={"config_json": json.dumps(payload)})
 
@@ -59,7 +59,7 @@ def test_apply_without_overwrite_confirmation_is_rejected_and_writes_nothing(cli
 
 
 def test_apply_with_confirmation_upserts_and_renders_result(client, conn):
-    payload = {"schema_version": 1, "settings": {"DISPATCHER_INTERVAL_SECONDS": "17"}}
+    payload = {"schema_version": 2, "settings": {"DISPATCHER_INTERVAL_SECONDS": "17"}}
 
     r = client.post(
         "/config/import-export/apply",
@@ -72,10 +72,10 @@ def test_apply_with_confirmation_upserts_and_renders_result(client, conn):
 
 
 def test_import_upserts_without_deleting_an_untouched_extra_policy(client, conn):
-    set_policy(conn, "urgent", 5, 60, "pre-existing")
+    set_policy(conn, "urgent", transmit_kind="interval", transmit_count=5, transmit_interval_seconds=60, description="pre-existing")
     payload = {
-        "schema_version": 1,
-        "transmit_policies": [{"name": "informational", "repeat_times": 1, "interval_seconds": 0}],
+        "schema_version": 2,
+        "policies": [{"name": "default", "fetch_kind": "interval", "transmit_kind": "once", "transmit_count": 1}],
     }
 
     r = client.post(
@@ -90,7 +90,7 @@ def test_import_upserts_without_deleting_an_untouched_extra_policy(client, conn)
 def test_custom_record_skipped_and_flagged_when_dev_tools_off(client, conn):
     set_setting(conn, "UI_DEV_TOOLS_ENABLED", "false")
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "adapter_instances": [
             {"source": "sneaky", "adapter_type": "custom", "config": {"code": "def fetch(config): return []"}}
         ],
@@ -113,7 +113,7 @@ def test_custom_record_skipped_and_flagged_when_dev_tools_off(client, conn):
 def test_custom_record_shown_for_review_and_requires_its_own_confirmation(client, conn):
     set_setting(conn, "UI_DEV_TOOLS_ENABLED", "true")
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "adapter_instances": [
             {
                 "source": "reviewed",

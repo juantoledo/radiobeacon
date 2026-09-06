@@ -54,7 +54,7 @@ def discover_actions() -> list[type[Action]]:
 def _env_name(action_class: type[Action]) -> str:
     """e.g. actions.chunk.ChunkAction -> "CHUNK", derived from the action's
     module name so adding a new action doesn't require touching this
-    file — same derivation as adapters.__main__._interval_seconds()."""
+    file — same derivation the adapters runner uses for its own poll cadence."""
     return action_class.__module__.rsplit(".", 1)[-1].upper()
 
 

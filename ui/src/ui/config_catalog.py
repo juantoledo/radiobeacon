@@ -81,8 +81,9 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ADAPTERS_DEFAULT_INTERVAL_SECONDS",
         "Adapters — General",
         "Default poll interval (s)",
-        "Fallback poll interval for any adapter lacking its own "
-        "ADAPTERS_<NAME>_INTERVAL_SECONDS.",
+        "Fallback fetch interval for a Policy whose fetch kind is "
+        "'interval' with no interval set. The seeded 'default' Policy sets "
+        "10s explicitly, so this only applies to hand-made Policies.",
         "int",
         "10",
     ),
@@ -326,7 +327,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Global str.format-style override of the default summarization prompt. Any "
         "of an item's mapped adapter attributes can be referenced as a placeholder: "
         "{source}, {item_id}, {extracted_title}, {extracted_contents}, {summary}, {url}, "
-        "{event_key}, {type}, {subtype}, {transmit_policy}, {source_date_time}, "
+        "{event_key}, {type}, {subtype}, {policy}, {source_date_time}, "
         "{fetched_at}, {captured_at}, {rawdata}, plus the source's display name and "
         "site URL as {source_name} / {source_url} — an unknown placeholder just renders "
         "blank. A single adapter can override this further via its own 'AI prompt "

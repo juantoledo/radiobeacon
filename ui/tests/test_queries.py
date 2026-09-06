@@ -1,5 +1,5 @@
 from adapters.storage import record_audit_event
-from adapters.transmit_policy import set_policy
+from adapters.policy import set_policy
 
 from ui import queries
 
@@ -14,13 +14,13 @@ def _insert_item(
     url="http://example.test",
     event_key=None,
     type_=None,
-    transmit_policy=None,
+    policy=None,
     source_date_time=None,
 ):
     conn.execute(
         "INSERT INTO items "
         "(source, item_id, extracted_title, extracted_contents, url, "
-        "event_key, type, transmit_policy, source_date_time, fetched_at, rawdata) "
+        "event_key, type, policy, source_date_time, fetched_at, rawdata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), '{}')",
         (
             source,
@@ -30,7 +30,7 @@ def _insert_item(
             url,
             event_key,
             type_,
-            transmit_policy,
+            policy,
             source_date_time,
         ),
     )
@@ -88,12 +88,12 @@ def test_list_items_filters_by_source(conn):
     assert rows[0]["source"] == "csn"
 
 
-def test_list_items_filters_by_type_and_transmit_policy_combined(conn):
-    _insert_item(conn, "csn", "1", type_="Alerta", transmit_policy="urgent")
-    _insert_item(conn, "csn", "2", type_="Alerta", transmit_policy="informational")
-    _insert_item(conn, "csn", "3", type_="Evento", transmit_policy="urgent")
+def test_list_items_filters_by_type_and_policy_combined(conn):
+    _insert_item(conn, "csn", "1", type_="Alerta", policy="urgent")
+    _insert_item(conn, "csn", "2", type_="Alerta", policy="informational")
+    _insert_item(conn, "csn", "3", type_="Evento", policy="urgent")
 
-    rows, total = queries.list_items(conn, type_="Alerta", transmit_policy="urgent")
+    rows, total = queries.list_items(conn, type_="Alerta", policy="urgent")
 
     assert total == 1
     assert rows[0]["item_id"] == "1"
@@ -263,11 +263,14 @@ def test_distinct_sources_and_types(conn):
 
 
 def test_get_policy_row_returns_full_row_with_description(conn):
-    set_policy(conn, "custom", 3, 30, "a custom policy")
+    set_policy(conn, "custom", transmit_kind="interval", transmit_count=3, transmit_interval_seconds=30, description="a custom policy")
 
     row = queries.get_policy_row(conn, "custom")
 
-    assert row == ("custom", 3, 30, "a custom policy")
+    assert row.name == "custom"
+    assert row.transmit_count == 3
+    assert row.transmit_interval_seconds == 30
+    assert row.description == "a custom policy"
 
 
 def test_get_policy_row_returns_none_for_unknown(conn):

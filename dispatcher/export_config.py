@@ -22,7 +22,7 @@ register_audit_event_hook(publish_cloud_event)
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Export the whole DB-backed config (settings, adapter_instances "
-        "+ their sources, transmit_policies) to a JSON file. Secrets "
+        "+ their sources, policies) to a JSON file. Secrets "
         "(ANTHROPIC_API_KEY/OPENAI_API_KEY) are always excluded, never even as a "
         "placeholder key. Counterpart to import_config.py; see "
         "adapters.config_transfer for the shared shape/logic both this and the "

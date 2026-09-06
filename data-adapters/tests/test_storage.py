@@ -44,7 +44,7 @@ class FakeAlert:
     event_key: str = "alerta-de-prueba-2026-08-19"
     type: str = "Alerta"
     subtype: str = "Hidrometeorologico"
-    transmit_policy: str = "urgent"
+    policy: str = "urgent"
     source_date_time: datetime = datetime(2026, 8, 19, 10, 0, 0)
 
 
@@ -104,7 +104,7 @@ def test_store_reading_populates_items_table(tmp_path):
     assert stored == 1
     row = conn.execute(
         "SELECT source, item_id, extracted_title, extracted_contents, "
-        "summary, url, event_key, type, subtype, transmit_policy, "
+        "summary, url, event_key, type, subtype, policy, "
         "source_date_time, rawdata "
         "FROM items WHERE item_id = ?",
         ("1",),
@@ -134,7 +134,7 @@ def test_store_reading_handles_missing_generic_fields(tmp_path):
     assert stored == 1
     row = conn.execute(
         "SELECT extracted_title, extracted_contents, summary, "
-        "url, event_key, type, subtype, transmit_policy, source_date_time "
+        "url, event_key, type, subtype, policy, source_date_time "
         "FROM items WHERE item_id = ?",
         ("2",),
     ).fetchone()
@@ -315,7 +315,7 @@ def test_get_connection_migrates_legacy_data_column(tmp_path):
 
     row = conn.execute(
         "SELECT rawdata, extracted_title, extracted_contents, "
-        "summary, url, event_key, type, subtype, transmit_policy, "
+        "summary, url, event_key, type, subtype, policy, "
         "source_date_time "
         "FROM items WHERE item_id = ?",
         ("legacy-1",),
@@ -423,43 +423,10 @@ def test_get_connection_migrates_missing_type_and_subtype_columns(tmp_path):
     assert row == (None, None)
 
 
-def test_get_connection_migrates_missing_transmit_policy_column(tmp_path):
-    """Covers a database created before transmit_policy existed at all —
-    the column is added fresh, backfilled NULL."""
-    db_path = tmp_path / "radiobeacon.db"
-    legacy_conn = sqlite3.connect(db_path)
-    legacy_conn.execute(
-        "CREATE TABLE items (source TEXT NOT NULL, item_id TEXT NOT NULL, "
-        "extracted_title TEXT, extracted_contents TEXT, summary TEXT, "
-        "url TEXT, event_key TEXT, type TEXT, subtype TEXT, source_date_time TEXT, "
-        "fetched_at TEXT NOT NULL, captured_at TEXT NOT NULL DEFAULT "
-        "(datetime('now')), rawdata TEXT NOT NULL, PRIMARY KEY (source, item_id))"
-    )
-    legacy_conn.execute(
-        "INSERT INTO items (source, item_id, extracted_title, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, ?)",
-        ("fake_source", "legacy-7", "Titulo", "2026-08-19T12:00:00", '{"id": "legacy-7"}'),
-    )
-    legacy_conn.commit()
-    legacy_conn.close()
-
-    conn = get_connection(db_path)
-
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
-    assert "transmit_policy" in columns
-
-    row = conn.execute(
-        "SELECT transmit_policy FROM items WHERE item_id = ?", ("legacy-7",)
-    ).fetchone()
-    assert row == (None,)
-
-
 def test_get_connection_drops_urgency_and_repeat_columns(tmp_path):
     """Covers the schema with the now-retired urgency/repeat_times/
-    repeat_interval_seconds columns (superseded by transmit_policy,
-    which centralizes that config in dispatcher's transmit_policies table
-    instead) — dropped in place, same mechanism that already retired
-    summarized_title/summarized_contents."""
+    repeat_interval_seconds columns — dropped in place, same mechanism
+    that already retired summarized_title/summarized_contents."""
     db_path = tmp_path / "radiobeacon.db"
     legacy_conn = sqlite3.connect(db_path)
     legacy_conn.execute(
@@ -494,83 +461,23 @@ def test_get_connection_drops_urgency_and_repeat_columns(tmp_path):
     assert "urgency" not in columns
     assert "repeat_times" not in columns
     assert "repeat_interval_seconds" not in columns
-    assert "transmit_policy" in columns
+    assert "policy" in columns
 
     row = conn.execute(
-        "SELECT extracted_title, transmit_policy FROM items WHERE item_id = ?",
+        "SELECT extracted_title, policy FROM items WHERE item_id = ?",
         ("legacy-8",),
     ).fetchone()
-    # other data preserved; dropped columns' data is gone, transmit_policy
-    # starts NULL until re-set (by an adapter re-fetching under a new id,
-    # or manually via dispatcher/override_item.py)
     assert row == ("Titulo", None)
 
 
-def test_get_connection_renames_dispatch_policy_column_preserving_values(tmp_path):
-    """A database created while the column was still named dispatch_policy —
-    renamed in place to transmit_policy, existing values kept."""
-    db_path = tmp_path / "radiobeacon.db"
-    legacy_conn = sqlite3.connect(db_path)
-    legacy_conn.execute(
-        "CREATE TABLE items (source TEXT NOT NULL, item_id TEXT NOT NULL, "
-        "extracted_title TEXT, extracted_contents TEXT, summary TEXT, url TEXT, "
-        "event_key TEXT, type TEXT, subtype TEXT, dispatch_policy TEXT, "
-        "source_date_time TEXT, fetched_at TEXT NOT NULL, captured_at TEXT NOT NULL "
-        "DEFAULT (datetime('now')), rawdata TEXT NOT NULL, PRIMARY KEY (source, item_id))"
-    )
-    legacy_conn.execute(
-        "INSERT INTO items (source, item_id, dispatch_policy, fetched_at, rawdata) "
-        "VALUES (?, ?, ?, ?, ?)",
-        ("csn", "legacy-9", "urgent", "2026-08-19T12:00:00", '{"id": "legacy-9"}'),
-    )
-    legacy_conn.commit()
-    legacy_conn.close()
-
-    conn = get_connection(db_path)
-
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(items)")}
-    assert "transmit_policy" in columns
-    assert "dispatch_policy" not in columns
-    row = conn.execute(
-        "SELECT transmit_policy FROM items WHERE item_id = ?", ("legacy-9",)
-    ).fetchone()
-    assert row == ("urgent",)
-
-
-def test_get_connection_renames_dispatch_policies_table_preserving_rows(tmp_path):
-    """dispatch_policies (dispatcher-owned) renamed to transmit_policies
-    (storage-owned); operator-customized rows survive, and seeding does not
-    clobber a non-empty renamed table."""
-    db_path = tmp_path / "radiobeacon.db"
-    legacy_conn = sqlite3.connect(db_path)
-    legacy_conn.execute(
-        "CREATE TABLE dispatch_policies (name TEXT PRIMARY KEY, repeat_times INTEGER "
-        "NOT NULL, interval_seconds INTEGER NOT NULL, description TEXT)"
-    )
-    legacy_conn.execute(
-        "INSERT INTO dispatch_policies VALUES (?, ?, ?, ?)",
-        ("critical", 10, 30, "operator tier"),
-    )
-    legacy_conn.commit()
-    legacy_conn.close()
-
-    conn = get_connection(db_path)
-
-    names = {row[0] for row in conn.execute("SELECT name FROM transmit_policies")}
-    assert "critical" in names
-    assert conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='dispatch_policies'"
-    ).fetchone() is None
-
-
-def test_get_connection_seeds_transmit_policies_and_creates_beacon_tx_schedule(tmp_path):
+def test_get_connection_seeds_policies_and_creates_beacon_tx_schedule(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
-    seeded = {row[0] for row in conn.execute("SELECT name FROM transmit_policies")}
-    assert seeded == {"informational"}
+    seeded = {row[0] for row in conn.execute("SELECT name FROM policies")}
+    assert seeded == {"default"}
 
     cols = {row[1] for row in conn.execute("PRAGMA table_info(beacon_tx_schedule)")}
-    assert {"source", "item_id", "kind", "ref", "transmit_policy", "sent_count"} <= cols
+    assert {"source", "item_id", "kind", "ref", "policy", "sent_count"} <= cols
 
 
 def test_delete_tx_schedule_other_kinds_keeps_only_the_named_kind(tmp_path):
@@ -725,49 +632,6 @@ def test_schedule_retransmit_records_audit_event(tmp_path):
     assert json.loads(row[1]) == {"beacon_type": "voice", "scheduled": 1}
 
 
-def test_migrate_adapter_instances_config_collapses_rule_to_policy_name_and_custom_code(tmp_path):
-    db_path = tmp_path / "radiobeacon.db"
-    legacy_conn = sqlite3.connect(db_path)
-    legacy_conn.execute(
-        "CREATE TABLE adapter_instances (source TEXT PRIMARY KEY, adapter_type TEXT "
-        "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER, "
-        "config TEXT NOT NULL, updated_at TEXT, updated_by TEXT)"
-    )
-    # Legacy threshold rule (pre-rename key) -> collapses to its non-escalated
-    # branch as a plain transmit_policy name.
-    legacy_conn.execute(
-        "INSERT INTO adapter_instances (source, adapter_type, config) VALUES (?, ?, ?)",
-        (
-            "csn",
-            "api",
-            json.dumps(
-                {"url": "u", "dispatch_policy_rule": {"field": "M", "if_false": "informational"}}
-            ),
-        ),
-    )
-    legacy_conn.execute(
-        "INSERT INTO adapter_instances (source, adapter_type, config) VALUES (?, ?, ?)",
-        ("senapred", "custom", json.dumps({"code": 'x = {"dispatch_policy": "urgent"}'})),
-    )
-    legacy_conn.commit()
-    legacy_conn.close()
-
-    conn = get_connection(db_path)
-
-    csn = json.loads(
-        conn.execute("SELECT config FROM adapter_instances WHERE source='csn'").fetchone()[0]
-    )
-    assert "dispatch_policy_rule" not in csn
-    assert "transmit_policy_rule" not in csn
-    assert csn["transmit_policy"] == "informational"
-
-    sen = json.loads(
-        conn.execute("SELECT config FROM adapter_instances WHERE source='senapred'").fetchone()[0]
-    )
-    assert '"transmit_policy"' in sen["code"]
-    assert '"dispatch_policy"' not in sen["code"]
-
-
 def test_get_connection_renames_url_access_to_event_key(tmp_path):
     """Covers the schema with the column's previous name, url_access —
     renamed in place to event_key, data preserved."""
@@ -885,12 +749,12 @@ def test_register_audit_event_hook_receives_none_for_optional_fields(tmp_path, m
     calls = []
     storage_module.register_audit_event_hook(lambda **kwargs: calls.append(kwargs))
 
-    record_audit_event(conn, event_type="policy.set", actor="adapters.transmit_policy")
+    record_audit_event(conn, event_type="policy.set", actor="adapters.policy")
 
     assert calls == [
         {
             "event_type": "policy.set",
-            "actor": "adapters.transmit_policy",
+            "actor": "adapters.policy",
             "source": None,
             "item_id": None,
             "details": None,
@@ -1351,7 +1215,7 @@ def test_get_connection_does_not_reseed_or_reset_edited_sources(tmp_path):
 
     # A second, independent get_connection() call against the same DB must
     # not overwrite the edit -- seeding only ever fires when the table is
-    # empty, same as _ensure_transmit_policies_seeded.
+    # empty, same as _ensure_policies_seeded.
     conn2 = get_connection(db_path)
 
     assert get_source_fields(conn2, "csn") == {
@@ -1482,7 +1346,7 @@ def test_get_connection_backfills_senapred_ai_fallback_to_title(tmp_path):
     legacy_conn = sqlite3.connect(db_path)
     legacy_conn.execute(
         "CREATE TABLE adapter_instances (source TEXT PRIMARY KEY, adapter_type TEXT "
-        "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER, "
+        "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, policy TEXT, "
         "config TEXT NOT NULL, updated_at TEXT, updated_by TEXT)"
     )
     legacy_conn.execute(
@@ -1503,7 +1367,7 @@ def test_backfill_leaves_explicit_senapred_ai_fallback_to_title_untouched(tmp_pa
     legacy_conn = sqlite3.connect(db_path)
     legacy_conn.execute(
         "CREATE TABLE adapter_instances (source TEXT PRIMARY KEY, adapter_type TEXT "
-        "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, interval_seconds INTEGER, "
+        "NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, policy TEXT, "
         "config TEXT NOT NULL, updated_at TEXT, updated_by TEXT)"
     )
     legacy_conn.execute(
@@ -1614,7 +1478,7 @@ def test_set_adapter_instance_upserts(tmp_path):
 def test_set_adapter_instance_records_audit_event(tmp_path):
     conn = get_connection(tmp_path / "radiobeacon.db")
 
-    set_adapter_instance(conn, "new-source", "api", {"url": "https://one.example/"}, interval_seconds=30)
+    set_adapter_instance(conn, "new-source", "api", {"url": "https://one.example/"}, policy="urgent")
 
     row = conn.execute(
         "SELECT source, details FROM audit_log WHERE event_type = 'adapter_instance.set'"
@@ -1622,7 +1486,7 @@ def test_set_adapter_instance_records_audit_event(tmp_path):
     assert row is not None
     assert row[0] == "new-source"
     details = json.loads(row[1])
-    assert details == {"adapter_type": "api", "enabled": True, "interval_seconds": 30}
+    assert details == {"adapter_type": "api", "enabled": True, "policy": "urgent"}
 
 
 def test_list_adapter_instances_orders_by_source(tmp_path):

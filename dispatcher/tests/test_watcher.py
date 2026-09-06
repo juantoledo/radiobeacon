@@ -12,7 +12,7 @@ def _make_conn():
     conn.execute(
         "CREATE TABLE items ("
         "source TEXT NOT NULL, item_id TEXT NOT NULL, "
-        "extracted_title TEXT, url TEXT, type TEXT, transmit_policy TEXT, "
+        "extracted_title TEXT, url TEXT, type TEXT, policy TEXT, "
         "source_date_time TEXT, "
         "PRIMARY KEY (source, item_id))"
     )
@@ -23,16 +23,16 @@ def _insert_item(
     conn,
     source,
     item_id,
-    transmit_policy="informational",
+    policy="informational",
     title="Title",
     url="http://example.test",
     source_date_time=None,
 ):
     conn.execute(
         "INSERT INTO items "
-        "(source, item_id, extracted_title, url, type, transmit_policy, source_date_time) "
+        "(source, item_id, extracted_title, url, type, policy, source_date_time) "
         "VALUES (?, ?, ?, ?, 'Type', ?, ?)",
-        (source, item_id, title, url, transmit_policy, source_date_time),
+        (source, item_id, title, url, policy, source_date_time),
     )
     conn.commit()
 
@@ -104,26 +104,6 @@ def test_ensure_tables_drops_times_triggered_and_last_triggered_at_keeping_armed
     assert columns == {"consumer", "source", "item_id"}
     assert _armed(conn, "log", "csn", "1")
 
-
-def test_ensure_tables_renames_item_policy_state_dispatch_policy_column():
-    conn = _make_conn()
-    conn.execute(
-        "CREATE TABLE item_policy_state (consumer TEXT NOT NULL, source TEXT NOT NULL, "
-        "item_id TEXT NOT NULL, dispatch_policy TEXT, PRIMARY KEY (consumer, source, item_id))"
-    )
-    conn.execute(
-        "INSERT INTO item_policy_state VALUES ('log', 'csn', '1', 'urgent')"
-    )
-    conn.commit()
-
-    _ensure_tables(conn)
-
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(item_policy_state)")}
-    assert "transmit_policy" in columns
-    assert "dispatch_policy" not in columns
-    assert conn.execute(
-        "SELECT transmit_policy FROM item_policy_state WHERE item_id = '1'"
-    ).fetchone() == ("urgent",)
 
 
 def test_first_poll_skips_existing_backlog_but_records_watermark():
@@ -258,8 +238,8 @@ def test_handler_exception_does_not_stop_other_handlers_or_rows():
     assert not _armed(conn, consumer, "senapred", "b")
 
 
-def test_transmit_policy_change_fires_one_fresh_dispatch():
-    """Reassigning an item's transmit_policy re-flows it through the
+def test_policy_change_fires_one_fresh_dispatch():
+    """Reassigning an item's policy re-flows it through the
     pipeline exactly once — sync_policy_changes arms it, dispatch_due_items
     delivers and retires it."""
     conn = _make_conn()
@@ -273,7 +253,7 @@ def test_transmit_policy_change_fires_one_fresh_dispatch():
     assert len(delivered) == 1
 
     conn.execute(
-        "UPDATE items SET transmit_policy = 'urgent' WHERE source = 'csn' AND item_id = '1'"
+        "UPDATE items SET policy = 'urgent' WHERE source = 'csn' AND item_id = '1'"
     )
     conn.commit()
 
@@ -288,7 +268,7 @@ def test_transmit_policy_change_fires_one_fresh_dispatch():
 
 def test_policy_change_on_backlog_item_is_detected_and_fires():
     """An item that predates this consumer entirely (rowid watermark always
-    skips it) still reacts to a transmit_policy change — sync_policy_changes
+    skips it) still reacts to a policy change — sync_policy_changes
     scans every row in `items`."""
     conn = _make_conn()
     _insert_item(conn, "senapred", "backlog-1", "informational")
@@ -298,7 +278,7 @@ def test_policy_change_on_backlog_item_is_detected_and_fires():
     assert len(delivered) == 0
 
     conn.execute(
-        "UPDATE items SET transmit_policy = 'urgent' "
+        "UPDATE items SET policy = 'urgent' "
         "WHERE source = 'senapred' AND item_id = 'backlog-1'"
     )
     conn.commit()
@@ -321,7 +301,7 @@ def test_policy_change_on_retired_item_is_detected_and_fires_without_rearm():
     assert not _armed(conn, consumer, "csn", "1")  # retired
 
     conn.execute(
-        "UPDATE items SET transmit_policy = 'urgent' WHERE source = 'csn' AND item_id = '1'"
+        "UPDATE items SET policy = 'urgent' WHERE source = 'csn' AND item_id = '1'"
     )
     conn.commit()
 
@@ -366,7 +346,7 @@ def test_sync_policy_changes_records_audit_event_on_drift():
     discover_new_items(conn, "log")  # baseline the item's policy
 
     conn.execute(
-        "UPDATE items SET transmit_policy = 'urgent' WHERE source = 'csn' AND item_id = '1'"
+        "UPDATE items SET policy = 'urgent' WHERE source = 'csn' AND item_id = '1'"
     )
     conn.commit()
     watcher_module.sync_policy_changes(conn, "log")
@@ -395,7 +375,7 @@ def test_dispatch_due_items_records_audit_event_on_success():
         "FROM audit_log WHERE event_type = 'item.dispatched'"
     ).fetchone()
     assert tuple(row[:3]) == ("item.dispatched", "senapred", "1")
-    assert '"transmit_policy": "urgent"' in row[3]
+    assert '"policy": "urgent"' in row[3]
     assert "times_triggered" not in row[3]
 
 

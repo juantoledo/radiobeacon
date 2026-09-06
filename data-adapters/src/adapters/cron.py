@@ -56,3 +56,19 @@ def latest_fire_at_or_before(expr: str, at: datetime, *, conn) -> datetime | Non
     # `at` lands exactly on an occurrence.
     base = at.astimezone(_display_tz(conn)) + timedelta(seconds=1)
     return croniter(expr.strip(), base).get_prev(datetime).astimezone(timezone.utc)
+
+
+def next_fire_after(expr: str, after: datetime, *, conn) -> datetime | None:
+    """The first cron occurrence strictly after `after`, as a UTC-aware
+    datetime. Returns None if `expr` is invalid.
+
+    Used by the adapters runner to compute a precise sleep until the next
+    fetch, and (future) by beacon for the next transmit slot.
+    """
+    if not is_valid_cron(expr):
+        logger.error("invalid cron expression %r", expr)
+        return None
+    from croniter import croniter
+
+    base = after.astimezone(_display_tz(conn))
+    return croniter(expr.strip(), base).get_next(datetime).astimezone(timezone.utc)

@@ -16,7 +16,7 @@ register_audit_event_hook(publish_cloud_event)
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Import a JSON config export produced by export_config.py (or the "
-        "/config/import-export UI page), upserting settings/transmit_policies/"
+        "/config/import-export UI page), upserting settings/policies/"
         "sources/adapter_instances by their natural key. Never deletes anything "
         "absent from the file. Secrets are never accepted, even if present in the "
         "file. A CUSTOM-type adapter is only imported when the target DB's "

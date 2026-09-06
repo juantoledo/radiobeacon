@@ -20,7 +20,7 @@ def list_items(
     *,
     source: str | None = None,
     type_: str | None = None,
-    transmit_policy: str | None = None,
+    policy: str | None = None,
     event_key: str | None = None,
     q: str | None = None,
     limit: int = 50,
@@ -35,9 +35,9 @@ def list_items(
     if type_:
         where.append("type = ?")
         params.append(type_)
-    if transmit_policy:
-        where.append("transmit_policy = ?")
-        params.append(transmit_policy)
+    if policy:
+        where.append("policy = ?")
+        params.append(policy)
     if event_key:
         where.append("event_key = ?")
         params.append(event_key)
@@ -147,7 +147,7 @@ def dashboard_counts(conn: sqlite3.Connection) -> dict[str, int]:
         "in_flight_dispatches": conn.execute(
             "SELECT COUNT(*) FROM trigger_dispatches"
         ).fetchone()[0],
-        "total_policies": conn.execute("SELECT COUNT(*) FROM transmit_policies").fetchone()[0],
+        "total_policies": conn.execute("SELECT COUNT(*) FROM policies").fetchone()[0],
     }
 
 
@@ -245,16 +245,10 @@ def last_adapter_fetch_events(conn: sqlite3.Connection) -> dict[str, sqlite3.Row
     return {row["source"]: row for row in rows}
 
 
-def get_policy_row(
-    conn: sqlite3.Connection, name: str
-) -> tuple[str, int, int, str | None] | None:
-    """Full transmit_policies row including `description` — unlike
-    adapters.transmit_policy.get_policy(), which deliberately returns only
-    the RepeatPolicy (repeat_times, interval_seconds) beacon logic needs.
-    The edit form needs description to prefill, so it lives here."""
-    row = conn.execute(
-        "SELECT name, repeat_times, interval_seconds, description "
-        "FROM transmit_policies WHERE name = ?",
-        (name,),
-    ).fetchone()
-    return tuple(row) if row is not None else None
+def get_policy_row(conn: sqlite3.Connection, name: str):
+    """The full `policies` row (a PolicyRow with every stage's fields +
+    description) for the edit form to prefill. Delegates to
+    adapters.policy.get_policy — kept here as the ui's stable entry point."""
+    from adapters.policy import get_policy
+
+    return get_policy(conn, name)

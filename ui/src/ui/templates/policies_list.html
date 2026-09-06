@@ -6,24 +6,24 @@
 
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>{{ t('policies_list.name_column') }}</th><th>repeat_times</th><th>interval_seconds</th><th class="wrap">{{ t('policies_list.description_column') }}</th><th></th></tr></thead>
+  <thead><tr><th>{{ t('policies_list.name_column') }}</th><th class="wrap">{{ t('policies_list.rhythm_column') }}</th><th class="wrap">{{ t('policies_list.description_column') }}</th><th></th></tr></thead>
   <tbody>
-    {% for name, repeat_times, interval_seconds, description in policies %}
+    {% for p in policies %}
+    {% set row = p.row %}
     <tr>
-      <td data-label="{{ t('policies_list.name_column') }}"><span class="{{ name | policy_badge }}">{{ name }}</span></td>
-      <td data-label="repeat_times">{{ repeat_times }}</td>
-      <td data-label="interval_seconds">{{ interval_seconds }}</td>
-      <td data-label="{{ t('policies_list.description_column') }}" class="wrap muted">{{ description or "" }}</td>
+      <td data-label="{{ t('policies_list.name_column') }}"><span class="{{ row.name | policy_badge }}">{{ row.name }}</span></td>
+      <td data-label="{{ t('policies_list.rhythm_column') }}" class="wrap muted">{{ p.summary }}</td>
+      <td data-label="{{ t('policies_list.description_column') }}" class="wrap muted">{{ row.description or "" }}</td>
       <td class="actions-cell">
-        <a class="btn secondary" href="/config/policies/{{ name }}/edit">{{ t('policies_list.edit') }}</a>
-        <form method="post" action="/config/policies/{{ name }}/delete">
+        <a class="btn secondary" href="/config/policies/{{ row.name }}/edit">{{ t('policies_list.edit') }}</a>
+        <form method="post" action="/config/policies/{{ row.name }}/delete">
           {{ csrf_field() }}
           <button type="submit" class="danger">{{ t('policies_list.delete') }}</button>
         </form>
       </td>
     </tr>
     {% else %}
-    <tr class="empty-row"><td colspan="5">{{ t('policies_list.empty_state') }}</td></tr>
+    <tr class="empty-row"><td colspan="4">{{ t('policies_list.empty_state') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

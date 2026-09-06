@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 # etc. — see dispatcher/mq_publisher.py) to MQTT as CloudEvents, same as
 # dispatcher/override_item.py and dispatcher/policies.py already do — the
 # UI's override/rearm/policy actions go through the exact same
-# dispatcher.override / adapters.transmit_policy functions those CLIs use.
+# dispatcher.override / adapters.policy functions those CLIs use.
 # No-ops unless DISPATCHER_MQ_HOST is set.
 register_audit_event_hook(publish_cloud_event)
 

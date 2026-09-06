@@ -497,7 +497,7 @@ def test_ai_prompt_can_reference_every_mapped_adapter_attribute(tmp_path, monkey
     """The prompt template isn't limited to title/contents — any item
     column (see actions.ai.PROMPT_ITEM_FIELDS) is available as a
     {placeholder}, so a per-adapter override can build a prompt out of
-    event_key, type/subtype, transmit_policy, source_date_time, etc."""
+    event_key, type/subtype, policy, source_date_time, etc."""
     monkeypatch.setenv("ACTIONS_AI_ENABLED", "true")
     monkeypatch.setenv("ACTIONS_AI_PROVIDER", "ollama")
     monkeypatch.setenv("ACTIONS_AI_MAX_CHARS", "0")
@@ -510,14 +510,14 @@ def test_ai_prompt_can_reference_every_mapped_adapter_attribute(tmp_path, monkey
             "code": "def fetch(config): return []",
             "ai_prompt": (
                 "src={source} id={item_id} key={event_key} kind={type}/{subtype} "
-                "policy={transmit_policy} when={source_date_time} raw={rawdata} "
+                "policy={policy} when={source_date_time} raw={rawdata} "
                 "text={extracted_contents}"
             ),
         },
     )
     conn.execute(
         "INSERT INTO items (source, item_id, extracted_title, extracted_contents, url, "
-        "event_key, type, subtype, transmit_policy, source_date_time, fetched_at, rawdata) "
+        "event_key, type, subtype, policy, source_date_time, fetched_at, rawdata) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "senapred",

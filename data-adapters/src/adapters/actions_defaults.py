@@ -10,7 +10,7 @@ and ui already depend on — mirrors beacon_defaults.py.
 # str.format-style template. It may reference any of an item's mapped
 # adapter attributes as a {placeholder} — {source}, {item_id},
 # {extracted_title}, {extracted_contents}, {summary}, {url}, {event_key},
-# {type}, {subtype}, {transmit_policy}, {source_date_time}, {fetched_at},
+# {type}, {subtype}, {policy}, {source_date_time}, {fetched_at},
 # {captured_at}, {rawdata} (see actions.ai.PROMPT_ITEM_FIELDS) — plus the
 # source's display name / site URL as {source_name} / {source_url} (the
 # same placeholders the beacon & chunk templates use). An unknown

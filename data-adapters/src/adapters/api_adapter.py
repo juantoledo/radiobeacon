@@ -252,7 +252,6 @@ class ApiAdapterConfig:
     date_field: str | None = None
     date_format: str | None = None
     source_timezone: str | None = None
-    transmit_policy: str | None = None
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "ApiAdapterConfig":
@@ -271,7 +270,6 @@ class ApiAdapterConfig:
             date_field=config.get("date_field"),
             date_format=config.get("date_format"),
             source_timezone=config.get("source_timezone"),
-            transmit_policy=config.get("transmit_policy"),
         )
 
     def mapping_for(self, name: str) -> FieldMapping:
@@ -322,7 +320,6 @@ def _map_item(
         raise ValueError("mapped id is None")
     return AdapterItem(
         source_date_time=cfg.resolve_source_date_time(item, extra_context),
-        transmit_policy=cfg.transmit_policy,
         raw=item,
         **fields,
     )
@@ -379,7 +376,7 @@ def preview_response(
     config: dict[str, Any], limit: int = 5, *, allow_private: bool = False
 ) -> dict[str, Any]:
     """Calls the endpoint (url/method/headers/query_params/body only —
-    `mapping`/`date_field`/`transmit_policy` are irrelevant here)
+    `mapping`/`date_field` are irrelevant here)
     without mapping anything, so the UI can show an operator what a
     source's real response looks like *before* they've configured any
     field mapping. Reports both what the *currently configured*
@@ -443,9 +440,12 @@ class ApiAdapter(DataSourceAdapter):
     construction/import time), so editing an instance's config via the UI
     takes effect on the very next poll, with no process restart required."""
 
-    def __init__(self, source: str, config: dict[str, Any], *, db_path=DEFAULT_DB_PATH):
+    def __init__(
+        self, source: str, config: dict[str, Any], *, policy=None, db_path=DEFAULT_DB_PATH
+    ):
         self.source = source
         self.config = config
+        self.policy = policy
         self.db_path = db_path
 
     def _source_template_context(

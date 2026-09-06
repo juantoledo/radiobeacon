@@ -53,7 +53,7 @@ def test_rejects_stacked_statements_via_semicolon():
 def test_rejects_select_containing_disallowed_keyword_as_subquery():
     with pytest.raises(InvalidQuery):
         ensure_select_only(
-            "SELECT * FROM items WHERE 1=1; UPDATE items SET transmit_policy='urgent'"
+            "SELECT * FROM items WHERE 1=1; UPDATE items SET policy='urgent'"
         )
 
 

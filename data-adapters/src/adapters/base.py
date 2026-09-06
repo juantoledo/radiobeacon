@@ -35,7 +35,7 @@ class AdapterItem:
     event_key: str | None = None
     type: str | None = None
     subtype: str | None = None
-    transmit_policy: str | None = None
+    policy: str | None = None
     source_date_time: datetime | None = None
     # The original, unmapped item as returned by the source (raw JSON dict
     # for ApiAdapter, whatever dict the snippet's own source data came from

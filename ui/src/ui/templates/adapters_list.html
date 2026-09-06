@@ -27,14 +27,14 @@
 
 <div class="table-wrap cards">
 <table>
-  <thead><tr><th>{{ t('adapters_list.source_column') }}</th><th>{{ t('adapters_list.type_column') }}</th><th>{{ t('adapters_list.enabled_column') }}</th><th>{{ t('adapters_list.interval_column') }}</th><th>{{ t('adapters_list.last_fetch_column') }}</th><th></th></tr></thead>
+  <thead><tr><th>{{ t('adapters_list.source_column') }}</th><th>{{ t('adapters_list.type_column') }}</th><th>{{ t('adapters_list.enabled_column') }}</th><th>{{ t('adapters_list.policy_column') }}</th><th>{{ t('adapters_list.last_fetch_column') }}</th><th></th></tr></thead>
   <tbody>
     {% for row in rows %}
     <tr>
       <td data-label="{{ t('adapters_list.source_column') }}"><strong>{{ row.source }}</strong></td>
       <td data-label="{{ t('adapters_list.type_column') }}"><span class="badge badge-neutral">{{ row.adapter_type }}</span></td>
       <td data-label="{{ t('adapters_list.enabled_column') }}">{% if row.enabled %}<span class="badge badge-success">{{ t('adapters_list.on') }}</span>{% else %}<span class="badge badge-neutral">{{ t('adapters_list.off') }}</span>{% endif %}</td>
-      <td data-label="{{ t('adapters_list.interval_column') }}">{{ row.interval_seconds or t('adapters_list.default_value') }}</td>
+      <td data-label="{{ t('adapters_list.policy_column') }}">{{ row.policy or t('adapters_list.default_value') }}</td>
       <td data-label="{{ t('adapters_list.last_fetch_column') }}" class="muted">
         {% if row.last_fetch %}
           {% if row.last_fetch.ok %}<span class="badge badge-success">{{ t('adapters_list.ok') }}</span>{% else %}<span class="badge badge-warn">{{ t('adapters_list.error') }}</span>{% endif %}

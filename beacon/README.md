@@ -12,8 +12,8 @@ The operator picks **one beacon type** (`BEACON_TYPE`): `voice` (spoken-word TTS
 or `frame` (an AX.25 UI frame rendered to 1200-baud AFSK audio). There is no TDMA
 schedule, no running Direwolf, and no sound-card contention to arbitrate —
 SvxLink is the only thing that touches the radio. Each item is put on air
-`repeat_times` times, `interval_seconds` apart — the numbers its
-`transmit_policy` names (see "Transmit schedule" below).
+`transmit_count` times, `transmit_interval_seconds` apart (or one per
+`transmit_cron` occurrence) — the schedule its `policy` names (see "Transmit schedule" below).
 
 Not the same thing as `ui/src/ui/beacon.py` — that module is the "beacon
 identity" settings (callsign/description fields under `/config`). No Python
@@ -34,7 +34,7 @@ chunking `items.summary` when one exists and falling back to
 `item.content_ready`, the `chunks` table already holds the best available
 content, correctly sized. Beacon's job on that event is to insert (or reset, on
 a rearm) rows into `beacon_tx_schedule` for the **configured `BEACON_TYPE`
-only**, snapshotting the item's `transmit_policy` name:
+only**, snapshotting the item's `policy` name:
 
 - **`BEACON_TYPE=frame`**: one `kind="frame"` row per row in `chunks` (`ref` =
   `str(chunk_index)`).
@@ -85,7 +85,7 @@ sets a `wake_event` so newly scheduled content is picked up almost immediately):
 `_drain_kind` transmits *every* currently-due `beacon_tx_schedule` row of that
 kind, pausing `BEACON_INTER_TX_DELAY_SECONDS` (default 2s) between clips so PTT /
 the svxlink-txqueue channel-idle wait can settle. Due-ness and retirement are
-computed live against each row's current `transmit_policy`.
+computed live against each row's current `policy`.
 
 `src/beacon/ntp.py` is a purely optional, read-only visibility layer — it
 periodically checks the measured clock offset against a real NTP server for the
@@ -104,7 +104,7 @@ CREATE TABLE beacon_tx_schedule (
     item_id             TEXT NOT NULL,
     kind                TEXT NOT NULL,             -- 'frame' | 'voice' (matches BEACON_TYPE)
     ref                 TEXT NOT NULL DEFAULT '',  -- frame = str(chunk_index); voice = ''
-    transmit_policy     TEXT,                      -- policy NAME snapshot
+    policy             TEXT,                      -- Policy NAME snapshot
     sent_count          INTEGER NOT NULL DEFAULT 0,
     last_transmitted_at TEXT,                      -- NULL = never sent (due now)
     enqueued_event_id   TEXT,
@@ -116,10 +116,10 @@ CREATE TABLE beacon_tx_schedule (
 
 - **Durable** — survives a beacon restart.
 - **Live policy** — every cycle, `_drain_kind` resolves
-  `adapters.transmit_policy.policy_for(row.transmit_policy)` fresh. Due iff
+  `adapters.policy.policy_for(row.policy)` fresh. Due iff
   `last_transmitted_at IS NULL` or
   `utc_now() >= last_transmitted_at + interval_seconds`. Retired (row deleted,
-  `beacon.tx.retired` recorded) iff `sent_count >= repeat_times`.
+  `beacon.tx.retired` recorded) iff `sent_count >= transmit_count`.
 - **Every attempt counts** — `sent_count` increments whether the render + spool
   hand-off succeeded or not, so a persistently failing link still retires the
   row.
@@ -149,7 +149,7 @@ off period replays only what's still fresh, not the whole overnight backlog.
 `beacon_manual_tx` (also owned by `adapters.storage`) holds messages an operator
 types into the dashboard's **Transmit now** action. Each row carries its own
 literal `text` and a `kind` (`voice` | `frame`) — there's no item to resolve and
-no `transmit_policy`. Every tick, `_drain_manual_tx` sends each row whose `kind`
+no `policy`. Every tick, `_drain_manual_tx` sends each row whose `kind`
 matches the active `BEACON_TYPE` (voice wrapped by `BEACON_MANUAL_VOICE_TEMPLATE`
 so the callsign is always spoken; frame straight through the AX.25 header), then
 deletes it — a manual send is attempted exactly once, on air or not, and never
