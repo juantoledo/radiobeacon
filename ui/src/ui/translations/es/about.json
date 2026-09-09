@@ -1,0 +1,53 @@
+{
+  "about.title": "Acerca de RadioBeacon",
+
+  "about.intro.heading": "Qué es RadioBeacon",
+  "about.intro.p1": "RadioBeacon es el software que opera una estación experimental de radioaficionado. La estación transmite de forma automática, en una frecuencia fija, para que otros operadores puedan escucharla y saber si el camino de radio entre su ubicación y la nuestra está abierto en ese momento. Los radioaficionados llaman a una estación usada así una baliza de propagación.",
+  "about.intro.p2": "En lugar de transmitir solo un identificador de estación, RadioBeacon también pone al aire boletines breves de interés público: alertas tempranas de protección civil e informes de sismos. Quien escucha la baliza obtiene dos cosas a la vez: la confirmación de que el camino de la señal funciona y el boletín en sí.",
+
+  "about.how.heading": "Cómo funciona",
+  "about.how.p1": "RadioBeacon vigila un pequeño conjunto de fuentes de información en internet. Cuando aparece algo nuevo, convierte ese aviso en un anuncio hablado breve (o en un mensaje de texto digital) y lo emite por radio cuando la frecuencia está libre. Cada boletín se transmite varias veces, con un intervalo fijo entre repeticiones, para que quien sintoniza tarde aún tenga oportunidad de captarlo.",
+  "about.how.flow_intro": "El recorrido de un boletín:",
+
+  "about.flow.step1_label": "Vigilar novedades",
+  "about.flow.step1_desc": "RadioBeacon consulta cada fuente de información según su propio calendario.",
+  "about.flow.step2_label": "Recopilar",
+  "about.flow.step2_desc": "Cada aviso nuevo se guarda, conservando intacta su redacción original.",
+  "about.flow.step3_label": "Resumir (opcional)",
+  "about.flow.step3_desc": "Un aviso extenso se condensa en dos o tres frases claras. Este paso usa IA, permanece desactivado salvo que el operador lo active, y se omite en avisos que ya son breves.",
+  "about.flow.step4_label": "Preparar el mensaje",
+  "about.flow.step4_desc": "El texto se convierte en audio hablado en español, o en un paquete digital. Se añaden automáticamente el indicativo de la estación y una nota de que se trata de un relé no oficial.",
+  "about.flow.step5_label": "Esperar frecuencia libre",
+  "about.flow.step5_desc": "No se transmite nada mientras otra estación esté usando el canal.",
+  "about.flow.step6_label": "Al aire",
+  "about.flow.step6_desc": "El boletín se emite y se repite unas cuantas veces con un intervalo fijo entre repeticiones.",
+  "about.flow.logged": "Cada uno de estos pasos queda registrado en esta consola, de modo que el operador puede ver exactamente qué se recibió y qué salió al aire.",
+
+  "about.radio.heading": "Cómo se conecta con la radio",
+  "about.radio.p1": "RadioBeacon no controla el transmisor directamente. Prepara un archivo de audio listo para reproducir y lo entrega al software de control del transmisor de la estación, que activa la radio y reproduce el clip solo cuando el canal está libre.",
+  "about.radio.note": "RadioBeacon es solo de transmisión. Nunca escucha, decodifica ni graba a otras estaciones: no tiene receptor de ningún tipo.",
+
+  "about.sources.heading": "Qué sale al aire",
+  "about.sources.p1": "El contenido proviene de fuentes que elige el operador. Dos vienen configuradas de fábrica:",
+  "about.sources.senapred": "Alertas tempranas de SENAPRED — avisos de protección civil de Chile para eventos meteorológicos, hidrológicos y geofísicos.",
+  "about.sources.csn": "Informes de sismos del CSN — eventos sísmicos publicados por el Centro Sismológico Nacional.",
+  "about.sources.p2": "El operador puede añadir más fuentes — cualquier feed web público — describiéndolas en esta consola. No hace falta programar.",
+  "about.sources.disclaimer": "RadioBeacon es un relé experimental y no oficial. Toda alerta que transmite lo indica así, y remite a los oyentes a SENAPRED como fuente oficial. No es un servicio de radiodifusión de emergencias y no debe usarse como tal.",
+
+  "about.ai.heading": "El papel de la IA",
+  "about.ai.p1": "La inteligencia artificial cumple una única función acotada en RadioBeacon: resumir un aviso extenso en unas pocas frases completas. Trabaja a partir de una instrucción fija que le indica no inventar nada y no dejar ninguna frase sin terminar.",
+  "about.ai.p2": "La IA nunca decide qué se transmite, nunca cambia la configuración ni la identidad de la estación, y está desactivada por defecto. Los avisos que ya son suficientemente breves nunca se le envían.",
+  "about.ai.p3": "Si el paso de IA falla, el operador elige de antemano qué ocurre: usar el texto original, usar solo el titular, o no transmitir nada.",
+
+  "about.control.heading": "Seguridad y control del operador",
+  "about.control.item1": "En silencio por defecto. Una instalación nueva no transmite nada. El operador debe activar la transmisión y completar la identidad de la estación — indicativo, ubicación, frecuencia — antes de que algo salga al aire.",
+  "about.control.item2": "Un solo tipo de mensaje a la vez. La estación envía voz o paquete digital, nunca ambos al mismo tiempo.",
+  "about.control.item3": "La frecuencia libre es lo primero. Las transmisiones esperan a que el canal esté libre.",
+  "about.control.item4": "Nada se acumula. Un boletín que ha esperado demasiado caduca en lugar de saturar el aire más tarde.",
+  "about.control.item5": "Registro completo. Cada descarga, cada resumen y cada transmisión queda registrada en esta consola, y cualquier clip de voz puede reproducirse en el navegador.",
+
+  "about.notwhat.heading": "Qué no es RadioBeacon",
+  "about.notwhat.item1": "No es un canal oficial de emergencias, ni un sustituto de SENAPRED, ONEMI ni de ningún sistema estatal de alertas.",
+  "about.notwhat.item2": "No es un sistema bidireccional ni de despacho: no puede recibir mensajes ni confirmarlos.",
+  "about.notwhat.item3": "No es un producto comercial. Es una única estación experimental, operada por un radioaficionado con licencia y compartida como código abierto."
+}

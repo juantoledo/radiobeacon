@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}{{ item.extracted_title or item.item_id }}{% endblock %}
+{% block content %}
+<a class="crumb" href="/items">&larr; {{ t('item_detail.back_to_items') }}</a>
+<div class="page-header">
+  <h1>{{ item.extracted_title or item.item_id }}</h1>
+  {% if dev_tools_enabled() and is_admin() %}
+  <a class="btn secondary" href="/dev/items/{{ item.source }}/{{ item.item_id }}/edit">{{ t('item_detail.edit_dev') }}</a>
+  {% endif %}
+</div>
+<p class="meta-line">
+  <span class="mono">{{ item.source }}</span>
+  <span class="sep">/</span>
+  <span class="mono">{{ item.item_id }}</span>
+  {% if item.type %}<span class="sep">·</span>{{ item.type }}{% endif %}
+  {% if item.subtype %}<span class="sep">·</span>{{ item.subtype }}{% endif %}
+  {% if item.event_key %}<span class="sep">·</span>event_key={{ item.event_key }}{% endif %}
+</p>
+{% if item.url %}<p><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.url }}</a></p>{% endif %}
+
+<div class="dash-grid">
+  <div class="dash-col-main">
+    {% if item.summary %}
+    <h2>{{ icon('sparkles', 16) }}{{ t('item_detail.summary') }}</h2>
+    <pre class="contents">{{ item.summary }}</pre>
+    {% endif %}
+
+    <h2>{{ icon('items', 16) }}{{ t('item_detail.contents') }}</h2>
+    <pre class="contents">{{ item.extracted_contents or "" }}</pre>
+
+    {% if chunks %}
+    <h2>{{ icon('layers', 16) }}{{ t('item_detail.chunks') }} <span class="muted">({{ chunks | length }})</span></h2>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th class="wrap">{{ t('item_detail.col_chunk_text') }}</th></tr></thead>
+      <tbody>
+        {% for chunk in chunks %}
+        <tr><td class="mono">{{ chunk.chunk_index + 1 }}/{{ chunk.chunk_count }}</td><td class="wrap">{{ chunk.text }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+
+    <h2>{{ icon('play', 16) }}{{ t('item_detail.transmissions') }} <span class="muted">({{ transmissions | length }})</span></h2>
+    {% if transmissions %}
+    <div class="table-wrap">
+    <table class="tx-list">
+      <thead><tr>
+        <th>{{ t('item_detail.tx_col_kind') }}</th>
+        <th>{{ t('item_detail.tx_col_aired') }}</th>
+        <th>{{ t('item_detail.tx_col_note') }}</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        {% for tx in transmissions %}
+        <tr>
+          <td data-label="{{ t('item_detail.tx_col_kind') }}">
+            {% if tx.kind == 'frame' %}
+            <span class="badge badge-neutral">{{ t('item_detail.tx_kind_frame') }}{% if tx.ref is not none %} {{ tx.ref + 1 }}{% endif %}</span>
+            {% else %}
+            <span class="badge badge-info">{{ t('item_detail.tx_kind_voice') }}</span>
+            {% endif %}
+          </td>
+          <td data-label="{{ t('item_detail.tx_col_aired') }}" class="muted">{{ tx.at | display_dt }}</td>
+          <td data-label="{{ t('item_detail.tx_col_note') }}" class="muted">
+            {%- if tx.truncated %}{{ t('item_detail.tx_note_truncated') }}
+            {%- elif tx.byte_length is not none %}{{ tx.byte_length }} B
+            {%- endif -%}
+          </td>
+          <td class="actions-cell">
+            <button type="button" class="feed-play" data-audio-url="{{ tx.url }}" aria-label="{{ t('dashboard.play_bulletin_audio_aria') }}">
+              <span class="fp-play">{{ icon('play', 13) }}</span>
+              <span class="fp-stop">{{ icon('stop', 13) }}</span>
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted">{{ t('item_detail.tx_empty') }}</p>
+    {% endif %}
+
+    <h2>{{ icon('audit', 16) }}{{ t('item_detail.audit_trail') }}</h2>
+    <div class="table-wrap cards wide-cards">
+    <table>
+      <thead><tr><th>{{ t('item_detail.col_event') }}</th><th>{{ t('item_detail.col_actor') }}</th><th class="wrap">{{ t('item_detail.col_details') }}</th><th>{{ t('item_detail.col_recorded') }}</th><th>{{ t('item_detail.col_actions') }}</th></tr></thead>
+      <tbody>
+        {% for event in audit_events %}
+        <tr>
+          <td data-label="{{ t('item_detail.col_event') }}"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
+          <td data-label="{{ t('item_detail.col_actor') }}" class="muted">{{ event.actor }}</td>
+          <td data-label="{{ t('item_detail.col_details') }}" class="wrap mono">{{ event.details or "" }}</td>
+          <td data-label="{{ t('item_detail.col_recorded') }}" class="muted">{{ event.recorded_at | display_dt }}</td>
+          <td class="actions-cell">
+            {% if is_admin() %}
+            {% if event.event_type in replayable_event_types %}
+            <form method="post" action="/items/{{ item.source }}/{{ item.item_id }}/replay">
+              {{ csrf_field() }}
+              <input type="hidden" name="event_type" value="{{ event.event_type }}">
+              <input type="hidden" name="consumer" value="{{ default_consumer }}">
+              <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>{{ icon('play', 13) }}{{ t('item_detail.replay_button') }}</button>
+            </form>
+            {% endif %}
+            {% if event.event_type.startswith('beacon.voice.') or event.event_type.startswith('beacon.frame.') or event.event_type in ('beacon.tx.retired', 'beacon.tx.skipped_stale') %}
+            <form method="post" action="/items/{{ item.source }}/{{ item.item_id }}/retransmit">
+              {{ csrf_field() }}
+              <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>{{ icon('refresh', 13) }}{{ t('item_detail.retransmit_button') }}</button>
+            </form>
+            {% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr class="empty-row"><td colspan="5">{{ t('item_detail.empty_audit') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <aside class="dash-col-side">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>{{ icon('clock', 16) }}{{ t('item_detail.details_heading') }}</h2>
+        <div class="header-badges">
+          {% if item.policy %}<span class="{{ item.policy | policy_badge }}">{{ item.policy }}</span>{% else %}<span class="muted">{{ t('item_detail.policy_unset') }}</span>{% endif %}
+        </div>
+      </div>
+      <dl class="stat-list">
+        <div><dt>source_date_time</dt><dd>{{ item.source_date_time | display_dt }}</dd></div>
+        <div><dt>fetched_at</dt><dd>{{ item.fetched_at | display_dt }}</dd></div>
+        <div><dt>captured_at</dt><dd>{{ item.captured_at | display_dt }}</dd></div>
+      </dl>
+    </section>
+
+    {% if is_admin() %}
+    <h2>{{ icon('zap', 16) }}{{ t('item_detail.actions') }}</h2>
+    <form class="action" method="post" action="/items/{{ item.source }}/{{ item.item_id }}/override">
+      {{ csrf_field() }}
+      <label for="policy">{{ t('item_detail.set_transmit_policy') }}</label>
+      <select id="policy" name="policy">
+        {% for p in policies %}
+        <option value="{{ p.name }}" {% if item.policy == p.name %}selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" {% if not is_beacon_configured() %}disabled{% endif %}>{{ icon('check', 14) }}{{ t('item_detail.override_button') }}</button>
+      {% if not is_beacon_configured() %}<span class="meta-line">{{ t('item_detail.requires_beacon_identity', link='<a href="/config/beacon-identity">' ~ t('item_detail.beacon_identity_link_text') ~ '</a>') | safe }}</span>{% endif %}
+    </form>
+
+    <form class="action" method="post" action="/items/{{ item.source }}/{{ item.item_id }}/rearm">
+      {{ csrf_field() }}
+      <label for="consumer">{{ t('item_detail.rearm_for_consumer') }}</label>
+      <input id="consumer" name="consumer" type="text" value="{{ default_consumer }}">
+      <button type="submit" class="secondary" {% if not is_beacon_configured() %}disabled{% endif %}>{{ icon('refresh', 14) }}{{ t('item_detail.rearm_button') }}</button>
+      {% if not is_beacon_configured() %}<span class="meta-line">{{ t('item_detail.requires_beacon_identity', link='<a href="/config/beacon-identity">' ~ t('item_detail.beacon_identity_link_text') ~ '</a>') | safe }}</span>{% endif %}
+    </form>
+    {% endif %}
+  </aside>
+</div>
+<audio id="beacon-audio" preload="none"></audio>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('beacon-audio.js') }}" defer></script>
+{% endblock %}

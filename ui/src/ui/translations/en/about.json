@@ -1,0 +1,53 @@
+{
+  "about.title": "About RadioBeacon",
+
+  "about.intro.heading": "What RadioBeacon is",
+  "about.intro.p1": "RadioBeacon is the software that runs an experimental amateur-radio station. The station transmits automatically, on a fixed frequency, so other radio operators can listen for it and tell whether the radio path between their location and ours is currently open. Radio amateurs call a station used this way a propagation beacon.",
+  "about.intro.p2": "Instead of transmitting only a station identifier, RadioBeacon also puts short public-interest bulletins on the air — civil-protection early warnings and earthquake reports. Someone who hears the beacon gets two things at once: confirmation that the signal path works, and the bulletin itself.",
+
+  "about.how.heading": "How it works",
+  "about.how.p1": "RadioBeacon watches a small number of information sources on the internet. When something new appears, it turns that notice into a short spoken announcement (or a digital text message) and plays it over the radio when the frequency is clear. Each bulletin is transmitted a few times, a set interval apart, so a listener who tunes in late still has a chance to catch it.",
+  "about.how.flow_intro": "The journey of a single bulletin:",
+
+  "about.flow.step1_label": "Watch for updates",
+  "about.flow.step1_desc": "RadioBeacon checks each information source on its own schedule.",
+  "about.flow.step2_label": "Collect",
+  "about.flow.step2_desc": "Every new notice is saved, with its original wording kept intact.",
+  "about.flow.step3_label": "Shorten (optional)",
+  "about.flow.step3_desc": "A long notice is condensed into two or three clear sentences. This step uses AI, stays off unless the operator turns it on, and is skipped for notices that are already short.",
+  "about.flow.step4_label": "Prepare the message",
+  "about.flow.step4_desc": "The text becomes spoken Spanish audio, or a digital packet. The station callsign and a note that this is an unofficial relay are added automatically.",
+  "about.flow.step5_label": "Wait for a clear frequency",
+  "about.flow.step5_desc": "Nothing is transmitted while another station is using the channel.",
+  "about.flow.step6_label": "On air",
+  "about.flow.step6_desc": "The bulletin is broadcast, and repeated a few times a set interval apart.",
+  "about.flow.logged": "Every one of these steps is recorded in this console, so the operator can see exactly what was received and what went on the air.",
+
+  "about.radio.heading": "How it connects with the radio",
+  "about.radio.p1": "RadioBeacon does not control the transmitter directly. It prepares a ready-to-play audio file and hands it to the station's transmitter-control software, which keys the radio and plays the clip only when the channel is idle.",
+  "about.radio.note": "RadioBeacon is transmit-only. It never listens to, decodes, or records other stations — it has no receiver of any kind.",
+
+  "about.sources.heading": "What goes on the air",
+  "about.sources.p1": "Content comes from sources the operator chooses. Two are set up out of the box:",
+  "about.sources.senapred": "SENAPRED early warnings — Chile's civil-protection alerts for weather, hydrological and geophysical events.",
+  "about.sources.csn": "CSN earthquake reports — seismic events published by the Centro Sismológico Nacional.",
+  "about.sources.p2": "The operator can add more sources — any public web feed — by describing it in this console. No programming is involved.",
+  "about.sources.disclaimer": "RadioBeacon is an experimental, unofficial relay. Every alert it transmits says so, and points listeners to SENAPRED as the official source. It is not an emergency broadcast service and must not be relied on as one.",
+
+  "about.ai.heading": "The role of AI",
+  "about.ai.p1": "Artificial intelligence has one narrow job in RadioBeacon: shortening a long notice into a few complete sentences. It works from a fixed instruction that tells it to invent nothing and to leave no sentence unfinished.",
+  "about.ai.p2": "AI never decides what is transmitted, never changes the station's settings or identity, and is off by default. Notices that are already short enough are never sent to it.",
+  "about.ai.p3": "If the AI step fails, the operator chooses in advance what happens: use the original text, use just the headline, or transmit nothing.",
+
+  "about.control.heading": "Safety and operator control",
+  "about.control.item1": "Silent by default. A fresh install transmits nothing. The operator has to switch transmission on and fill in the station identity — callsign, location, frequency — before anything goes on the air.",
+  "about.control.item2": "One kind of message at a time. The station sends either voice or digital packet, never both at once.",
+  "about.control.item3": "A clear frequency comes first. Transmissions wait for the channel to be idle.",
+  "about.control.item4": "Nothing piles up. A bulletin that has been waiting too long expires instead of flooding the air later.",
+  "about.control.item5": "Full record. Every fetch, every shortening and every transmission is logged in this console, and any voice clip can be played back in the browser.",
+
+  "about.notwhat.heading": "What RadioBeacon is not",
+  "about.notwhat.item1": "Not an official emergency channel, and not a substitute for SENAPRED, ONEMI, or any government alerting system.",
+  "about.notwhat.item2": "Not a two-way or dispatch system — it cannot receive messages or acknowledge them.",
+  "about.notwhat.item3": "Not a commercial product. It is a single experimental station, run by a licensed amateur-radio operator and shared as open source."
+}

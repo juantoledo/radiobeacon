@@ -1,0 +1,46 @@
+{# Renders one adapters.config_transfer.ImportSummary — shared by
+   config_import_preview.html (a dry run) and config_import_result.html (the
+   real thing) so both show the identical shape. Expects `summary` in
+   context. #}
+<div class="table-wrap cards">
+<table>
+  <thead><tr><th>{{ t('config.import_summary.col_section') }}</th><th>{{ t('config.import_summary.col_created') }}</th><th>{{ t('config.import_summary.col_updated') }}</th><th>{{ t('config.import_summary.col_skipped') }}</th><th>{{ t('config.import_summary.col_warned') }}</th></tr></thead>
+  <tbody>
+    {% for section, c in summary.counts().items() %}
+    <tr>
+      <td data-label="Section">{{ section }}</td>
+      <td data-label="Created">{{ c.created }}</td>
+      <td data-label="Updated">{{ c.updated }}</td>
+      <td data-label="Skipped">{{ c.skipped }}</td>
+      <td data-label="Warned">{{ c.warned }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+{% if summary.results | length %}
+{% set has_skipped = summary.results | map(attribute='action') | select('equalto', 'skipped') | list | length %}
+{% if has_skipped %}
+<h3>{{ t('config.import_summary.skipped_heading') }}</h3>
+<ul>
+  {% for r in summary.results %}
+  {% if r.action == 'skipped' %}
+  <li><span class="mono">{{ r.section }}/{{ r.key }}</span> — <span class="muted">{{ r.reason }}</span></li>
+  {% endif %}
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% set has_warnings = summary.results | map(attribute='warnings') | select | list | length %}
+{% if has_warnings %}
+<h3>{{ t('config.import_summary.warnings_heading') }}</h3>
+<ul>
+  {% for r in summary.results %}
+  {% for w in r.warnings %}
+  <li><span class="mono">{{ r.section }}/{{ r.key }}</span> — <span class="muted">{{ w }}</span></li>
+  {% endfor %}
+  {% endfor %}
+</ul>
+{% endif %}
+{% endif %}

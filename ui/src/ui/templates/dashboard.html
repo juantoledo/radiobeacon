@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}{{ t('dashboard.title') }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>{{ t('dashboard.title') }}</h1>
+  {% if refresh_seconds %}
+  <span class="live-badge">
+    <span class="pulse-dot" aria-hidden="true"></span>
+    {{ t('dashboard.live_label') }} · <span id="refresh-status">{{ t('dashboard.updated_just_now') }}</span>
+  </span>
+  {% endif %}
+  {# Lit by on-air.js only while beacon.tx_monitor reports the rig keyed;
+     kept outside #dashboard-content so the fragment refresh never removes
+     it. Absent entirely when the monitor can't reach the SvxLink log. #}
+  <span id="on-air-indicator" class="on-air-indicator" role="status" hidden>
+    <span class="on-air-dot" aria-hidden="true"></span>{{ t('dashboard.on_air_indicator') }}
+    {% if dashboard_tx_stream_configured %}
+    <button type="button" class="tx-audio-toggle tx-audio-toggle--pill" aria-pressed="true">
+      {{ icon('volume-2', 15) }}{{ icon('volume-x', 15) }}
+      <span class="sr-only">{{ t('dashboard.tx_audio_toggle_label') }}</span>
+    </button>
+    {% endif %}
+  </span>
+  {% if dashboard_tx_stream_configured %}
+  {# Second, always-visible copy of the same control — mute preference and
+     the browser autoplay-unlock gesture can be set before any transmission
+     starts (the pill copy above is hidden while idle). tx-audio.js keeps
+     every .tx-audio-toggle in sync. #}
+  <button type="button" id="tx-audio-toggle" class="tx-audio-toggle" aria-pressed="true">
+    {{ icon('volume-2', 16) }}{{ icon('volume-x', 16) }}
+    <span class="sr-only">{{ t('dashboard.tx_audio_toggle_label') }}</span>
+  </button>
+  {% endif %}
+</div>
+
+{% include "_dashboard_live.html" %}
+
+{# One shared player for the Activity feed's per-item play buttons — kept
+   outside #dashboard-content so the auto-refresh never tears it down
+   mid-playback (see beacon-audio.js). #}
+<audio id="beacon-audio" preload="none"></audio>
+{% if dashboard_tx_stream_configured %}
+{# On-air auto-play (tx-audio.js) — its own element so it never collides
+   with the Activity-feed player above. Also outside #dashboard-content. #}
+<audio id="tx-audio" preload="none"></audio>
+{% endif %}
+
+{# "Transmit now" modal — also outside #dashboard-content so an in-progress
+   compose survives a background refresh. Opened by the [data-open-dialog]
+   button in Quick controls (manual-tx.js). Admin-only: its form posts to
+   /dashboard/transmit, which lives on manual_tx.router (admin-gated) —
+   see _dashboard_live.html, which is also where the only button that
+   opens this dialog is (itself admin-gated), so a 'user'-role visitor
+   never has a way to trigger it anyway; still gated here as well so it
+   isn't left inert-but-present in the page for them. #}
+{% if is_admin() %}
+<dialog id="manual-tx-dialog" class="manual-tx-dialog">
+  <form method="post" action="/dashboard/transmit"
+        data-voice-max="{{ manual_voice_max_chars }}" data-frame-max="{{ manual_frame_max_bytes }}"
+        data-i18n='{{ {"count_chars": t("manual_tx.count_chars"), "count_bytes": t("manual_tx.count_bytes")} | tojson }}'>
+    {{ csrf_field() }}
+    <h2>{{ icon('radio', 18) }} {{ t('dashboard.transmit_now_title') }}</h2>
+
+    <div class="segmented mtx-kind" role="group" aria-label="{{ t('dashboard.transmission_type') }}">
+      {% for mode in ['voice', 'frame'] %}
+      <label class="{{ 'active' if beacon_type == mode else '' }}">
+        <input type="radio" name="kind" value="{{ mode }}" {{ 'checked' if beacon_type == mode else '' }}>
+        {{ t('dashboard.mode_' ~ mode) }}
+      </label>
+      {% endfor %}
+    </div>
+    <p class="mtx-mode-note" hidden>
+      {{ t('dashboard.mode_note', mode='<strong>' ~ t('dashboard.mode_' ~ beacon_type) ~ '</strong>') | safe }}
+    </p>
+
+    <label class="mtx-label" for="manual-tx-text">{{ t('dashboard.message_label') }}</label>
+    <textarea id="manual-tx-text" name="text" rows="4" required
+              placeholder="{{ t('dashboard.message_placeholder') }}"></textarea>
+    <div class="mtx-foot">
+      <span id="manual-tx-count" class="mono"></span>
+      <span id="manual-tx-over" class="mtx-over" hidden>{{ t('dashboard.over_the_limit') }}</span>
+    </div>
+
+    {% if not beacon_enabled %}
+    <p class="banner-warn mtx-banner">⚠ {{ t('dashboard.tx_disabled_banner') }}</p>
+    {% elif not running %}
+    <p class="banner-warn mtx-banner">⚠ {{ t('dashboard.beacon_not_running_banner') }}</p>
+    {% else %}
+    <p class="banner mtx-banner">{{ t('dashboard.tx_ready_banner') }}</p>
+    {% endif %}
+
+    <div class="mtx-actions">
+      <button type="button" class="btn secondary" data-close-dialog>{{ t('dashboard.cancel') }}</button>
+      <button type="submit" id="manual-tx-submit">{{ icon('radio', 15) }} {{ t('dashboard.transmit_button') }}</button>
+    </div>
+  </form>
+</dialog>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script src="{{ static_url('beacon-audio.js') }}" defer></script>
+<script src="{{ static_url('manual-tx.js') }}" defer></script>
+{% if refresh_seconds %}
+<script src="{{ static_url('dashboard-refresh.js') }}" defer data-interval-ms="{{ refresh_seconds * 1000 }}"
+        data-i18n='{{ ({"just_now": t("dashboard.just_now"), "minutes_ago": t("dashboard.minutes_ago"), "hours_ago": t("dashboard.hours_ago"), "days_ago": t("dashboard.days_ago"), "updated_just_now": t("dashboard.updated_just_now"), "updated_ago": t("dashboard.updated_ago"), "update_failed": t("dashboard.update_failed")} | tojson) }}'></script>
+{% endif %}
+<script src="{{ static_url('on-air.js') }}" defer data-interval-ms="2000"></script>
+{% if dashboard_tx_stream_configured %}
+<script src="{{ static_url('tx-audio.js') }}" defer data-stream-src="/dashboard/tx-stream"
+        data-i18n='{{ {"mute": t("dashboard.tx_audio_mute"), "unmute": t("dashboard.tx_audio_unmute")} | tojson }}'></script>
+{% endif %}
+{% endblock %}

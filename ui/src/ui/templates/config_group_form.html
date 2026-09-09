@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}{{ group }}{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+{% if back_url %}<a class="crumb" href="{{ back_url }}">&larr; {{ t('config.group_form.back_to', name=group.split(' — ')[0]) }}</a>{% endif %}
+<div class="page-header"><h1>{{ group }}</h1></div>
+
+{% include "_config_group_form_body.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Wiring fields change pub/sub topology — confirm only when one of them
+  // actually changed, so routine edits to a non-wiring field in the same
+  // group aren't interrupted.
+  document.getElementById("config-form").addEventListener("submit", function (event) {
+    var wiring = document.querySelectorAll("[data-wiring], .wiring-row select");
+    var changed = false;
+    wiring.forEach(function (el) {
+      if (el.value !== el.dataset.original) changed = true;
+    });
+    if (changed && !confirm({{ t('config.group_form.wiring_confirm') | tojson }})) {
+      event.preventDefault();
+    }
+  });
+
+  // Attention-tone preview: render the *unsaved* field value to a WAV and
+  // play it, so the operator hears the beeps before Save. A bad spec comes
+  // back as 400 + a readable message.
+  (function () {
+    var btn = document.getElementById("tone-preview-btn");
+    if (!btn) return;
+    var input = document.getElementById("BEACON_VOICE_ATTENTION_TONE");
+    var msg = document.getElementById("tone-preview-msg");
+    var audio = document.getElementById("tone-preview-audio");
+    var objectUrl = null;
+    function cleanup() {
+      if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    }
+    audio.addEventListener("ended", cleanup);
+    btn.addEventListener("click", function () {
+      var spec = (input.value || "").trim();
+      msg.textContent = "";
+      if (!spec) { msg.textContent = {{ t('config.group_form.tone_disabled') | tojson }}; return; }
+      btn.disabled = true;
+      fetch("/config/tone-preview?spec=" + encodeURIComponent(spec))
+        .then(function (res) {
+          if (!res.ok) return res.text().then(function (t) { throw new Error(t); });
+          return res.blob();
+        })
+        .then(function (blob) {
+          cleanup();
+          objectUrl = URL.createObjectURL(blob);
+          audio.src = objectUrl;
+          audio.play();
+        })
+        .catch(function (err) { msg.textContent = "⚠ " + err.message; })
+        .finally(function () { btn.disabled = false; });
+    });
+  })();
+</script>
+{% endblock %}

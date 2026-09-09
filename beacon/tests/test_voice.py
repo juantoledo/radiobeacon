@@ -1,0 +1,104 @@
+import shutil
+
+import pytest
+
+from beacon.voice import synthesize_speech
+
+
+def test_synthesize_speech_returns_false_when_binary_missing(tmp_path, monkeypatch):
+    import subprocess
+
+    def _raise_not_found(*args, **kwargs):
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(subprocess, "run", _raise_not_found)
+
+    assert synthesize_speech("hola", out_path=tmp_path / "out.wav") is False
+
+
+def test_synthesize_speech_returns_false_on_nonzero_exit(tmp_path, monkeypatch):
+    import subprocess
+
+    class _FakeResult:
+        returncode = 1
+        stderr = b"boom"
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeResult())
+
+    assert synthesize_speech("hola", out_path=tmp_path / "out.wav") is False
+
+
+def test_synthesize_speech_creates_parent_directory(tmp_path, monkeypatch):
+    import subprocess
+
+    class _FakeResult:
+        returncode = 0
+        stderr = b""
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: _FakeResult())
+    out_path = tmp_path / "nested" / "dir" / "out.wav"
+
+    synthesize_speech("hola", out_path=out_path)
+
+    assert out_path.parent.is_dir()
+
+
+@pytest.mark.skipif(shutil.which("espeak-ng") is None, reason="espeak-ng not installed")
+def test_synthesize_speech_produces_a_real_wav_file(tmp_path):
+    """Only checks that a non-empty file gets produced -- audio
+    correctness/intelligibility isn't verifiable by any automated test."""
+    out_path = tmp_path / "out.wav"
+
+    ok = synthesize_speech("hola mundo", out_path=out_path)
+
+    assert ok is True
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_synthesize_speech_piper_returns_false_without_model_configured(tmp_path):
+    ok = synthesize_speech("hola", out_path=tmp_path / "out.wav", engine="piper", piper_model="")
+
+    assert ok is False
+
+
+def test_synthesize_speech_piper_returns_false_when_binary_missing(tmp_path, monkeypatch):
+    import subprocess
+
+    def _raise_not_found(*args, **kwargs):
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(subprocess, "run", _raise_not_found)
+
+    ok = synthesize_speech(
+        "hola", out_path=tmp_path / "out.wav", engine="piper", piper_model="/models/es.onnx"
+    )
+
+    assert ok is False
+
+
+def test_synthesize_speech_piper_invokes_binary_with_model_and_stdin_text(tmp_path, monkeypatch):
+    import subprocess
+
+    captured = {}
+
+    class _FakeResult:
+        returncode = 0
+        stderr = b""
+
+    def _fake_run(cmd, *, input, **kwargs):
+        captured["cmd"] = cmd
+        captured["input"] = input
+        return _FakeResult()
+
+    monkeypatch.setattr(subprocess, "run", _fake_run)
+    out_path = tmp_path / "out.wav"
+
+    ok = synthesize_speech(
+        "hola mundo", out_path=out_path, engine="piper",
+        piper_model="/models/es.onnx", piper_binary="piper",
+    )
+
+    assert ok is True
+    assert captured["cmd"] == ["piper", "--model", "/models/es.onnx", "--output_file", str(out_path)]
+    assert captured["input"] == b"hola mundo"

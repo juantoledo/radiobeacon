@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ t('about.title') }}{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ t('about.title') }}</h1></div>
+
+<div class="about">
+
+  <section class="about-section">
+    <h2>{{ t('about.intro.heading') }}</h2>
+    <p>{{ t('about.intro.p1') }}</p>
+    <p>{{ t('about.intro.p2') }}</p>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ t('about.how.heading') }}</h2>
+    <p>{{ t('about.how.p1') }}</p>
+    <p>{{ t('about.how.flow_intro') }}</p>
+
+    <ol class="about-flow">
+      {% for n in range(1, 7) %}
+      <li class="about-flow-step">
+        <span class="about-flow-num" aria-hidden="true">{{ n }}</span>
+        <span class="about-flow-body">
+          <span class="about-flow-label">{{ t('about.flow.step' ~ n ~ '_label') }}</span>
+          <span class="about-flow-desc">{{ t('about.flow.step' ~ n ~ '_desc') }}</span>
+        </span>
+      </li>
+      {% endfor %}
+    </ol>
+
+    <p class="about-flow-foot">{{ t('about.flow.logged') }}</p>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ t('about.radio.heading') }}</h2>
+    <p>{{ t('about.radio.p1') }}</p>
+    <p class="about-note">{{ t('about.radio.note') }}</p>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ t('about.sources.heading') }}</h2>
+    <p>{{ t('about.sources.p1') }}</p>
+    <ul class="about-list">
+      <li>{{ t('about.sources.senapred') }}</li>
+      <li>{{ t('about.sources.csn') }}</li>
+    </ul>
+    <p>{{ t('about.sources.p2') }}</p>
+    <p class="banner-warn">⚠ {{ t('about.sources.disclaimer') }}</p>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ t('about.ai.heading') }}</h2>
+    <p>{{ t('about.ai.p1') }}</p>
+    <p>{{ t('about.ai.p2') }}</p>
+    <p>{{ t('about.ai.p3') }}</p>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ t('about.control.heading') }}</h2>
+    <ul class="about-list">
+      {% for n in range(1, 6) %}
+      <li>{{ t('about.control.item' ~ n) }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ t('about.notwhat.heading') }}</h2>
+    <ul class="about-list">
+      {% for n in range(1, 4) %}
+      <li>{{ t('about.notwhat.item' ~ n) }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ t('config.import_export.title') }}{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+<div class="page-header"><h1>{{ t('config.import_export.title') }}</h1></div>
+<p class="meta-line">
+  {{ t('config.import_export.intro', config_code='<code>/config</code>', key1='<code>ANTHROPIC_API_KEY</code>', key2='<code>OPENAI_API_KEY</code>') | safe }}
+</p>
+
+<div class="tool-cards">
+  <a class="tool-card" href="/config/import-export/download">
+    <div class="tool-icon">{{ icon('transfer', 20) }}</div>
+    <div class="tool-title">{{ t('config.import_export.export_title') }}</div>
+    <div class="tool-desc">{{ t('config.import_export.export_desc') }}</div>
+  </a>
+</div>
+
+<h2>{{ t('config.import_export.import_heading') }}</h2>
+<p class="meta-line">
+  {{ t('config.import_export.import_desc', script_code='<code>export_config.py</code>') | safe }}
+</p>
+<form method="post" action="/config/import-export/preview" enctype="multipart/form-data">
+  {{ csrf_field() }}
+  <p><input type="file" name="upload" accept="application/json,.json" required></p>
+  <p><button type="submit">{{ t('config.import_export.preview_button') }}</button></p>
+</form>
+{% endblock %}

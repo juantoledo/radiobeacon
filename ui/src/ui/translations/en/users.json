@@ -1,0 +1,19 @@
+{
+  "users.title": "Users",
+  "users.new_user": "New user",
+  "users.username_label": "Username",
+  "users.role_label": "Role",
+  "users.password_label": "Password",
+  "users.confirm_password_label": "Confirm password",
+  "users.create_button": "Create user",
+  "users.edit_button": "Edit",
+  "users.delete_button": "Delete",
+  "users.delete_confirm": "Delete this user? This cannot be undone.",
+  "users.reset_password_button": "Reset password",
+  "users.role_admin": "Admin",
+  "users.role_user": "User",
+  "users.cannot_remove_last_admin": "Cannot remove the last remaining admin.",
+  "users.password_mismatch": "Passwords do not match.",
+  "users.disabled_label": "disabled",
+  "users.empty_state": "No users yet."
+}

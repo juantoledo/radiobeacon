@@ -1,0 +1,19 @@
+{
+  "users.title": "Usuarios",
+  "users.new_user": "Nuevo usuario",
+  "users.username_label": "Usuario",
+  "users.role_label": "Rol",
+  "users.password_label": "Contraseña",
+  "users.confirm_password_label": "Confirmar contraseña",
+  "users.create_button": "Crear usuario",
+  "users.edit_button": "Editar",
+  "users.delete_button": "Eliminar",
+  "users.delete_confirm": "¿Eliminar este usuario? Esta acción no se puede deshacer.",
+  "users.reset_password_button": "Restablecer contraseña",
+  "users.role_admin": "Admin",
+  "users.role_user": "Usuario",
+  "users.cannot_remove_last_admin": "No se puede eliminar al último administrador restante.",
+  "users.password_mismatch": "Las contraseñas no coinciden.",
+  "users.disabled_label": "deshabilitado",
+  "users.empty_state": "Aún no hay usuarios."
+}

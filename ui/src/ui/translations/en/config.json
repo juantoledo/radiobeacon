@@ -1,0 +1,56 @@
+{
+  "config.category.banner_warning": "Changes take effect immediately for Actions (config is re-read per message) and on next process restart for Dispatcher, MQ, and Beacon infra (config is read once at process start). This dashboard has no login — anyone with network access to it can change live pipeline behavior and provider credentials.",
+  "config.category.section_general": "General",
+  "config.category.section_advanced_note": "advanced, rarely changed",
+  "config.category.col_group": "Group",
+  "config.category.col_settings": "Settings",
+  "config.category.setting_singular": "{count} setting",
+  "config.category.setting_plural": "{count} settings",
+  "config.category.overridden_badge": "{count} overridden",
+  "config.category.badge_wiring": "wiring",
+  "config.category.badge_advanced": "advanced",
+
+  "config.group_form.back_to": "Back to {name}",
+  "config.group_form.wiring_confirm": "This changes MQTT topic/event wiring — a mistake here can silently break a pipeline. Save anyway?",
+  "config.group_form.tone_disabled": "Tone disabled (field is empty).",
+
+  "config.import_export.title": "Import / Export config",
+  "config.import_export.intro": "A JSON snapshot of everything under {config_code} — settings overrides, transmit policies, source display names, and every adapter definition. Secrets ({key1}, {key2}) are never included. Import only creates or updates by name/source — it never deletes anything already on this install that's absent from the file.",
+  "config.import_export.export_title": "Export",
+  "config.import_export.export_desc": "Download the current config as a JSON file.",
+  "config.import_export.import_heading": "Import",
+  "config.import_export.import_desc": "Upload a file produced by Export above (or by {script_code}) to preview what would change before anything is written — nothing is applied until you confirm on the next page.",
+  "config.import_export.preview_button": "Preview import",
+  "config.import_export.back_to_import_export": "Back to Import / Export",
+
+  "config.import_preview.title": "Preview import",
+  "config.import_preview.intro": "Nothing has been written yet — this is a dry run. Review below, then confirm to actually apply it. Existing settings/adapters/policies/sources sharing a key with the file will be overwritten; nothing already on this install that's absent from the file is touched.",
+  "config.import_preview.skipped_warning": "{count} CUSTOM adapter(s) in this file will be <strong>skipped</strong> — enable {link} on this install to import them. Their Python code is never read or executed either way.",
+  "config.import_preview.ui_dev_tools_link": "UI Dev tools",
+  "config.import_preview.custom_warning": "This file contains <strong>{count}</strong> CUSTOM adapter(s) — operator-authored Python, executed with no sandboxing on every poll once imported. Review each one below before confirming.",
+  "config.import_preview.truncated_note": "… (truncated — the full code is what will actually be stored)",
+  "config.import_preview.confirm_custom_code_label": "I have reviewed the Python code above and accept the risk of executing operator-authored code with no sandboxing.",
+  "config.import_preview.confirm_overwrite_label": "I understand this will overwrite existing settings/adapters/policies/sources sharing a name with this file.",
+  "config.import_preview.confirm_button": "Confirm import",
+  "config.import_preview.nothing_to_apply": "Nothing in this file would create or update anything on this install.",
+
+  "config.import_result.title": "Import complete",
+  "config.import_result.applied_banner": "Import applied — settings/adapters/policies/sources shown as \"created\" or \"updated\" below are now live; nothing else on this install was touched.",
+
+  "config.import_summary.col_section": "Section",
+  "config.import_summary.col_created": "Created",
+  "config.import_summary.col_updated": "Updated",
+  "config.import_summary.col_skipped": "Skipped",
+  "config.import_summary.col_warned": "Warned",
+  "config.import_summary.skipped_heading": "Skipped",
+  "config.import_summary.warnings_heading": "Warnings",
+
+  "config.rf_conf.editor_heading": "{filename} editor",
+  "config.rf_conf.editor_disabled": "Disabled. Set {var} to {val} above to edit {filename} from here.",
+  "config.rf_conf.no_login_warning": "This dashboard has no login. Anyone who can reach it can overwrite {conf_path}. A timestamped <span class=\"mono\">.bak</span> is written on every save. Nothing is restarted — after saving, run {restart_cmd} on the host.",
+  "config.rf_conf.read_only_warning": "The UI process can't write {conf_path} — this is read-only.",
+  "config.rf_conf.save_button": "Save {filename}",
+
+  "config.sparkline.aria_label": "Items per day over the last {days} days",
+  "config.sparkline.caption": "{total} total · peak {peak}/day"
+}

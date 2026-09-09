@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="{{ locale() }}"{% if theme() != 'system' %} data-theme="{{ theme() }}"{% endif %}>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}radiobeacon{% endblock %} · radiobeacon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&display=swap">
+  <link rel="stylesheet" href="{{ static_url('style.css') }}">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' rx='6' fill='%23d7263d'/><circle cx='12' cy='7' r='2.2' fill='white'/><path d='M8 12a5 5 0 0 1 8 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round'/><path d='M5 9a9 9 0 0 1 14 0' stroke='white' stroke-width='2' fill='none' stroke-linecap='round' opacity='0.55'/></svg>">
+</head>
+<body>
+{% set nav_items = [
+  ('/', 'dashboard', t('nav.dashboard'), request.url.path == '/'),
+  ('/about', 'beacon', t('nav.about'), request.url.path.startswith('/about')),
+  ('/items', 'items', t('nav.items'), request.url.path.startswith('/items')),
+] %}
+{% if is_admin() %}
+{% set nav_items = nav_items + [
+  ('/config', 'config', t('nav.config'), request.url.path.startswith('/config') or request.url.path.startswith('/adapters') or request.url.path.startswith('/policies')),
+  ('/audit', 'audit', t('nav.audit_log'), request.url.path.startswith('/audit')),
+  ('/users', 'users', t('nav.users'), request.url.path.startswith('/users')),
+] %}
+{% endif %}
+  <a class="skip-link" href="#main">{{ t('common.skip_to_content') }}</a>
+
+  <div class="mobile-bar">
+    <button type="button" class="nav-toggle" aria-label="{{ t('common.open_navigation') }}" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 20) }}</button>
+    <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
+  </div>
+
+  <div class="nav-scrim" hidden></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head">
+      <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
+      <button type="button" class="nav-close" aria-label="{{ t('common.close_navigation') }}">{{ icon('close', 20) }}</button>
+    </div>
+    <nav class="sidebar-nav">
+      {% for href, ic, label, active in nav_items %}
+      <a href="{{ href }}" class="{{ 'active' if active else '' }}"{% if active %} aria-current="page"{% endif %}>{{ icon(ic, 18) }}{{ label }}{% if href == '/config' and not is_beacon_configured() %} <span class="badge badge-warn">!</span>{% endif %}</a>
+      {% endfor %}
+      {% if dev_tools_enabled() and is_admin() %}
+      <a href="/dev" class="{{ 'active' if request.url.path.startswith('/dev') else '' }}">{{ icon('developers', 18) }}{{ t('nav.developers') }}</a>
+      {% endif %}
+    </nav>
+    <div class="sidebar-foot">
+      {% if is_admin() %}
+        {% if is_beacon_configured() %}
+        <span class="live-badge"><span class="pulse-dot" aria-hidden="true"></span>{{ t('common.beacon_identity_set') }}</span>
+        {% else %}
+        <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
+        {% endif %}
+      {% endif %}
+      <div class="sidebar-prefs">
+        {# Icon-only segmented control (System/Light/Dark) — the conventional
+           shape for a theme switcher (VS Code, GitHub, etc): three mutually
+           exclusive, always-visible options rather than a menu, since there
+           are only ever three and the current choice should be glanceable
+           without opening anything. #}
+        <form class="theme-switcher" method="post" action="/theme" role="group" aria-label="{{ t('common.theme') }}">
+          {{ csrf_field() }}
+          <input type="hidden" name="next" value="{{ request.url.path }}">
+          <button type="submit" name="theme" value="system" class="{{ 'active' if theme() == 'system' else '' }}" title="{{ t('common.theme_system') }}" aria-label="{{ t('common.theme_system') }}" {% if theme() == 'system' %}aria-current="true"{% endif %}>{{ icon('monitor', 15) }}</button>
+          <button type="submit" name="theme" value="light" class="{{ 'active' if theme() == 'light' else '' }}" title="{{ t('common.theme_light') }}" aria-label="{{ t('common.theme_light') }}" {% if theme() == 'light' %}aria-current="true"{% endif %}>{{ icon('sun', 15) }}</button>
+          <button type="submit" name="theme" value="dark" class="{{ 'active' if theme() == 'dark' else '' }}" title="{{ t('common.theme_dark') }}" aria-label="{{ t('common.theme_dark') }}" {% if theme() == 'dark' %}aria-current="true"{% endif %}>{{ icon('moon', 15) }}</button>
+        </form>
+        {# Native <select>, auto-submitting on change — the conventional
+           shape for a language picker (a button-per-language stops scaling
+           past two or three and reads oddly as a "choice among many"
+           control; a <select> is the standard affordance and stays usable
+           with JS disabled via the fallback button below). #}
+        <form class="locale-select" method="post" action="/locale" aria-label="{{ t('common.language') }}">
+          {{ csrf_field() }}
+          <input type="hidden" name="next" value="{{ request.url.path }}">
+          {{ icon('globe', 14) }}
+          <label class="sr-only" for="locale-select-input">{{ t('common.language') }}</label>
+          <select id="locale-select-input" name="locale" onchange="this.form.submit()">
+            <option value="en" {% if locale() == 'en' %}selected{% endif %}>English</option>
+            <option value="es" {% if locale() == 'es' %}selected{% endif %}>Español</option>
+          </select>
+          <noscript><button type="submit" class="btn secondary">{{ t('common.save') }}</button></noscript>
+        </form>
+      </div>
+      {% if current_user() %}
+      <form class="logout-form" method="post" action="/logout">
+        {{ csrf_field() }}
+        <span class="muted logged-in-as">{{ t('auth.logged_in_as', username=current_user().username) }}</span>
+        <button type="submit" class="btn secondary logout-btn">{{ icon('power', 14) }} {{ t('auth.logout_button') }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </aside>
+
+  <div class="app-main">
+    <main id="main">
+      {% if request.query_params.get('msg') %}
+        <p class="banner">✓ {{ request.query_params.get('msg') }}</p>
+      {% endif %}
+      {% if request.query_params.get('error') %}
+        <p class="banner-warn">⚠ {{ request.query_params.get('error') }}</p>
+      {% endif %}
+      {% if is_admin() and not is_beacon_configured() and not request.url.path.startswith('/config/beacon-identity') %}
+        <p class="banner-warn">⚠ {{ t('common.beacon_not_configured_warning', link='<a href="/config/beacon-identity">' ~ t('common.set_it_up') ~ '</a>') | safe }}</p>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  {# Feedback for a form submitted via ajax-forms.js — the AJAX counterpart
+     to the ?msg=/?error= banners above, which only apply to a fresh GET. #}
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
+  <script src="{{ static_url('app-shell.js') }}" defer></script>
+  <script src="{{ static_url('ajax-forms.js') }}" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

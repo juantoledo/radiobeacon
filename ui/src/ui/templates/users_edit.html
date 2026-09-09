@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ user.username }}{% endblock %}
+{% block content %}
+<a class="crumb" href="/users">&larr; {{ t('users.title') }}</a>
+<div class="page-header"><h1>{{ user.username }}</h1></div>
+
+{% if error %}
+<p class="banner-warn">⚠ {{ error }}</p>
+{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h3>{{ t('users.role_label') }}</h3></div>
+  <form method="post" action="/users/{{ user.id }}/role">
+    {{ csrf_field() }}
+    <table class="form-table">
+      <tr>
+        <th><label for="role">{{ t('users.role_label') }}</label></th>
+        <td>
+          <select id="role" name="role">
+            <option value="user" {% if user.role == 'user' %}selected{% endif %}>{{ t('users.role_user') }}</option>
+            <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>{{ t('users.role_admin') }}</option>
+          </select>
+        </td>
+      </tr>
+    </table>
+    <button type="submit">{{ t('common.save') }}</button>
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h3>{{ t('users.reset_password_button') }}</h3></div>
+  <form method="post" action="/users/{{ user.id }}/reset-password">
+    {{ csrf_field() }}
+    <table class="form-table">
+      <tr>
+        <th><label for="password">{{ t('users.password_label') }}</label></th>
+        <td><input id="password" name="password" type="password" required autocomplete="new-password"></td>
+      </tr>
+      <tr>
+        <th><label for="confirm_password">{{ t('users.confirm_password_label') }}</label></th>
+        <td><input id="confirm_password" name="confirm_password" type="password" required autocomplete="new-password"></td>
+      </tr>
+    </table>
+    <button type="submit">{{ t('users.reset_password_button') }}</button>
+  </form>
+</section>
+{% endblock %}

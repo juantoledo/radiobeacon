@@ -1,0 +1,206 @@
+"""Locating the WAV clips the beacon renders (per-item voice bulletins and
+one-shot manual transmissions) so the dashboard can play them back in the
+browser.
+
+The beacon writes one WAV per voice unit into BEACON_TTS_WAV_DIR, named
+``{source}-{item_id}-{unix_ts}.wav`` (frame/packet clips get an extra
+``-{chunk_index}`` segment and are *not* offered for playback — they're
+AFSK modem tones, not speech). beacon.__main__ anchors a relative
+BEACON_TTS_WAV_DIR at the repo root, and ui/docker-compose.yml bind-mounts
+that same top-level storage/ directory, so both processes see one shared
+folder. Nothing here ever opens a caller-supplied path — every returned
+Path comes from iterating the directory itself.
+"""
+import json
+import re
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+from adapters.storage import get_setting
+
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Remainder after the ``{source}-{item_id}-`` prefix for a voice clip: just
+# the unix timestamp. A frame clip's remainder is ``{chunk_index}-{ts}``,
+# which this rejects.
+_VOICE_REMAINDER = re.compile(r"\d+\.wav\Z")
+
+# Manual one-shot clips: ``manual-{beacon_manual_tx.id}-{unix_ts}.wav`` (see
+# beacon.__main__._transmit_manual_unit). Both voice and frame manual sends
+# use this name — the file alone can't say which, so the dashboard just
+# offers every one for playback.
+_MANUAL_CLIP = re.compile(r"\Amanual-(\d+)-(\d+)\.wav\Z")
+
+
+def wav_dir(conn: sqlite3.Connection) -> Path:
+    """The directory the beacon renders TTS clips into — same resolution
+    rule as beacon.__main__._resolve_wav_dir (relative -> repo root)."""
+    raw = get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else _REPO_ROOT / path
+
+
+def _safe_segment(value: str) -> bool:
+    return bool(value) and not (set(value) & {"/", "\\", "\0"}) and ".." not in value
+
+
+def latest_voice_clip(conn: sqlite3.Connection, source: str, item_id: str) -> Path | None:
+    """Newest voice WAV the beacon rendered for this item, or None."""
+    if not _safe_segment(source) or not _safe_segment(item_id):
+        return None
+    prefix = f"{source}-{item_id}-"
+    try:
+        candidates = [
+            entry
+            for entry in wav_dir(conn).iterdir()
+            if entry.is_file()
+            and entry.name.startswith(prefix)
+            and _VOICE_REMAINDER.match(entry.name[len(prefix):])
+        ]
+    except OSError:
+        return None
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def recent_manual_clips(conn: sqlite3.Connection, limit: int = 5) -> list[dict]:
+    """The most recently rendered manual-transmission clips, newest first:
+    ``{"name", "manual_id", "at"}`` (``at`` = the file's mtime as an ISO
+    UTC string, the closest stand-in for when it went on air)."""
+    try:
+        entries = [
+            entry
+            for entry in wav_dir(conn).iterdir()
+            if entry.is_file() and _MANUAL_CLIP.match(entry.name)
+        ]
+    except OSError:
+        return []
+    entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
+    clips = []
+    for entry in entries[:limit]:
+        match = _MANUAL_CLIP.match(entry.name)
+        clips.append(
+            {
+                "name": entry.name,
+                "manual_id": int(match.group(1)),
+                "at": datetime.fromtimestamp(
+                    entry.stat().st_mtime, tz=timezone.utc
+                ).isoformat(),
+            }
+        )
+    return clips
+
+
+# Successful-transmission audit events that carry a `clip` filename in their
+# details JSON (added by beacon.__main__ — see _transmit_voice_unit /
+# _transmit_frame_unit). One row per airing, so a repeating Policy produces
+# several; each has its own WAV.
+_CLIP_EVENT_KIND = {
+    "beacon.voice.transmitted": "voice",
+    "beacon.frame.transmitted": "frame",
+}
+
+# A clip name that legitimately belongs to (source, item_id): the beacon
+# builds it as `{source}-{item_id}-{ts}.wav` (voice) or
+# `{source}-{item_id}-{chunk}-{ts}.wav` (frame).
+def _item_clip_re(source: str, item_id: str) -> re.Pattern:
+    return re.compile(rf"\A{re.escape(source)}-{re.escape(item_id)}-(?:(\d+)-)?\d+\.wav\Z")
+
+
+def list_item_transmissions(
+    conn: sqlite3.Connection, source: str, item_id: str
+) -> list[dict]:
+    """Every transmission this item has had that still has its rendered WAV
+    on disk, newest first. Read straight from `audit_log` (authoritative air
+    time + metadata), filtered to rows whose `clip` file still exists.
+
+    Each entry: ``{"kind": "voice"|"frame", "ref": int|None, "at": <iso>,
+    "name": <filename>, "url": "/items/<s>/<i>/audio/<filename>",
+    "truncated": bool|None, "byte_length": int|None}``.
+    """
+    if not _safe_segment(source) or not _safe_segment(item_id):
+        return []
+    rows = conn.execute(
+        "SELECT event_type, details, recorded_at FROM audit_log "
+        "WHERE source = ? AND item_id = ? "
+        "AND event_type IN ('beacon.voice.transmitted', 'beacon.frame.transmitted') "
+        "ORDER BY id DESC",
+        (source, item_id),
+    ).fetchall()
+    directory = wav_dir(conn)
+    name_re = _item_clip_re(source, item_id)
+    out: list[dict] = []
+    for event_type, details_raw, recorded_at in rows:
+        try:
+            details = json.loads(details_raw) if details_raw else {}
+        except (TypeError, ValueError):
+            details = {}
+        name = details.get("clip")
+        if not isinstance(name, str):
+            continue
+        match = name_re.match(name)
+        if match is None:
+            continue
+        if not (directory / name).is_file():
+            continue
+        ref = details.get("ref")
+        if ref is None and match.group(1) is not None:
+            ref = int(match.group(1))
+        out.append(
+            {
+                "kind": _CLIP_EVENT_KIND[event_type],
+                "ref": ref,
+                "at": recorded_at,
+                "name": name,
+                "url": f"/items/{source}/{item_id}/audio/{name}",
+                "truncated": details.get("truncated"),
+                "byte_length": details.get("byte_length"),
+            }
+        )
+    return out
+
+
+def item_transmission_counts(
+    conn: sqlite3.Connection, items: list[sqlite3.Row]
+) -> dict[tuple[str, str], int]:
+    """{(source, item_id): count} of successful transmissions per item — one
+    grouped query over `audit_log` for the dashboard feed (decides which
+    rows get a play button / an "xN" disclosure). Not file-existence
+    filtered: this is a cheap "has it ever aired?" hint; the per-item list
+    (list_item_transmissions) does the disk check."""
+    keys = {(row["source"], row["item_id"]) for row in items}
+    if not keys:
+        return {}
+    rows = conn.execute(
+        "SELECT source, item_id, COUNT(*) FROM audit_log "
+        "WHERE event_type IN ('beacon.voice.transmitted', 'beacon.frame.transmitted') "
+        "GROUP BY source, item_id"
+    ).fetchall()
+    return {(s, i): c for s, i, c in rows if (s, i) in keys}
+
+
+def item_clip_path(
+    conn: sqlite3.Connection, source: str, item_id: str, name: str
+) -> Path | None:
+    """Resolve one clip `name` (from list_item_transmissions) to a file on
+    disk, or None. Rejects any name that doesn't match this item's own
+    `{source}-{item_id}-[chunk-]{ts}.wav` shape, so a path segment can't
+    escape the wav dir or reach another item's clips."""
+    if not _safe_segment(source) or not _safe_segment(item_id):
+        return None
+    if not _item_clip_re(source, item_id).match(name or ""):
+        return None
+    path = wav_dir(conn) / name
+    return path if path.is_file() else None
+
+
+def manual_clip_path(conn: sqlite3.Connection, name: str) -> Path | None:
+    """Resolve one ``manual-<id>-<ts>.wav`` name (from recent_manual_clips)
+    to a file on disk, or None. Rejects anything not matching that exact
+    shape, so a path segment can't escape the wav dir."""
+    if not _MANUAL_CLIP.match(name or ""):
+        return None
+    path = wav_dir(conn) / name
+    return path if path.is_file() else None

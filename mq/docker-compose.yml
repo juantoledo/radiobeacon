@@ -1,0 +1,23 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: radiobeacon-mosquitto
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      # Mounting the whole directory (rather than bind-mounting just
+      # mosquitto.conf as a single file) is deliberate: single-file bind
+      # mounts have more runtime-specific edge cases (podman's Docker-API
+      # compat layer in particular has known cases where the mount ends up
+      # as an empty directory instead of the file, which is exactly what
+      # produced mosquitto's "Unable to open config file" on rootless
+      # podman) — mounting the directory sidesteps that whole class of
+      # problem and behaves identically on plain Docker.
+      # :Z requests an SELinux relabel; harmless on non-SELinux hosts
+      # (e.g. Ubuntu's default AppArmor) — kept for hosts where it matters.
+      - ./config:/mosquitto/config:ro,Z
+      - mosquitto-data:/mosquitto/data
+
+volumes:
+  mosquitto-data:

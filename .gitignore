@@ -1,0 +1,17 @@
+.venv/
+run/
+storage/*.db
+storage/*.db-wal
+storage/*.db-shm
+storage/beacon_tts/
+# beacon/ runs with cwd=beacon/, so a relative BEACON_TTS_PIPER_MODEL (the
+# default) and any leftover pre-repo-root-anchoring beacon_tts/ output land
+# here — none of it belongs in git.
+beacon/storage/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.env

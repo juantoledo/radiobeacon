@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ t('config.import_result.title') }}{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+<a class="crumb" href="/config/import-export">&larr; {{ t('config.import_export.back_to_import_export') }}</a>
+<div class="page-header"><h1>{{ t('config.import_result.title') }}</h1></div>
+
+<p class="banner">✓ {{ t('config.import_result.applied_banner') }}</p>
+
+{% include "_config_import_summary_table.html" %}
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "edit" %}{{ t('dev_item_form.edit_title') }}{% else %}{{ t('dev_item_form.new_title') }}{% endif %}{% endblock %}
+{% block content %}
+<a class="crumb" href="/dev">&larr; {{ t('dev_item_form.back_to_developers') }}</a>
+<div class="page-header"><h1>{% if mode == "edit" %}{{ t('dev_item_form.edit_heading') }}{% else %}{{ t('dev_item_form.new_heading') }}{% endif %}</h1></div>
+
+<p class="banner-warn">
+  ⚠ {{ t('dev_item_form.write_warning') | safe }}
+</p>
+
+<form method="post" action="{% if mode == 'edit' %}/dev/items/{{ item.source }}/{{ item.item_id }}{% else %}/dev/items{% endif %}">
+  {{ csrf_field() }}
+  <table class="form-table">
+    <tr>
+      <th><label for="source">source</label></th>
+      <td>
+        {% if mode == "edit" %}
+        <input type="text" value="{{ item.source }}" readonly>
+        {% else %}
+        <input id="source" name="source" type="text" required placeholder="{{ t('dev_item_form.source_placeholder') }}">
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <th><label for="item_id">item_id</label></th>
+      <td>
+        {% if mode == "edit" %}
+        <input type="text" value="{{ item.item_id }}" readonly>
+        {% else %}
+        <input id="item_id" name="item_id" type="text" required value="{{ suggested_item_id }}">
+        {% endif %}
+      </td>
+    </tr>
+    <tr>
+      <th><label for="extracted_title">extracted_title</label></th>
+      <td><input id="extracted_title" name="extracted_title" type="text" value="{{ (item.extracted_title if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="extracted_contents">extracted_contents</label></th>
+      <td><textarea id="extracted_contents" name="extracted_contents">{{ (item.extracted_contents if item else '') or '' }}</textarea></td>
+    </tr>
+    <tr>
+      <th><label for="summary">summary</label></th>
+      <td><textarea id="summary" name="summary">{{ (item.summary if item else '') or '' }}</textarea></td>
+    </tr>
+    <tr>
+      <th><label for="url">url</label></th>
+      <td><input id="url" name="url" type="text" value="{{ (item.url if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="event_key">event_key</label></th>
+      <td><input id="event_key" name="event_key" type="text" value="{{ (item.event_key if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="type">type</label></th>
+      <td><input id="type" name="type" type="text" value="{{ (item.type if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="subtype">subtype</label></th>
+      <td><input id="subtype" name="subtype" type="text" value="{{ (item.subtype if item else '') or '' }}"></td>
+    </tr>
+    <tr>
+      <th><label for="policy">policy</label></th>
+      <td>
+        <input id="policy" name="policy" type="text" list="policy-names"
+               value="{{ (item.policy if item else suggested_policy) or '' }}">
+        <datalist id="policy-names">
+          {% for p in policies %}<option value="{{ p.name }}">{% endfor %}
+        </datalist>
+      </td>
+    </tr>
+    <tr>
+      <th><label for="source_date_time">source_date_time</label></th>
+      <td><input id="source_date_time" name="source_date_time" type="text"
+                 placeholder="2026-08-22T11:36:52+00:00"
+                 value="{{ (item.source_date_time if item else suggested_source_date_time) or '' }}"></td>
+    </tr>
+  </table>
+  <button type="submit">{% if mode == "edit" %}{{ t('common.save') }}{% else %}{{ t('dev_item_form.create_button') }}{% endif %}</button>
+</form>
+
+{% if mode == "edit" %}
+<h2>{{ t('dev_item_form.dispatcher_state_heading') }}</h2>
+<form class="action" method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/reset-dispatch">
+  {{ csrf_field() }}
+  <label for="consumer">{{ t('dev_item_form.reset_dispatch_label') }}</label>
+  <input id="consumer" name="consumer" type="text" value="{{ default_consumer }}">
+  <button type="submit" class="secondary">{{ t('dev_item_form.reset_button') }}</button>
+</form>
+<p class="muted" style="font-size: 0.82rem;">
+  {{ t('dev_item_form.reset_dispatch_help') }}
+</p>
+
+<h2>{{ t('dev_item_form.delete_heading') }}</h2>
+<form method="post" action="/dev/items/{{ item.source }}/{{ item.item_id }}/delete"
+      onsubmit="return confirm('{{ t('dev_item_form.delete_confirm', source=item.source, item_id=item.item_id) }}');">
+  {{ csrf_field() }}
+  <button type="submit" class="danger">{{ t('dev_item_form.delete_item_button') }}</button>
+</form>
+{% endif %}
+{% endblock %}

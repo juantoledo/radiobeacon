@@ -1,0 +1,15 @@
+{# Inline bar sparkline for "items per day, last 14 days". No JS, no chart
+   lib — a row of <rect>s scaled to the busiest day. Included by
+   _dashboard_live.html and patched as a whole cell on refresh. #}
+{%- set vals = sparkline | map(attribute='count') | list -%}
+{%- set peak = vals | max -%}
+<svg class="spark" viewBox="0 0 {{ (vals | length) * 8 - 2 }} 32" preserveAspectRatio="none"
+     role="img" aria-label="{{ t('config.sparkline.aria_label', days=(vals | length)) }}">
+  {%- for point in sparkline -%}
+  {%- set h = 2 if not peak else (2 + (point.count / peak) * 30) -%}
+  <rect x="{{ loop.index0 * 8 }}" y="{{ 32 - h }}" width="6" height="{{ '%.1f'|format(h) }}" rx="1">
+    <title>{{ point.day }}: {{ point.count }}</title>
+  </rect>
+  {%- endfor -%}
+</svg>
+<span class="spark-caption">{{ t('config.sparkline.caption', total=(vals | sum), peak=peak) }}</span>

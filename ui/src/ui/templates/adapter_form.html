@@ -1,0 +1,658 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "edit" %}{{ t('adapter_form.title.edit') }}{% else %}{{ t('adapter_form.title.new') }}{% endif %}{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+<a class="crumb" href="/config/adapters">&larr; {{ t('adapter_form.nav.back_to_adapters') }}</a>
+<div class="page-header"><h1>{% if mode == "edit" %}{{ t('adapter_form.heading.edit', source=source) }}{% else %}{{ t('adapter_form.heading.new') }}{% endif %}</h1></div>
+
+{% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
+
+<form method="post" action="{{ '/config/adapters/' + source if mode == 'edit' else '/config/adapters' }}" id="adapter-form">
+  {{ csrf_field() }}
+  <input type="hidden" name="mode" value="{{ mode }}">
+
+  <div class="dash-grid">
+    <div class="dash-col-main">
+
+      <section class="panel">
+        <div class="panel-head"><h3>{{ t('adapter_form.section.ai_settings') }}</h3></div>
+        <label class="switch-checkbox">
+          <span class="switch-checkbox-control">
+            <input id="use_ai" name="use_ai" type="checkbox" {% if use_ai %}checked{% endif %}>
+            <span class="switch-checkbox-track"><span class="switch-checkbox-thumb"></span></span>
+          </span>
+          <span>{{ t('adapter_form.field.use_ai_checkbox_label') }}</span>
+        </label>
+        <div class="meta-line">{{ t('adapter_form.help.use_ai') | safe }}</div>
+
+        <div id="ai-detail-fields">
+          <table class="form-table">
+            <tr>
+              <th><label for="ai_prompt">{{ t('adapter_form.field.ai_prompt_label') }}</label></th>
+              <td>
+                <textarea id="ai_prompt" name="ai_prompt" rows="8"
+                          placeholder="{{ ai_prompt_default }}">{{ ai_prompt }}</textarea>
+                <div class="meta-line">{{ t('adapter_form.help.ai_prompt') | safe }}</div>
+              </td>
+            </tr>
+            <tr>
+              <th><label for="ai_on_failure">{{ t('adapter_form.field.ai_on_failure_label') }}</label></th>
+              <td>
+                <select id="ai_on_failure" name="ai_on_failure">
+                  <option value="continue_with_contents" {% if ai_on_failure == 'continue_with_contents' %}selected{% endif %}>{{ t('adapter_form.field.ai_on_failure_contents') }}</option>
+                  <option value="use_title" {% if ai_on_failure == 'use_title' %}selected{% endif %}>{{ t('adapter_form.field.ai_on_failure_title') }}</option>
+                  <option value="abort" {% if ai_on_failure == 'abort' %}selected{% endif %}>{{ t('adapter_form.field.ai_on_failure_abort') }}</option>
+                </select>
+                <div class="meta-line">{{ t('adapter_form.help.ai_on_failure') | safe }}</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </section>
+
+      <details class="config-section panel" {% if voice_replacements %}open{% endif %}>
+        <summary>{{ t('adapter_form.section.voice_replacements') }}</summary>
+        <p class="meta-line">{{ t('adapter_form.help.voice_replacements') }}</p>
+        <div class="table-wrap">
+          <table class="kv-table">
+            <thead><tr><th>{{ t('adapter_form.table.replacement_key_header') }}</th><th>{{ t('adapter_form.table.replacement_value_header') }}</th><th></th></tr></thead>
+            <tbody id="voice-replacements-body">
+              {% for row in voice_replacements %}
+              <tr>
+                <td><input type="text" name="vrepl_key" value="{{ row.key }}"></td>
+                <td><input type="text" name="vrepl_value" value="{{ row.value }}"></td>
+                <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">{{ t('adapter_form.button.remove') }}</button></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <button type="button" class="secondary" onclick="addKvRow('voice-replacements-body', 'vrepl_key', 'vrepl_value')">{{ t('adapter_form.button.add_replacement') }}</button>
+        <button type="button" class="secondary" onclick="loadSuggestedReplacements()">{{ t('adapter_form.button.load_suggested_replacements') }}</button>
+        <script type="application/json" id="suggested-voice-replacements">{{ suggested_voice_replacements | tojson }}</script>
+      </details>
+
+      <fieldset id="api-fields">
+        <ol class="about-flow">
+          <li class="about-flow-step">
+            <span class="about-flow-num">1</span>
+            <div class="about-flow-body">
+              <h3 class="about-flow-label">{{ t('adapter_form.section.connection') }}</h3>
+              <div class="panel">
+                <table class="form-table">
+                  <tr>
+                    <th><label for="url">{{ t('adapter_form.field.url_label') }}</label></th>
+                    <td><input id="url" name="url" type="text" value="{{ api_fields.url }}" placeholder="https://api.example.com/..."></td>
+                  </tr>
+                  <tr>
+                    <th><label for="method">{{ t('adapter_form.field.method_label') }}</label></th>
+                    <td>
+                      <select id="method" name="method">
+                        {% for m in ("GET", "POST", "PUT", "PATCH", "DELETE") %}
+                        <option value="{{ m }}" {% if api_fields.method == m %}selected{% endif %}>{{ m }}</option>
+                        {% endfor %}
+                      </select>
+                    </td>
+                  </tr>
+                  <tr>
+                    <th><label for="items_path">{{ t('adapter_form.field.items_path_label') }}</label></th>
+                    <td>
+                      <input id="items_path" name="items_path" type="text" value="{{ api_fields.items_path }}"
+                             placeholder="{{ t('adapter_form.field.items_path_placeholder') }}">
+                    </td>
+                  </tr>
+                  <tr>
+                    <th><label for="body">{{ t('adapter_form.field.body_label') }}</label></th>
+                    <td><textarea id="body" name="body">{{ api_fields.body }}</textarea>
+                      <div class="meta-line">{{ t('adapter_form.help.body') }}</div>
+                    </td>
+                  </tr>
+                </table>
+
+                <details class="config-section" {% if api_fields.headers %}open{% endif %}>
+                  <summary>{{ t('adapter_form.section.headers') }}</summary>
+                  <div class="table-wrap">
+                    <table class="kv-table">
+                      <thead><tr><th>{{ t('adapter_form.table.key_header') }}</th><th>{{ t('adapter_form.table.value_header') }}</th><th></th></tr></thead>
+                      <tbody id="headers-body">
+                        {% for row in api_fields.headers %}
+                        <tr>
+                          <td><input type="text" name="header_key" value="{{ row.key }}"></td>
+                          <td><input type="text" name="header_value" value="{{ row.value }}"></td>
+                          <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">{{ t('adapter_form.button.remove') }}</button></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button type="button" class="secondary" onclick="addKvRow('headers-body', 'header_key', 'header_value')">{{ t('adapter_form.button.add_header') }}</button>
+                </details>
+
+                <details class="config-section" {% if api_fields.query_params %}open{% endif %}>
+                  <summary>{{ t('adapter_form.section.query_parameters') }}</summary>
+                  <div class="table-wrap">
+                    <table class="kv-table">
+                      <thead><tr><th>{{ t('adapter_form.table.key_header') }}</th><th>{{ t('adapter_form.table.value_header') }}</th><th></th></tr></thead>
+                      <tbody id="params-body">
+                        {% for row in api_fields.query_params %}
+                        <tr>
+                          <td><input type="text" name="param_key" value="{{ row.key }}"></td>
+                          <td><input type="text" name="param_value" value="{{ row.value }}"></td>
+                          <td><button type="button" class="secondary remove-row-btn" onclick="this.closest('tr').remove()">{{ t('adapter_form.button.remove') }}</button></td>
+                        </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button type="button" class="secondary" onclick="addKvRow('params-body', 'param_key', 'param_value')">{{ t('adapter_form.button.add_parameter') }}</button>
+                </details>
+              </div>
+            </div>
+          </li>
+
+          <li class="about-flow-step">
+            <span class="about-flow-num">2</span>
+            <div class="about-flow-body">
+              <h3 class="about-flow-label">{{ t('adapter_form.section.preview') }}</h3>
+              <div class="panel">
+                <p class="meta-line">
+                  {{ t('adapter_form.help.preview_intro') }}
+                </p>
+                <button type="submit" formaction="/config/adapters/sample" formnovalidate class="secondary">{{ t('adapter_form.button.fetch_sample') }}</button>
+                {% if sample_response %}
+
+                {% if sample_response.is_list %}
+                <p class="meta-line"><span class="badge badge-success">{{ t('adapter_form.badge.list') }}</span> {{ t('adapter_form.sample.resolves_to_list', count=sample_response.total_count, test_fetch=t('adapter_form.button.test_fetch')) }}</p>
+                {% elif sample_response.items_path_resolved %}
+                <p class="banner-warn">⚠ {{ t('adapter_form.sample.resolves_to_single_value') }}</p>
+                {% else %}
+                <p class="banner-warn">⚠ {{ t('adapter_form.sample.items_path_missing') }}</p>
+                {% endif %}
+
+                {% if sample_response.candidates %}
+                <p class="meta-line">{{ t('adapter_form.sample.detected_lists_intro') }}</p>
+                <p>
+                  {% for c in sample_response.candidates %}
+                  <button type="button" class="secondary use-items-path-btn"
+                          data-path="{{ c.path }}"
+                          title="{{ c.sample_keys | join(', ') }}">
+                    {{ t('adapter_form.sample.candidate_count', path=(c.path if c.path else t('adapter_form.mapping.root_label')), count=c.count, plural=("s" if c.count != 1 else "")) }}
+                  </button>
+                  {% endfor %}
+                </p>
+                {% endif %}
+
+                <p class="meta-line">
+                  {{ t('adapter_form.sample.showing_items', count=sample_response.count, total_count=sample_response.total_count) }}
+                </p>
+                {% if sample_response.field_names %}
+                <p>
+                  {% for name in sample_response.field_names %}
+                  <button type="button" class="secondary field-name-chip draggable-field" draggable="true" data-field-name="{{ name }}">{{ name }}</button>
+                  {% endfor %}
+                </p>
+                {% endif %}
+                <pre class="contents mono json-preview">{{ sample_response.highlighted_html }}</pre>
+                {% endif %}
+                <datalist id="sample-field-names">
+                  {% for name in (sample_response.field_names if sample_response else []) %}
+                  <option value="{{ name }}">
+                  {% endfor %}
+                </datalist>
+              </div>
+            </div>
+          </li>
+
+          <li class="about-flow-step">
+            <span class="about-flow-num">3</span>
+            <div class="about-flow-body">
+              <h3 class="about-flow-label">{{ t('adapter_form.section.mapping') }}</h3>
+              <div class="panel">
+                <p class="meta-line">
+                  {{ t('adapter_form.help.mapping_intro') | safe }}
+                </p>
+                <p>
+                  <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                          data-field-name="raw" title="{{ t('adapter_form.sample.whole_item_chip_title') }}">
+                    {{ t('adapter_form.sample.whole_item_chip_label') }}
+                  </button>
+                  <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                          data-field-name="response" title="{{ t('adapter_form.sample.whole_response_chip_title') }}">
+                    {{ t('adapter_form.sample.whole_response_chip_label') }}
+                  </button>
+                  <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                          data-field-name="date" title="{{ t('adapter_form.sample.date_chip_title') }}">
+                    {{ t('adapter_form.sample.date_chip_label') }}
+                  </button>
+                  <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                          data-field-name="datetime" title="{{ t('adapter_form.sample.datetime_chip_title') }}">
+                    {{ t('adapter_form.sample.datetime_chip_label') }}
+                  </button>
+                </p>
+                <div class="table-wrap">
+                  <table class="kv-table">
+                    <thead><tr><th>{{ t('adapter_form.table.field_header') }}</th><th>{{ t('adapter_form.table.template_header') }}</th><th>{{ t('adapter_form.table.mapping_date_format_header') | safe }}</th></tr></thead>
+                    <tbody>
+                      {% for name in mapped_fields %}
+                      {% set row = api_fields.mapping[name] %}
+                      <tr class="{{ 'mapping-row-mapped' if row.template else '' }}">
+                        <td class="field-name"><span class="mapped-indicator"></span>{{ name }}</td>
+                        <td{{ ' class="mapping-contents-cell"' | safe if name == 'contents' else '' }}>
+                          {% if name == 'contents' %}
+                          <textarea name="map_{{ name }}_template" rows="3"
+                                    class="mapping-value-input field-drop-target"
+                                    placeholder="{{ t('adapter_form.field.mapping_template_placeholder') }}">{{ row.template }}</textarea>
+                          {% else %}
+                          <input type="text" name="map_{{ name }}_template" value="{{ row.template }}" list="sample-field-names"
+                                 class="mapping-value-input field-drop-target" placeholder="{{ t('adapter_form.field.mapping_template_placeholder') }}">
+                          {% endif %}
+                        </td>
+                        <td>
+                          <input type="text" name="map_{{ name }}_date_format" value="{{ row.date_format }}"
+                                 placeholder="{{ t('adapter_form.field.mapping_date_format_placeholder') }}">
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </li>
+
+          <li class="about-flow-step">
+            <span class="about-flow-num">4</span>
+            <div class="about-flow-body">
+              <details class="config-section" {% if api_fields.date_field or api_fields.date_format or api_fields.source_timezone %}open{% endif %}>
+                <summary>{{ t('adapter_form.section.date_parsing') }}</summary>
+                <div class="panel">
+                  <table class="form-table">
+                    <tr>
+                      <th><label for="date_field">{{ t('adapter_form.field.date_field_label') }}</label></th>
+                      <td>
+                        <input id="date_field" name="date_field" type="text" value="{{ api_fields.date_field }}" list="sample-field-names" class="field-drop-target">
+                        <div class="meta-line">
+                          {{ t('adapter_form.help.date_field') | safe }}
+                          <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                                  data-field-name="date" title="{{ t('adapter_form.sample.date_chip_title') }}">
+                            {{ t('adapter_form.sample.date_chip_label') }}
+                          </button>
+                          <button type="button" class="secondary field-name-chip draggable-field" draggable="true"
+                                  data-field-name="datetime" title="{{ t('adapter_form.sample.datetime_chip_title') }}">
+                            {{ t('adapter_form.sample.datetime_chip_label') }}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <th><label for="date_format">{{ t('adapter_form.field.date_format_label') }}</label></th>
+                      <td><input id="date_format" name="date_format" type="text" value="{{ api_fields.date_format }}"
+                                 placeholder="{{ t('adapter_form.field.date_format_placeholder') }}"></td>
+                    </tr>
+                    <tr>
+                      <th><label for="source_timezone">{{ t('adapter_form.field.source_timezone_label') }}</label></th>
+                      <td><input id="source_timezone" name="source_timezone" type="text" value="{{ api_fields.source_timezone }}"
+                                 placeholder="{{ t('adapter_form.field.source_timezone_placeholder') }}"></td>
+                    </tr>
+                  </table>
+                </div>
+              </details>
+            </div>
+          </li>
+        </ol>
+      </fieldset>
+
+      <fieldset id="custom-fields">
+        <div class="panel">
+          <div class="panel-head"><h3>{{ t('adapter_form.section.python_code') }}</h3></div>
+          <p class="meta-line">
+            {{ t('adapter_form.help.python_code') | safe }}
+          </p>
+          <textarea id="code" name="code" class="code-editor" rows="20" spellcheck="false">{{ custom_fields.code }}</textarea>
+        </div>
+      </fieldset>
+
+      <fieldset id="aiprompt-fields">
+        <div class="panel">
+          <div class="panel-head"><h3>{{ t('adapter_form.section.aiprompt_configuration') }}</h3></div>
+          <p class="meta-line">
+            {{ t('adapter_form.help.aiprompt_intro') | safe }}
+          </p>
+          <table class="form-table">
+            <tr>
+              <th><label for="aip_prompt">{{ t('adapter_form.field.aip_prompt_label') }}</label></th>
+              <td>
+                <textarea id="aip_prompt" name="aip_prompt" rows="6"
+                          placeholder="{{ t('adapter_form.field.aip_prompt_placeholder') }}">{{ aiprompt_fields.prompt }}</textarea>
+                <div class="meta-line">{{ t('adapter_form.help.aip_prompt_format') | safe }}</div>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2"><div class="meta-line">{{ t('adapter_form.help.aip_cron_policy') }}</div></td>
+            </tr>
+            <tr>
+              <th><label for="aip_title_template">{{ t('adapter_form.field.aip_title_template_label') }}</label></th>
+              <td><input id="aip_title_template" name="aip_title_template" type="text"
+                         value="{{ aiprompt_fields.title_template }}"
+                         placeholder="{{ t('adapter_form.field.aip_title_template_placeholder') }}"></td>
+            </tr>
+            <tr>
+              <th><label for="aip_type">{{ t('adapter_form.field.type_label') }}</label></th>
+              <td><input id="aip_type" name="aip_type" type="text" value="{{ aiprompt_fields.type }}"
+                         placeholder="{{ t('adapter_form.field.aip_type_placeholder') }}"></td>
+            </tr>
+            <tr>
+              <th><label for="aip_subtype">{{ t('adapter_form.field.subtype_label') }}</label></th>
+              <td><input id="aip_subtype" name="aip_subtype" type="text" value="{{ aiprompt_fields.subtype }}"
+                         placeholder="{{ t('adapter_form.field.aip_subtype_placeholder') }}"></td>
+            </tr>
+            <tr>
+              <th><label for="aip_event_key_template">{{ t('adapter_form.field.aip_event_key_template_label') }}</label></th>
+              <td><input id="aip_event_key_template" name="aip_event_key_template" type="text"
+                         value="{{ aiprompt_fields.event_key_template }}"
+                         placeholder="{{ t('adapter_form.field.aip_event_key_template_placeholder') }}"></td>
+            </tr>
+          </table>
+          <p class="meta-line">
+            {{ t('adapter_form.help.aip_test_fetch_note', test_fetch=t('adapter_form.button.test_fetch')) | safe }}
+          </p>
+        </div>
+      </fieldset>
+
+      {% if test_result %}
+      <div class="panel">
+        <div class="panel-head"><h3>{{ t('adapter_form.section.test_result') }}</h3></div>
+        {% if test_result.ok %}
+        <p class="meta-line">{{ t('adapter_form.test_result.fetched_summary', total=test_result.total) }}</p>
+        <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>id</th><th>title</th><th>contents</th><th>url</th><th>event_key</th>
+            <th>type</th><th>subtype</th><th>policy</th><th>source_date_time</th><th>raw</th>
+          </tr></thead>
+          <tbody>
+            {% for item in test_result.sample_items %}
+            <tr>
+              <td class="mono">{{ item.id }}</td>
+              <td class="wrap">{{ item.title or "" }}</td>
+              <td class="wrap">{{ item.contents or "" }}</td>
+              <td class="wrap">{{ item.url or "" }}</td>
+              <td class="mono">{{ item.event_key or "" }}</td>
+              <td>{{ item.type or "" }}</td>
+              <td>{{ item.subtype or "" }}</td>
+              <td>{{ item.policy or "" }}</td>
+              <td>{{ item.source_date_time or "" }}</td>
+              <td>
+                <details>
+                  <summary class="muted">{{ t('adapter_form.action.view') }}</summary>
+                  <pre class="contents mono json-preview">{{ item.raw_html }}</pre>
+                </details>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% else %}
+        <p class="banner-warn">⚠ {{ t('adapter_form.test_result.fetch_failed_prefix') }} {{ test_result.error }}</p>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    </div>
+
+    <aside class="dash-col-side">
+      <section class="panel">
+        <div class="panel-head"><h3>{{ t('adapter_form.section.identity') }}</h3></div>
+        <div class="field-stack">
+          <div class="field">
+            <label for="source">{{ t('adapter_form.field.source_label') }}</label>
+            <input id="source" name="source" type="text" required
+                   placeholder="{{ t('adapter_form.field.source_placeholder') }}"
+                   value="{{ source }}" {% if mode == "edit" %}readonly{% endif %}>
+            <div class="meta-line">{{ t('adapter_form.help.source') }}</div>
+          </div>
+          <div class="field">
+            <label for="display_name">{{ t('adapter_form.field.display_name_label') }}</label>
+            <input id="display_name" name="display_name" type="text" value="{{ display_name }}"
+                   placeholder="{{ t('adapter_form.field.display_name_placeholder') }}">
+          </div>
+          <div class="field">
+            <label for="site_url">{{ t('adapter_form.field.site_url_label') }}</label>
+            <input id="site_url" name="site_url" type="text" value="{{ site_url }}"
+                   placeholder="{{ t('adapter_form.field.site_url_placeholder') }}">
+          </div>
+          <div class="field">
+            <label>{{ t('adapter_form.field.type_label') }}</label>
+            <input type="hidden" id="adapter_type" name="adapter_type" value="{{ adapter_type }}">
+            <div class="segmented" role="group" aria-label="{{ t('adapter_form.field.type_label') }}">
+              <button type="button" class="adapter-type-pill {{ 'active' if adapter_type == 'api' else '' }}"
+                      data-adapter-type="api" aria-pressed="{{ 'true' if adapter_type == 'api' else 'false' }}">{{ t('adapter_form.pill.type_api') }}</button>
+              <button type="button" class="adapter-type-pill {{ 'active' if adapter_type == 'custom' else '' }}"
+                      data-adapter-type="custom" aria-pressed="{{ 'true' if adapter_type == 'custom' else 'false' }}">{{ t('adapter_form.pill.type_custom') }}</button>
+              <button type="button" class="adapter-type-pill {{ 'active' if adapter_type == 'aiprompt' else '' }}"
+                      data-adapter-type="aiprompt" aria-pressed="{{ 'true' if adapter_type == 'aiprompt' else 'false' }}">{{ t('adapter_form.pill.type_aiprompt') }}</button>
+            </div>
+            <p class="meta-line adapter-type-caption" data-adapter-type="api" {% if adapter_type != 'api' %}hidden{% endif %}>{{ t('adapter_form.option.type_api') }}</p>
+            <p class="meta-line adapter-type-caption" data-adapter-type="custom" {% if adapter_type != 'custom' %}hidden{% endif %}>{{ t('adapter_form.option.type_custom') }}</p>
+            <p class="meta-line adapter-type-caption" data-adapter-type="aiprompt" {% if adapter_type != 'aiprompt' %}hidden{% endif %}>{{ t('adapter_form.option.type_aiprompt') }}</p>
+          </div>
+          <div class="field">
+            <label class="switch-checkbox">
+              <span class="switch-checkbox-control">
+                <input id="enabled" name="enabled" type="checkbox" {% if enabled %}checked{% endif %}>
+                <span class="switch-checkbox-track"><span class="switch-checkbox-thumb"></span></span>
+              </span>
+              <span>{{ t('adapter_form.field.enabled_checkbox_label') }}</span>
+            </label>
+          </div>
+          <div class="field">
+            <label for="policy">{{ t('adapter_form.field.policy_label') }}</label>
+            <select id="policy" name="policy">
+              {% for p in policies %}
+              <option value="{{ p.name }}" {% if policy == p.name %}selected{% endif %}>{{ p.name }}</option>
+              {% endfor %}
+            </select>
+            <a class="meta-line" href="/config/policies/new">+ {{ t('adapter_form.field.policy_new') }}</a>
+            <div class="meta-line">{{ t('adapter_form.field.policy_help') }}</div>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit">{{ t('common.save') }}</button>
+    <button type="submit" formaction="/config/adapters/test" formnovalidate class="secondary">{{ t('adapter_form.button.test_fetch') }}</button>
+  </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('code-editor.js') }}" defer></script>
+<script>
+  function addKvRow(bodyId, keyName, valueName) {
+    var tbody = document.getElementById(bodyId);
+    var tr = document.createElement("tr");
+    var keyTd = document.createElement("td");
+    var keyInput = document.createElement("input");
+    keyInput.type = "text";
+    keyInput.name = keyName;
+    keyTd.appendChild(keyInput);
+    var valueTd = document.createElement("td");
+    var valueInput = document.createElement("input");
+    valueInput.type = "text";
+    valueInput.name = valueName;
+    valueTd.appendChild(valueInput);
+    var removeTd = document.createElement("td");
+    var removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "secondary remove-row-btn";
+    removeBtn.textContent = "{{ t('adapter_form.button.remove') }}";
+    removeBtn.addEventListener("click", function () { tr.remove(); });
+    removeTd.appendChild(removeBtn);
+    tr.appendChild(keyTd);
+    tr.appendChild(valueTd);
+    tr.appendChild(removeTd);
+    tbody.appendChild(tr);
+    keyInput.focus();
+    return { row: tr, keyInput: keyInput, valueInput: valueInput };
+  }
+
+  // Drop the shipped suggestion set into the pronunciation table — additive,
+  // never clobbers a key the operator already has.
+  function loadSuggestedReplacements() {
+    var raw = document.getElementById("suggested-voice-replacements").textContent;
+    var suggested = JSON.parse(raw || "{}");
+    var body = document.getElementById("voice-replacements-body");
+    var existing = new Set(
+      Array.prototype.map.call(
+        body.querySelectorAll('input[name="vrepl_key"]'),
+        function (i) { return i.value.trim(); }
+      )
+    );
+    Object.keys(suggested).forEach(function (key) {
+      if (existing.has(key)) return;
+      var added = addKvRow("voice-replacements-body", "vrepl_key", "vrepl_value");
+      added.keyInput.value = key;
+      added.valueInput.value = suggested[key];
+    });
+  }
+
+  function updateAdapterTypeVisibility() {
+    var type = document.getElementById("adapter_type").value;
+    document.getElementById("api-fields").style.display = type === "api" ? "" : "none";
+    document.getElementById("custom-fields").style.display = type === "custom" ? "" : "none";
+    document.getElementById("aiprompt-fields").style.display = type === "aiprompt" ? "" : "none";
+  }
+  updateAdapterTypeVisibility();
+
+  // The adapter-type <select> is gone — a hidden #adapter_type input plus
+  // three segmented pill buttons drive the same posted field. Clicking a
+  // pill sets the hidden input's value (a programmatic assignment fires no
+  // native "change" event, so updateAdapterTypeVisibility() is called
+  // directly), toggles which pill looks active, and swaps the one-line
+  // type description shown underneath.
+  document.querySelectorAll(".adapter-type-pill").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var type = btn.dataset.adapterType;
+      document.getElementById("adapter_type").value = type;
+      document.querySelectorAll(".adapter-type-pill").forEach(function (b) {
+        var active = b === btn;
+        b.classList.toggle("active", active);
+        b.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      document.querySelectorAll(".adapter-type-caption").forEach(function (p) {
+        p.hidden = p.dataset.adapterType !== type;
+      });
+      updateAdapterTypeVisibility();
+    });
+  });
+
+  // ai_prompt/ai_on_failure are only meaningful once AI actually runs for
+  // this adapter — hide them while Use AI is unchecked instead of showing
+  // fields with no effect. Never clears their value, so an operator who
+  // unchecks Use AI and later rechecks it gets their override back.
+  function updateAiFieldsVisibility() {
+    document.getElementById("ai-detail-fields").hidden = !document.getElementById("use_ai").checked;
+  }
+  document.getElementById("use_ai").addEventListener("change", updateAiFieldsVisibility);
+  updateAiFieldsVisibility();
+
+  // A row's "mapped" indicator (see .mapped-indicator/.mapping-row-mapped
+  // in style.css) just reflects whether its template box is non-empty —
+  // there's no separate strategy state to track anymore.
+  document.querySelectorAll(".mapping-value-input").forEach(function (input) {
+    function update() {
+      input.closest("tr").classList.toggle("mapping-row-mapped", input.value.trim() !== "");
+    }
+    input.addEventListener("input", update);
+    update();
+  });
+
+  // Detected list paths (see adapters.api_adapter.preview_response):
+  // clicking one fills items_path and immediately re-fetches the sample
+  // with that path, so "is this the right list?" gets an answer in one
+  // click instead of hand-typing a dotted path and re-submitting.
+  document.querySelectorAll(".use-items-path-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.getElementById("items_path").value = btn.dataset.path;
+      var form = document.getElementById("adapter-form");
+      form.action = "/config/adapters/sample";
+      form.submit();
+    });
+  });
+
+  // Drag-and-drop + click-to-insert for field names — both work from two
+  // sources: the deduped chip row, and every key rendered directly inside
+  // the sample JSON below (adapters.api_adapter's preview_response /
+  // ui.routers.adapters._json_to_html), at any nesting depth, so an
+  // operator can drag straight out of the response they're looking at
+  // instead of retyping a key they can already see.
+  //
+  // Drop targets: every mapping row's template box, plus the date-field
+  // and dispatch-rule field inputs. Click targets: only the mapping
+  // template boxes (via "whichever was last focused"), since date_field/
+  // transmit_field are single fields with no ambiguity to resolve — drag
+  // is precise enough there on its own.
+  var lastFocusedMappingInput = document.querySelector('input[name="map_id_template"]');
+  document.querySelectorAll(".mapping-value-input").forEach(function (input) {
+    input.addEventListener("focus", function () { lastFocusedMappingInput = input; });
+  });
+
+  // A mapping template is a construction ("Sismo M{Magnitud} - {Ref}"),
+  // not a single value — so a field name is INSERTED as a {token} at
+  // the input's current cursor position, not a wholesale replacement,
+  // letting an operator build a multi-field template by dragging several
+  // names into the same box one after another.
+  function insertFieldToken(input, name) {
+    var token = "{" + name + "}";
+    var start = input.selectionStart != null ? input.selectionStart : input.value.length;
+    var end = input.selectionEnd != null ? input.selectionEnd : start;
+    var value = input.value || "";
+    input.value = value.slice(0, start) + token + value.slice(end);
+    var newPos = start + token.length;
+    input.focus();
+    input.setSelectionRange(newPos, newPos);
+    input.dispatchEvent(new Event("input"));
+    lastFocusedMappingInput = input;
+  }
+
+  document.querySelectorAll(".draggable-field").forEach(function (el) {
+    el.addEventListener("dragstart", function (event) {
+      event.dataTransfer.setData("text/plain", el.dataset.fieldName);
+      event.dataTransfer.effectAllowed = "copy";
+    });
+    el.addEventListener("click", function () {
+      if (!lastFocusedMappingInput) return;
+      insertFieldToken(lastFocusedMappingInput, el.dataset.fieldName);
+    });
+  });
+
+  document.querySelectorAll(".field-drop-target").forEach(function (target) {
+    target.addEventListener("dragover", function (event) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      target.classList.add("drop-target-active");
+    });
+    target.addEventListener("dragleave", function () {
+      target.classList.remove("drop-target-active");
+    });
+    target.addEventListener("drop", function (event) {
+      event.preventDefault();
+      target.classList.remove("drop-target-active");
+      var name = event.dataTransfer.getData("text/plain");
+      if (!name) return;
+      if (target.classList.contains("mapping-value-input")) {
+        insertFieldToken(target, name);
+      } else {
+        // date_field / transmit_field are a single raw field name, not a
+        // template — a whole-value replacement is what's wanted there.
+        target.value = name;
+        target.focus();
+      }
+    });
+  });
+</script>
+{% endblock %}

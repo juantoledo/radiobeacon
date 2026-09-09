@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ t('users.title') }}{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ t('users.title') }}</h1><a class="btn" href="/users/new">+ {{ t('users.new_user') }}</a></div>
+
+{% if error %}
+<p class="banner-warn">⚠ {{ error }}</p>
+{% endif %}
+
+<div class="table-wrap cards">
+<table>
+  <thead><tr><th>{{ t('users.username_label') }}</th><th>{{ t('users.role_label') }}</th><th></th></tr></thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td data-label="{{ t('users.username_label') }}">{{ u.username }}{% if u.disabled %} <span class="badge badge-neutral">{{ t('users.disabled_label') }}</span>{% endif %}</td>
+      <td data-label="{{ t('users.role_label') }}"><span class="{{ 'badge badge-urgent' if u.role == 'admin' else 'badge badge-neutral' }}">{{ t('users.role_admin') if u.role == 'admin' else t('users.role_user') }}</span></td>
+      <td class="actions-cell">
+        <a class="btn secondary" href="/users/{{ u.id }}/edit">{{ t('users.edit_button') }}</a>
+        <form method="post" action="/users/{{ u.id }}/delete" onsubmit="return confirm('{{ t('users.delete_confirm') }}');">
+          {{ csrf_field() }}
+          <button type="submit" class="danger">{{ t('users.delete_button') }}</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="3">{{ t('users.empty_state') }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

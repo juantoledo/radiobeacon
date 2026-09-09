@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ t('dev_sql.title') }}{% endblock %}
+{% block content %}
+<a class="crumb" href="/dev">&larr; {{ t('dev_sql.back_to_developers') }}</a>
+<div class="page-header"><h1>{{ t('dev_sql.title') }}</h1></div>
+
+<p class="banner-warn">
+  ⚠ {{ t('dev_sql.readonly_warning', row_limit=row_limit) | safe }}
+</p>
+
+<form method="get" action="/dev/sql">
+  <textarea class="sql-box" name="q" placeholder="SELECT * FROM items ORDER BY rowid DESC LIMIT 20">{{ q }}</textarea>
+  <p><button type="submit">{{ t('dev_sql.run_query') }}</button></p>
+</form>
+
+{% if error %}
+<p class="banner-warn">✗ {{ error }}</p>
+{% endif %}
+
+{% if columns %}
+<div class="table-wrap">
+<table>
+  <thead><tr>{% for col in columns %}<th>{{ col }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>{% for value in row %}<td class="wrap mono">{{ value if value is not none else "" }}</td>{% endfor %}</tr>
+    {% else %}
+    <tr class="empty-row"><td colspan="{{ columns | length }}">{{ t('dev_sql.no_rows') }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if truncated %}
+<p class="muted">{{ t('dev_sql.truncated_note', row_limit=row_limit) }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}
