@@ -1,4 +1,4 @@
-<!doctype html>
+{% import "_operator_credit.html" as opcredit %}<!doctype html>
 <html lang="{{ locale() }}">
 <head>
   <meta charset="utf-8">
@@ -30,6 +30,7 @@
       </div>
       <button type="submit" class="auth-submit">{{ t('auth.login_button') }}</button>
     </form>
+    <p class="auth-credit">{{ opcredit.credit_inline() | safe }}</p>
   </div>
 </body>
 </html>

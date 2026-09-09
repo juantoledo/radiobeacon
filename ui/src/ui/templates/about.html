@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% import "_operator_credit.html" as opcredit %}
+{% from "_pipeline_diagram.html" import pipeline_figure with context %}
 {% block title %}{{ t('about.title') }}{% endblock %}
 {% block content %}
 <div class="page-header"><h1>{{ t('about.title') }}</h1></div>
@@ -6,15 +8,22 @@
 <div class="about">
 
   <section class="about-section">
-    <h2>{{ t('about.intro.heading') }}</h2>
+    <h2>{{ icon('badge', 20) }}{{ t('about.operator.heading') }}</h2>
+    <p>{{ t('about.operator.body', operator=opcredit.credit_inline()) | safe }}</p>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ icon('beacon', 20) }}{{ t('about.intro.heading') }}</h2>
     <p>{{ t('about.intro.p1') }}</p>
     <p>{{ t('about.intro.p2') }}</p>
   </section>
 
   <section class="about-section">
-    <h2>{{ t('about.how.heading') }}</h2>
+    <h2>{{ icon('route', 20) }}{{ t('about.how.heading') }}</h2>
     <p>{{ t('about.how.p1') }}</p>
     <p>{{ t('about.how.flow_intro') }}</p>
+
+    {{ pipeline_figure() }}
 
     <ol class="about-flow">
       {% for n in range(1, 7) %}
@@ -32,13 +41,13 @@
   </section>
 
   <section class="about-section">
-    <h2>{{ t('about.radio.heading') }}</h2>
+    <h2>{{ icon('radio', 20) }}{{ t('about.radio.heading') }}</h2>
     <p>{{ t('about.radio.p1') }}</p>
     <p class="about-note">{{ t('about.radio.note') }}</p>
   </section>
 
   <section class="about-section">
-    <h2>{{ t('about.sources.heading') }}</h2>
+    <h2>{{ icon('rss', 20) }}{{ t('about.sources.heading') }}</h2>
     <p>{{ t('about.sources.p1') }}</p>
     <ul class="about-list">
       <li>{{ t('about.sources.senapred') }}</li>
@@ -49,14 +58,14 @@
   </section>
 
   <section class="about-section">
-    <h2>{{ t('about.ai.heading') }}</h2>
+    <h2>{{ icon('sparkles', 20) }}{{ t('about.ai.heading') }}</h2>
     <p>{{ t('about.ai.p1') }}</p>
     <p>{{ t('about.ai.p2') }}</p>
     <p>{{ t('about.ai.p3') }}</p>
   </section>
 
   <section class="about-section">
-    <h2>{{ t('about.control.heading') }}</h2>
+    <h2>{{ icon('shield-check', 20) }}{{ t('about.control.heading') }}</h2>
     <ul class="about-list">
       {% for n in range(1, 6) %}
       <li>{{ t('about.control.item' ~ n) }}</li>
@@ -65,7 +74,16 @@
   </section>
 
   <section class="about-section">
-    <h2>{{ t('about.notwhat.heading') }}</h2>
+    <h2>{{ icon('tune', 20) }}{{ t('about.underhood.heading') }}</h2>
+    <p>{{ t('about.underhood.p1') }}</p>
+    <p>{{ t('about.underhood.p2') }}</p>
+    <p>{{ t('about.underhood.p3') }}</p>
+    <p>{{ t('about.underhood.p4') }}</p>
+    <p class="about-note">{{ t('about.underhood.note') }}</p>
+  </section>
+
+  <section class="about-section">
+    <h2>{{ icon('slash-circle', 20) }}{{ t('about.notwhat.heading') }}</h2>
     <ul class="about-list">
       {% for n in range(1, 4) %}
       <li>{{ t('about.notwhat.item' ~ n) }}</li>

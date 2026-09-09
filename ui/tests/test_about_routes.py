@@ -56,6 +56,70 @@ def test_about_page_translated_to_spanish(client):
     assert "baliza de propagación" in response.text
 
 
+def test_about_page_shows_operator_credit(client):
+    text = client.get("/about").text
+    assert "Operator" in text
+    assert "CD3DXZ" in text
+    assert 'href="https://cd3dxz.radio"' in text
+    assert 'target="_blank"' in text
+
+
+def test_operator_credit_in_sitewide_footer(client, logged_out_client):
+    # Footer on an authenticated page...
+    footer = client.get("/").text
+    assert 'class="app-footer"' in footer
+    assert "Operated by" in footer
+    assert "CD3DXZ" in footer
+    # ...and on the login page.
+    login = logged_out_client.get("/login").text
+    assert "CD3DXZ" in login
+    assert 'href="https://cd3dxz.radio"' in login
+
+
+def test_operator_credit_translated_to_spanish(client):
+    text = client.get("/", headers={"Accept-Language": "es"}).text
+    assert "Operado por" in text
+
+
+def test_about_sections_have_heading_icons(client):
+    text = client.get("/about").text
+    # Every about-section <h2> carries a decorative icon chip.
+    assert text.count('<h2>') == text.count('<h2><svg class="icon"')
+    assert text.count('<h2><svg class="icon"') >= 8
+
+
+def test_about_page_has_pipeline_animation(client):
+    text = client.get("/about").text
+    assert 'class="about-pipeline"' in text
+    assert 'class="pipe pipe--wide"' in text
+    assert 'class="pipe pipe--tall"' in text
+    assert "frequency is clear" in text  # caption
+    # the built-in example sources are named, framed as examples
+    assert "MeteoChile" in text
+    assert "any public web feed" in text
+    # the numbered fallback list is still present alongside it
+    assert 'class="about-flow"' in text
+
+
+def test_pipeline_caption_translated(client):
+    text = client.get("/about", headers={"Accept-Language": "es"}).text
+    assert "En cola" in text
+    assert "la frecuencia está libre" in text
+
+
+def test_about_page_has_under_the_hood(client):
+    text = client.get("/about").text
+    assert "Under the hood" in text
+    assert "SvxLink" in text
+    assert "Direwolf" in text
+
+
+def test_under_the_hood_translated_to_spanish(client):
+    text = client.get("/about", headers={"Accept-Language": "es"}).text
+    assert "Por dentro" in text
+    assert "SvxLink" in text  # product names stay untranslated
+
+
 def test_about_page_has_flow_diagram(client):
     text = client.get("/about").text
     assert 'class="about-flow"' in text

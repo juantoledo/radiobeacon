@@ -1,4 +1,4 @@
-<!doctype html>
+{% import "_operator_credit.html" as opcredit with context %}<!doctype html>
 <html lang="{{ locale() }}"{% if theme() != 'system' %} data-theme="{{ theme() }}"{% endif %}>
 <head>
   <meta charset="utf-8">
@@ -107,6 +107,7 @@
       {% endif %}
       {% block content %}{% endblock %}
     </main>
+    {{ opcredit.footer() }}
   </div>
 
   {# Feedback for a form submitted via ajax-forms.js — the AJAX counterpart

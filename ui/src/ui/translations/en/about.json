@@ -1,6 +1,9 @@
 {
   "about.title": "About RadioBeacon",
 
+  "about.operator.heading": "Operator",
+  "about.operator.body": "This station is operated by {operator}.",
+
   "about.intro.heading": "What RadioBeacon is",
   "about.intro.p1": "RadioBeacon is the software that runs an experimental amateur-radio station. The station transmits automatically, on a fixed frequency, so other radio operators can listen for it and tell whether the radio path between their location and ours is currently open. Radio amateurs call a station used this way a propagation beacon.",
   "about.intro.p2": "Instead of transmitting only a station identifier, RadioBeacon also puts short public-interest bulletins on the air — civil-protection early warnings and earthquake reports. Someone who hears the beacon gets two things at once: confirmation that the signal path works, and the bulletin itself.",
@@ -23,6 +26,20 @@
   "about.flow.step6_desc": "The bulletin is broadcast, and repeated a few times a set interval apart.",
   "about.flow.logged": "Every one of these steps is recorded in this console, so the operator can see exactly what was received and what went on the air.",
 
+  "about.pipeline.node1": "Sources",
+  "about.pipeline.node2": "Collect",
+  "about.pipeline.node3": "Shorten",
+  "about.pipeline.node4": "Prepare",
+  "about.pipeline.node5": "Queue",
+  "about.pipeline.node6": "On air",
+  "about.pipeline.source_any": "+ any web feed",
+  "about.pipeline.optional": "optional",
+  "about.pipeline.skip": "skips the AI step",
+  "about.pipeline.lane_voice": "Voice",
+  "about.pipeline.lane_packet": "AX.25",
+  "about.pipeline.caption": "A source update becomes a signal on the air. It is collected, optionally shortened by AI, then prepared — the station callsign, date and an \"unofficial relay\" note are filled in — and sent either as a spoken message or an AX.25 data packet, once the frequency is clear. SENAPRED, CSN and MeteoChile ship as examples; the operator can point RadioBeacon at any public web feed.",
+  "about.pipeline.aria": "Animated diagram of a bulletin moving through the pipeline: sources, collect, shorten, prepare, queue, on air.",
+
   "about.radio.heading": "How it connects with the radio",
   "about.radio.p1": "RadioBeacon does not control the transmitter directly. It prepares a ready-to-play audio file and hands it to the station's transmitter-control software, which keys the radio and plays the clip only when the channel is idle.",
   "about.radio.note": "RadioBeacon is transmit-only. It never listens to, decodes, or records other stations — it has no receiver of any kind.",
@@ -38,6 +55,13 @@
   "about.ai.p1": "Artificial intelligence has one narrow job in RadioBeacon: shortening a long notice into a few complete sentences. It works from a fixed instruction that tells it to invent nothing and to leave no sentence unfinished.",
   "about.ai.p2": "AI never decides what is transmitted, never changes the station's settings or identity, and is off by default. Notices that are already short enough are never sent to it.",
   "about.ai.p3": "If the AI step fails, the operator chooses in advance what happens: use the original text, use just the headline, or transmit nothing.",
+
+  "about.underhood.heading": "Under the hood",
+  "about.underhood.p1": "The information sources are public services run by government agencies. RadioBeacon reads them through the same web interfaces the agencies' own websites use — no special access or agreement is involved. Each source is polled on its own independent timer, so a fast-moving feed and a slow one don't hold each other up.",
+  "about.underhood.p2": "An unfolding emergency usually appears as a series of updates rather than one edited notice. RadioBeacon treats each update as its own bulletin and never rewrites or merges them. Anything it has already seen is ignored, so the same report is not aired twice.",
+  "about.underhood.p3": "RadioBeacon never keys the radio itself. That is the job of SvxLink, the established software that controls the station's transmitter and shares the frequency courteously with other operators. RadioBeacon builds a finished audio clip and places it in a queue; SvxLink plays clips one at a time, and only after the frequency has been silent for a few seconds. A clip that has waited too long is dropped rather than sent late.",
+  "about.underhood.p4": "In digital mode a bulletin goes out as a short data packet instead of speech. RadioBeacon uses Direwolf, a widely used amateur-radio packet program, to turn the text into the tones a packet receiver decodes. These packets run on an experimental frequency and never touch the public APRS network.",
+  "about.underhood.note": "Aside from fetching source updates — and the optional shortening step — everything runs on the operator's own machine with no internet connection: the speech, the packet tones, the queue, and this dashboard.",
 
   "about.control.heading": "Safety and operator control",
   "about.control.item1": "Silent by default. A fresh install transmits nothing. The operator has to switch transmission on and fill in the station identity — callsign, location, frequency — before anything goes on the air.",

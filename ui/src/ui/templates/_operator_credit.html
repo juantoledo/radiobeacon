@@ -1,0 +1,20 @@
+{# Operator credit — the licensed amateur-radio operator who runs this station.
+   Deliberately hardcoded and kept out of the beacon-identity settings: this is a
+   human-facing byline for the console chrome, not the transmitted station
+   identity (BEACON_CALLSIGN). To change it, edit the three values below.
+
+   Import this `with context` so the macros can see the `t()` global. #}
+{% set OP_NAME = "Juan" %}
+{% set OP_CALL = "CD3DXZ" %}
+{% set OP_URL = "https://cd3dxz.radio" %}
+
+{# Inline fragment: "Juan · CD3DXZ" with the callsign linking to the operator's
+   site in a new tab. #}
+{% macro credit_inline() -%}
+{{ OP_NAME }} &middot; <a href="{{ OP_URL }}" target="_blank" rel="noopener">{{ OP_CALL }}</a>
+{%- endmacro %}
+
+{# Full site-wide footer line. #}
+{% macro footer() -%}
+<footer class="app-footer">{{ t('common.operated_by') }} {{ credit_inline() }}</footer>
+{%- endmacro %}

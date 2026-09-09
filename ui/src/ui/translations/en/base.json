@@ -19,6 +19,7 @@
   "common.theme_light": "Light",
   "common.theme_dark": "Dark",
   "common.save": "Save",
+  "common.operated_by": "Operated by",
   "config.leave_unchanged": "leave unchanged to keep current value",
   "config.not_set": "(not set)",
   "config.preview": "Preview",

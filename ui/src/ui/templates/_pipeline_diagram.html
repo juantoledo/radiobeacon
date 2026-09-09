@@ -1,0 +1,179 @@
+{# Animated "signal pipeline" diagram for the About page — a bulletin travelling
+   from source polling to on-air. Pure inline SVG + CSS keyframes (.pipe* in
+   style.css); zero JavaScript. Rendered twice: a wide horizontal layout and a
+   tall vertical one, swapped by a media query. Import `with context` so the
+   `t()` and `icon()` globals resolve. Honours prefers-reduced-motion via CSS.
+
+   The route is not a straight line: a dashed BYPASS arc lets a bulletin skip
+   the (optional) AI step, and after PREPARE the path FORKS into a VOICE lane
+   and an AX.25 packet lane — the two ways a bulletin can go on the air. #}
+
+{# 3rd value = the point in the cycle the bulletin arrives at that node
+   (fraction of --pipe-cycle), used to time each node's bloom. #}
+{% set _pipe_nodes = [
+  ('node1', 'rss',       0.02),
+  ('node2', 'layers',    0.16),
+  ('node3', 'sparkles',  0.31),
+  ('node4', 'volume-2',  0.48),
+  ('node5', 'clock',     0.69),
+  ('node6', 'radio',     0.87),
+] %}
+{% set _pipe_sources = ['SENAPRED', 'CSN', 'MeteoChile', t('about.pipeline.source_any')] %}
+{% set _pipe_chips = ['{callsign}', '{date}', '{source}'] %}
+
+{% macro _pipe(layout) %}
+{% set wide = layout == 'wide' %}
+{% set NH, NR, NI, NIC = 35, 29, 23, 30 %}   {# halo / ring / inner radius, icon size #}
+{% if wide %}
+  {% set W, H = 1020, 224 %}
+  {% set nx = [100, 252, 404, 560, 784, 936] %}
+  {% set ny = [110, 110, 110, 110, 110, 110] %}
+  {% set route_main = 'M100,110 L560,110 Q672,22 784,110 L936,110' %}
+  {% set route_ax25 = 'M560,110 Q672,200 784,110' %}
+  {% set route_skip = 'M316,110 Q404,24 492,110' %}
+{% else %}
+  {% set W, H = 372, 920 %}
+  {% set nx = [78, 78, 78, 78, 78, 78] %}
+  {% set ny = [92, 228, 364, 500, 708, 852] %}
+  {% set route_main = 'M78,92 L78,500 Q136,608 78,708 L78,852' %}
+  {% set route_ax25 = 'M78,500 Q18,608 78,708' %}
+  {% set route_skip = 'M78,320 Q16,400 78,478' %}
+{% endif %}
+<svg class="pipe pipe--{{ layout }}" viewBox="0 0 {{ W }} {{ H }}"
+     preserveAspectRatio="xMidYMid meet"
+     role="img" aria-label="{{ t('about.pipeline.aria') }}">
+
+  {# --- ambient glow that drifts slowly behind the diagram --- #}
+  <ellipse class="pipe-ambient" cx="{{ (W * 0.42) | round }}" cy="{{ (H * 0.5) | round }}"
+           rx="{{ 160 if wide else 78 }}" ry="{{ 64 if wide else 160 }}" aria-hidden="true"/>
+
+  {# --- routes: drawn faint, and re-used as the packet motion paths --- #}
+  <path id="pl-main-{{ layout }}" class="pipe-route" d="{{ route_main }}"/>
+  <path id="pl-ax25-{{ layout }}" class="pipe-route pipe-route--alt" d="{{ route_ax25 }}"/>
+  <path id="pl-skip-{{ layout }}" class="pipe-route pipe-route--alt" d="{{ route_skip }}"/>
+  <path class="pipe-route-flow" d="{{ route_main }}"/>
+  <path class="pipe-route-flow pipe-route-flow--alt pipe-route-flow--ax25" d="{{ route_ax25 }}"/>
+  <path class="pipe-route-flow pipe-route-flow--alt" d="{{ route_skip }}"/>
+  <path class="pipe-route-charge" d="{{ route_main }}" pathLength="100"/>
+
+  {# --- lane / route labels, each with its signal shape: a smooth wave for
+        voice, a square wave for the digital AX.25 packet --- #}
+  {% if wide %}
+  <g class="pipe-wglyph pipe-wglyph--sine"   transform="translate(622 44)"  aria-hidden="true"><path d="M0,0 q4,-7 8,0 t8,0 t8,0"/></g>
+  <g class="pipe-wglyph pipe-wglyph--square" transform="translate(622 184)" aria-hidden="true"><path d="M0,4 h5 v-8 h6 v8 h6 v-8 h6 v8 h5"/></g>
+  <text class="pipe-lane" x="678" y="49"  text-anchor="start">{{ t('about.pipeline.lane_voice') }}</text>
+  <text class="pipe-lane" x="678" y="189" text-anchor="start">{{ t('about.pipeline.lane_packet') }}</text>
+  <text class="pipe-lane pipe-lane--skip" x="404" y="44" text-anchor="middle">{{ t('about.pipeline.skip') }}</text>
+  {% else %}
+  <g class="pipe-wglyph pipe-wglyph--sine"   transform="translate(118 604)" aria-hidden="true"><path d="M0,0 q4,-7 8,0 t8,0 t8,0"/></g>
+  <g class="pipe-wglyph pipe-wglyph--square" transform="translate(8 582)"   aria-hidden="true"><path d="M0,4 h5 v-8 h6 v8 h6 v-8 h6 v8 h5"/></g>
+  <text class="pipe-lane" x="156" y="608" text-anchor="start">{{ t('about.pipeline.lane_voice') }}</text>
+  <text class="pipe-lane" x="44"  y="612" text-anchor="end">{{ t('about.pipeline.lane_packet') }}</text>
+  <text class="pipe-lane pipe-lane--skip" x="44" y="404" text-anchor="end">{{ t('about.pipeline.skip') }}</text>
+  {% endif %}
+
+  {% for key, ic, at in _pipe_nodes %}
+  {% set i = loop.index0 %}
+  {% set cx = nx[i] %}
+  {% set cy = ny[i] %}
+  {% set lx = cx if wide else (cx + 52) %}
+  {% set anchor = 'middle' if wide else 'start' %}
+  {% set suby = (cy + 78) if wide else (cy + 18) %}
+
+  {% if i == 0 %}
+  <g class="pipe-feeds" aria-hidden="true">
+    {% if wide %}
+    <circle class="pipe-feed-dot" cx="15" cy="{{ cy - 28 }}" r="3.6"/>
+    <circle class="pipe-feed-dot" cx="9"  cy="{{ cy }}"      r="3.6"/>
+    <circle class="pipe-feed-dot" cx="15" cy="{{ cy + 28 }}" r="3.6"/>
+    <line class="pipe-feed" x1="15" y1="{{ cy - 28 }}" x2="{{ cx - 30 }}" y2="{{ cy - 8 }}"/>
+    <line class="pipe-feed" x1="9"  y1="{{ cy }}"      x2="{{ cx - 30 }}" y2="{{ cy }}"/>
+    <line class="pipe-feed" x1="15" y1="{{ cy + 28 }}" x2="{{ cx - 30 }}" y2="{{ cy + 8 }}"/>
+    {% else %}
+    <circle class="pipe-feed-dot" cx="{{ cx - 34 }}" cy="14" r="3.6"/>
+    <circle class="pipe-feed-dot" cx="{{ cx }}"      cy="9"  r="3.6"/>
+    <circle class="pipe-feed-dot" cx="{{ cx + 34 }}" cy="14" r="3.6"/>
+    <line class="pipe-feed" x1="{{ cx - 34 }}" y1="14" x2="{{ cx - 8 }}" y2="{{ cy - 30 }}"/>
+    <line class="pipe-feed" x1="{{ cx }}"      y1="9"  x2="{{ cx }}"     y2="{{ cy - 31 }}"/>
+    <line class="pipe-feed" x1="{{ cx + 34 }}" y1="14" x2="{{ cx + 8 }}" y2="{{ cy - 30 }}"/>
+    {% endif %}
+  </g>
+  {% endif %}
+
+  <g class="pipe-node pipe-node--{{ loop.index }}" style="--pipe-at: {{ at }}">
+    <g class="pipe-node-core">
+      <circle class="pipe-node-halo"  cx="{{ cx }}" cy="{{ cy }}" r="{{ NH }}"/>
+      <circle class="pipe-node-ring"  cx="{{ cx }}" cy="{{ cy }}" r="{{ NR }}"/>
+      <circle class="pipe-node-inner" cx="{{ cx }}" cy="{{ cy }}" r="{{ NI }}"/>
+      <g class="pipe-node-icon" transform="translate({{ cx - (NIC / 2) | round }} {{ cy - (NIC / 2) | round }})"><g class="pipe-node-glyph">{{ icon(ic, NIC) }}</g></g>
+    </g>
+    <text class="pipe-label" x="{{ lx }}" y="{{ (cy + 58) if wide else cy }}" text-anchor="{{ anchor }}"{% if not wide %} dominant-baseline="middle"{% endif %}>{{ t('about.pipeline.' ~ key) }}</text>
+    {% if i == 0 %}
+      {% for name in _pipe_sources %}
+      <text class="pipe-sub pipe-sub--rot{% if loop.last %} pipe-sub--any{% endif %}" style="--rot-i: {{ loop.index0 }}"
+            x="{{ lx }}" y="{{ suby }}" text-anchor="{{ anchor }}"{% if not wide %} dominant-baseline="middle"{% endif %}>{{ name }}</text>
+      {% endfor %}
+    {% elif i == 2 %}
+      <text class="pipe-sub" x="{{ lx }}" y="{{ suby }}" text-anchor="{{ anchor }}"{% if not wide %} dominant-baseline="middle"{% endif %}>{{ t('about.pipeline.optional') }}</text>
+    {% endif %}
+  </g>
+
+  {% if i == 2 %}
+  {# --- summarising: bits of text fly off the bulletin at the AI node --- #}
+  <g class="pipe-shed" transform="translate({{ cx }} {{ cy }})" aria-hidden="true">
+    <circle class="pipe-shed-bit" r="4"   style="--dx: -36px; --dy: -26px"/>
+    <circle class="pipe-shed-bit" r="3.3" style="--dx: 30px;  --dy: -34px"/>
+    <circle class="pipe-shed-bit" r="4.2" style="--dx: 40px;  --dy: 10px"/>
+    <circle class="pipe-shed-bit" r="3"   style="--dx: -22px; --dy: 36px"/>
+    <circle class="pipe-shed-bit" r="3.6" style="--dx: -44px; --dy: 8px"/>
+  </g>
+  {% endif %}
+  {% if i == 3 %}
+  {# --- "optional replacements": template tokens that pop in as the bulletin
+        is assembled at PREPARE (callsign, date, source name, …) --- #}
+  <g class="pipe-chips" aria-hidden="true">
+    {% for tok in _pipe_chips %}
+    <g class="pipe-chip" style="--chip-i: {{ loop.index0 }}">
+      {% if wide %}
+      <text class="pipe-chip-text" x="{{ cx }}" y="{{ 34 + loop.index0 * 17 }}" text-anchor="middle">{{ tok }}</text>
+      {% else %}
+      <text class="pipe-chip-text" x="{{ cx - 52 }}" y="{{ cy - 24 + loop.index0 * 17 }}" text-anchor="end">{{ tok }}</text>
+      {% endif %}
+    </g>
+    {% endfor %}
+  </g>
+  {% endif %}
+  {% endfor %}
+
+  <g class="pipe-waves" transform="translate({{ '936 110' if wide else '78 852' }})">
+    <circle class="pipe-blast" r="28"/>
+    <circle class="pipe-wave pipe-wave--1" r="23"/>
+    <circle class="pipe-wave pipe-wave--2" r="23"/>
+    <circle class="pipe-wave pipe-wave--3" r="23"/>
+    <circle class="pipe-wave pipe-wave--4" r="23"/>
+  </g>
+
+  {# main bulletin — through the AI node, out via the voice lane #}
+  <g class="pipe-packet pipe-packet--main" style="offset-path: url(#pl-main-{{ layout }});">
+    <circle class="pipe-trail" cx="-32" cy="0" r="3.5"/>
+    <circle class="pipe-trail" cx="-21" cy="0" r="5.5"/>
+    <circle class="pipe-trail" cx="-10" cy="0" r="7"/>
+    <circle class="pipe-packet-core" r="9.5"/>
+  </g>
+  {# ghosts — bulletins that skip the AI step, or go out as an AX.25 packet #}
+  <g class="pipe-ghost" style="offset-path: url(#pl-skip-{{ layout }});"><circle r="5"/></g>
+  <g class="pipe-ghost pipe-ghost--ax25" style="offset-path: url(#pl-ax25-{{ layout }});"><circle r="5"/></g>
+  {# a constant trickle of other bulletins moving through in the background #}
+  <g class="pipe-flux" style="offset-path: url(#pl-main-{{ layout }}); --flux-i: 0" aria-hidden="true"><circle r="2.6"/></g>
+  <g class="pipe-flux" style="offset-path: url(#pl-main-{{ layout }}); --flux-i: 1" aria-hidden="true"><circle r="2.6"/></g>
+  <g class="pipe-flux" style="offset-path: url(#pl-main-{{ layout }}); --flux-i: 2" aria-hidden="true"><circle r="2.6"/></g>
+</svg>
+{% endmacro %}
+
+{% macro pipeline_figure() %}
+<figure class="about-pipeline">
+  {{ _pipe('wide') }}
+  {{ _pipe('tall') }}
+  <figcaption>{{ t('about.pipeline.caption') }}</figcaption>
+</figure>
+{% endmacro %}

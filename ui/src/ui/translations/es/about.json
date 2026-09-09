@@ -1,6 +1,9 @@
 {
   "about.title": "Acerca de RadioBeacon",
 
+  "about.operator.heading": "Operador",
+  "about.operator.body": "Esta estación es operada por {operator}.",
+
   "about.intro.heading": "Qué es RadioBeacon",
   "about.intro.p1": "RadioBeacon es el software que opera una estación experimental de radioaficionado. La estación transmite de forma automática, en una frecuencia fija, para que otros operadores puedan escucharla y saber si el camino de radio entre su ubicación y la nuestra está abierto en ese momento. Los radioaficionados llaman a una estación usada así una baliza de propagación.",
   "about.intro.p2": "En lugar de transmitir solo un identificador de estación, RadioBeacon también pone al aire boletines breves de interés público: alertas tempranas de protección civil e informes de sismos. Quien escucha la baliza obtiene dos cosas a la vez: la confirmación de que el camino de la señal funciona y el boletín en sí.",
@@ -23,6 +26,20 @@
   "about.flow.step6_desc": "El boletín se emite y se repite unas cuantas veces con un intervalo fijo entre repeticiones.",
   "about.flow.logged": "Cada uno de estos pasos queda registrado en esta consola, de modo que el operador puede ver exactamente qué se recibió y qué salió al aire.",
 
+  "about.pipeline.node1": "Fuentes",
+  "about.pipeline.node2": "Recolecta",
+  "about.pipeline.node3": "Resume",
+  "about.pipeline.node4": "Prepara",
+  "about.pipeline.node5": "En cola",
+  "about.pipeline.node6": "Al aire",
+  "about.pipeline.source_any": "+ cualquier fuente web",
+  "about.pipeline.optional": "opcional",
+  "about.pipeline.skip": "omite el paso de IA",
+  "about.pipeline.lane_voice": "Voz",
+  "about.pipeline.lane_packet": "AX.25",
+  "about.pipeline.caption": "Una actualización de una fuente se convierte en una señal al aire. Se recolecta, la IA la resume de forma opcional, luego se prepara —se completan el indicativo de la estación, la fecha y una nota de «retransmisión no oficial»— y sale como mensaje de voz o como paquete de datos AX.25, cuando la frecuencia está libre. SENAPRED, CSN y MeteoChile vienen como ejemplos; el operador puede apuntar RadioBeacon a cualquier fuente web pública.",
+  "about.pipeline.aria": "Diagrama animado de un boletín avanzando por el proceso: fuentes, recolecta, resumen, preparación, cola y salida al aire.",
+
   "about.radio.heading": "Cómo se conecta con la radio",
   "about.radio.p1": "RadioBeacon no controla el transmisor directamente. Prepara un archivo de audio listo para reproducir y lo entrega al software de control del transmisor de la estación, que activa la radio y reproduce el clip solo cuando el canal está libre.",
   "about.radio.note": "RadioBeacon es solo de transmisión. Nunca escucha, decodifica ni graba a otras estaciones: no tiene receptor de ningún tipo.",
@@ -38,6 +55,13 @@
   "about.ai.p1": "La inteligencia artificial cumple una única función acotada en RadioBeacon: resumir un aviso extenso en unas pocas frases completas. Trabaja a partir de una instrucción fija que le indica no inventar nada y no dejar ninguna frase sin terminar.",
   "about.ai.p2": "La IA nunca decide qué se transmite, nunca cambia la configuración ni la identidad de la estación, y está desactivada por defecto. Los avisos que ya son suficientemente breves nunca se le envían.",
   "about.ai.p3": "Si el paso de IA falla, el operador elige de antemano qué ocurre: usar el texto original, usar solo el titular, o no transmitir nada.",
+
+  "about.underhood.heading": "Por dentro",
+  "about.underhood.p1": "Las fuentes de información son servicios públicos de organismos del Estado. RadioBeacon las consulta a través de las mismas interfaces web que usan los sitios de esos organismos: no hay acceso especial ni convenio de por medio. Cada fuente se consulta con su propio temporizador independiente, de modo que una fuente rápida y una lenta no se frenan entre sí.",
+  "about.underhood.p2": "Una emergencia en desarrollo suele aparecer como una serie de actualizaciones, no como un único aviso editado. RadioBeacon trata cada actualización como un boletín propio y nunca las reescribe ni las combina. Todo lo que ya vio se ignora, así el mismo reporte no sale al aire dos veces.",
+  "about.underhood.p3": "RadioBeacon nunca activa la radio por sí mismo. De eso se encarga SvxLink, el software consolidado que controla el transmisor de la estación y comparte la frecuencia de forma cortés con otros operadores. RadioBeacon arma un clip de audio terminado y lo deja en una cola; SvxLink reproduce los clips de a uno, y solo después de que la frecuencia haya estado en silencio unos segundos. Un clip que esperó demasiado se descarta en vez de salir tarde.",
+  "about.underhood.p4": "En modo digital, un boletín sale como un paquete de datos corto en lugar de voz. RadioBeacon usa Direwolf, un programa de paquete de radioafición muy difundido, para convertir el texto en los tonos que decodifica un receptor de paquete. Esos paquetes usan una frecuencia experimental y nunca tocan la red pública APRS.",
+  "about.underhood.note": "Salvo la descarga de actualizaciones de las fuentes —y el paso opcional de resumen— todo funciona en la máquina del operador sin conexión a internet: la voz, los tonos de paquete, la cola y este panel.",
 
   "about.control.heading": "Seguridad y control del operador",
   "about.control.item1": "En silencio por defecto. Una instalación nueva no transmite nada. El operador debe activar la transmisión y completar la identidad de la estación — indicativo, ubicación, frecuencia — antes de que algo salga al aire.",

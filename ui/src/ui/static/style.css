@@ -1962,6 +1962,23 @@ pre.contents {
   outline-offset: 1px;
 }
 .auth-submit { width: 100%; justify-content: center; margin-top: var(--space-2); }
+.auth-credit {
+  margin: var(--space-5) 0 0;
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
+
+/* Site-wide operator byline, pinned below page content. */
+.app-footer {
+  width: 100%;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--space-4) clamp(1rem, 0.5rem + 2.5vw, 3rem) var(--space-6);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+}
 
 .logout-form {
   display: flex;
@@ -1986,6 +2003,19 @@ pre.contents {
 .about-section h2 {
   font-size: var(--text-xl);
   margin: 0 0 var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+/* Section-heading icon rendered as a small tinted chip — decorative, gives
+   the page a scannable, marketing-friendly rhythm. */
+.about-section h2 .icon {
+  flex-shrink: 0;
+  box-sizing: content-box;
+  padding: 0.4rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
 }
 .about-section p {
   margin: 0 0 var(--space-3);
@@ -2064,6 +2094,532 @@ pre.contents {
   font-size: var(--text-sm);
   color: var(--fg-muted);
   font-style: italic;
+}
+
+/* ===================== Animated "signal pipeline" ==================== *
+ * Inline SVG (templates/_pipeline_diagram.html), zero JS. A packet loops
+ * from source polling to on-air; nodes bloom in sequence as it passes;
+ * the last node radiates siren-red RF waves. All colour comes from
+ * tokens, so light/dark/toggle just work. Everything animated is
+ * transform / opacity / stroke-dashoffset / a custom property — no
+ * layout. Motion is fully disabled under prefers-reduced-motion, which
+ * leaves a clean static lit diagram (see the guard at the end).         */
+@property --lit {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0;
+}
+
+.about-pipeline {
+  margin: var(--space-5) 0;
+  /* Grow rightward past the reading column (the page has room there) so the
+     diagram reads big without pushing off the left edge. */
+  margin-right: -8rem;
+}
+@media (max-width: 60rem) {
+  .about-pipeline { margin-right: 0; }
+}
+.about-pipeline figcaption {
+  margin-top: var(--space-3);
+  max-width: 40rem;
+  font-size: var(--text-sm);
+  color: var(--fg-muted);
+  line-height: 1.55;
+}
+.pipe {
+  --pipe-cycle: 13s;          /* one full bulletin journey */
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  /* Fades and rises in as it scrolls into view (scroll-driven, no JS).
+     Where view() timelines are unsupported, the 0.7s duration gives a
+     one-time entrance on load instead. */
+  animation: pipe-enter 0.7s ease-out both;
+  animation-timeline: view();
+  animation-range: entry 5% cover 22%;
+}
+@keyframes pipe-enter {
+  from { opacity: 0; transform: translateY(16px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+.pipe--wide { max-width: 54rem; }
+.pipe--tall { display: none; max-width: 24rem; margin: 0 auto; }
+@media (max-width: 600px) {
+  .pipe--wide { display: none; }
+  .pipe--tall { display: block; }
+}
+
+/* Ambient glow drifting slowly behind the diagram. */
+.pipe-ambient {
+  fill: var(--accent);
+  opacity: 0.04;
+  filter: blur(34px);
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pipe-drift 26s ease-in-out infinite alternate;
+}
+@keyframes pipe-drift {
+  from { transform: translate(-6%, -28%) scale(0.9); }
+  to   { transform: translate(28%, 28%) scale(1.18); }
+}
+
+/* --- routes: drawn faint, and re-used as the packet motion paths --- */
+.pipe-route {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+}
+.pipe-route--alt {                    /* the bypass arc + the AX.25 lane */
+  stroke-width: 2.4;
+  stroke-dasharray: 6 7;
+  opacity: 0.85;
+}
+.pipe-route-flow {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3.4;
+  stroke-linecap: round;
+  stroke-dasharray: 2.5 13;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 70%, transparent));
+  animation: pipe-flow 0.8s linear infinite;
+}
+.pipe-route-flow--alt { stroke-width: 2; opacity: 0.6; }
+/* The AX.25 lane carries data, not sound: hard square-ended dashes that
+   advance in discrete steps, versus the smooth flow of the voice route. */
+.pipe-route-flow--ax25 {
+  stroke-linecap: butt;
+  stroke-dasharray: 4 7;
+  animation: pipe-flow-digital 0.9s steps(4, end) infinite;
+}
+@keyframes pipe-flow { to { stroke-dashoffset: -14; } }
+@keyframes pipe-flow-digital { to { stroke-dashoffset: -11; } }
+
+/* Signal-shape glyphs by the lane labels: a smooth wave for voice, a
+   square wave for the digital packet. */
+.pipe-wglyph path {
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 2;
+}
+.pipe-wglyph--sine path {
+  stroke-linecap: round;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pipe-wg-sine 1.6s ease-in-out infinite;
+}
+.pipe-wglyph--square path {
+  stroke-linecap: butt;
+  animation: pipe-wg-square 1s steps(1, end) infinite;
+}
+@keyframes pipe-wg-sine { 0%, 100% { transform: scaleY(0.55); } 50% { transform: scaleY(1.1); } }
+@keyframes pipe-wg-square { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0.3; } }
+
+/* A bright charge that surges along the main route in step with the bulletin —
+   it dwells at each node and accelerates between, matching pipe-run. */
+.pipe-route-charge {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 11 89;
+  filter: drop-shadow(0 0 5px var(--accent));
+  opacity: 0;
+  animation: pipe-charge var(--pipe-cycle) linear infinite;
+}
+@keyframes pipe-charge {
+  0%   { stroke-dashoffset: 11;    opacity: 0; }
+  3%   { opacity: 0.7; }
+  8%   { stroke-dashoffset: 11;    animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  16%  { stroke-dashoffset: -6.5; }
+  25%  { stroke-dashoffset: -6.5;  animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  32%  { stroke-dashoffset: -24; }
+  42%  { stroke-dashoffset: -24;   animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  50%  { stroke-dashoffset: -41.5; }
+  59%  { stroke-dashoffset: -41.5; animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  70%  { stroke-dashoffset: -71; }
+  78%  { stroke-dashoffset: -71;   animation-timing-function: cubic-bezier(0.5, 0, 0.15, 1); }
+  87%  { stroke-dashoffset: -89;   opacity: 0.7; }
+  91%  { opacity: 0; }
+  100% { stroke-dashoffset: -89;   opacity: 0; }
+}
+
+/* --- lane / route labels --- */
+.pipe-lane {
+  fill: var(--fg-muted);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.pipe-lane--skip {
+  fill: var(--fg-faint);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-style: italic;
+}
+
+/* --- nodes --- *
+ * Each node blooms as the bulletin arrives (--pipe-at is its arrival point,
+ * as a fraction of the cycle). QUEUE (5) and ON AIR (6) run their own
+ * choreography and opt out of the generic pulse. */
+.pipe-node {
+  --lit: 0;
+  animation: pipe-node-lit var(--pipe-cycle) ease-in-out infinite;
+  animation-delay: calc(var(--pipe-at) * var(--pipe-cycle));
+}
+.pipe-node--3 .pipe-node-ring { stroke-dasharray: 3 3; }   /* AI is optional */
+.pipe-node--5,
+.pipe-node--6 { animation: none; }
+@keyframes pipe-node-lit {
+  0%, 1%   { --lit: 0; }
+  4%       { --lit: 1; }
+  15%      { --lit: 0; }
+  100%     { --lit: 0; }
+}
+
+/* Breathing icons — small signs of life between the big moments. */
+.pipe-node-glyph {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.pipe-node--1 .pipe-node-glyph { animation: pipe-breathe 3.6s ease-in-out infinite; }
+.pipe-node--3 .pipe-node-glyph { animation: pipe-twinkle 2.6s ease-in-out infinite; }
+.pipe-node--5 .pipe-node-glyph { animation: pipe-tick var(--pipe-cycle) linear infinite; }
+@keyframes pipe-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+@keyframes pipe-twinkle {
+  0%, 100% { transform: scale(1) rotate(0); opacity: 0.8; }
+  50%      { transform: scale(1.16) rotate(10deg); opacity: 1; }
+}
+@keyframes pipe-tick { to { transform: rotate(360deg); } }
+
+/* QUEUE — "wait for a clear frequency": the bulletin dwells here; the node
+   holds AMBER while the channel is busy, then flashes GREEN and pops as it
+   clears and releases the bulletin. */
+.pipe-node--5 .pipe-node-inner { animation: pipe-gate-fill var(--pipe-cycle) ease-in-out infinite; }
+.pipe-node--5 .pipe-node-ring  { animation: pipe-gate-ring var(--pipe-cycle) ease-in-out infinite; }
+.pipe-node--5 .pipe-node-core  { animation: pipe-gate-pop  var(--pipe-cycle) ease-out infinite; }
+@keyframes pipe-gate-fill {
+  0%, 58%   { fill: var(--bg-raised); }
+  62%       { fill: color-mix(in srgb, #f97316 35%, var(--bg-raised)); }
+  64%, 74%  { fill: color-mix(in srgb, #f97316 68%, var(--bg-raised)); }   /* channel busy */
+  78%       { fill: color-mix(in srgb, #16a34a 82%, var(--bg-raised)); }   /* clear — go */
+  87%, 100% { fill: var(--bg-raised); }
+}
+@keyframes pipe-gate-ring {
+  0%, 60%   { stroke: var(--border-strong); }
+  64%, 74%  { stroke: #f97316; }
+  78%, 86%  { stroke: #16a34a; }
+  100%      { stroke: var(--border-strong); }
+}
+@keyframes pipe-gate-pop {
+  0%, 74%   { transform: scale(1); }
+  78%       { transform: scale(1.2); }
+  87%, 100% { transform: scale(1); }
+}
+.pipe-node-core {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(calc(1 + var(--lit) * 0.14));
+}
+.pipe-node-halo {
+  fill: var(--accent);
+  opacity: calc(var(--lit) * 0.35);
+  filter: blur(7px);
+}
+.pipe-node-ring {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) calc(var(--lit) * 100%), var(--border-strong));
+  stroke-width: 2.4;
+}
+.pipe-node-inner {
+  fill: color-mix(in srgb, var(--accent) calc(var(--lit) * 92%), var(--bg-raised));
+}
+.pipe-node-icon .icon {
+  display: block;
+  vertical-align: initial;
+  color: color-mix(in srgb, var(--accent-fg) calc(var(--lit) * 100%), var(--fg-muted));
+}
+.pipe-label {
+  fill: var(--fg);
+  font-family: var(--font-display);
+  font-size: 17.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.pipe-sub {
+  fill: var(--fg-faint);
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+}
+/* The "Sources" sub-label cycles through the built-in example feeds and
+   ends on "+ any web feed", so the diagram says: these are just examples,
+   point it anywhere. */
+.pipe-sub--rot {
+  opacity: 0;
+  animation: pipe-sub-rot 12s ease-in-out infinite;
+  animation-delay: calc(var(--rot-i) * 3s);
+}
+.pipe-sub--any {
+  fill: var(--accent);
+  font-weight: 600;
+}
+@keyframes pipe-sub-rot {
+  0%, 1%    { opacity: 0; }
+  4%, 21%   { opacity: 1; }
+  24%, 100% { opacity: 0; }
+}
+
+/* Several feeds converging into the first node — "any number of sources". */
+.pipe-feed {
+  stroke: var(--border-strong);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  opacity: 0.6;
+}
+.pipe-feed-dot {
+  fill: var(--accent);
+  animation: pipe-feed-pulse 2.4s ease-in-out infinite;
+}
+.pipe-feeds circle:nth-child(2) { animation-delay: 0.6s; }
+.pipe-feeds circle:nth-child(3) { animation-delay: 1.2s; }
+@keyframes pipe-feed-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 1; }
+}
+
+/* --- "optional replacements": template tokens that pop in as the bulletin
+   is assembled at PREPARE (callsign, date, source name, …). --- */
+.pipe-chip-text {
+  fill: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pipe-chip {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: pipe-chip-pop var(--pipe-cycle) ease-out infinite;
+  animation-delay: calc(var(--chip-i) * 0.3s);
+}
+@keyframes pipe-chip-pop {   /* while the bulletin sits at PREPARE (~48–58%) */
+  0%, 47%   { opacity: 0; transform: scale(0.4) translateY(4px); }
+  52%       { opacity: 1; transform: scale(1) translateY(0); }
+  60%       { opacity: 1; transform: scale(1) translateY(0); }
+  67%, 100% { opacity: 0; transform: scale(1) translateY(-3px); }
+}
+
+/* --- text "trimmed away" at the AI node: little bits fly off as the
+   bulletin is summarised --- */
+.pipe-shed-bit {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--accent) 60%, transparent));
+  animation: pipe-shed var(--pipe-cycle) ease-out infinite;
+}
+@keyframes pipe-shed {   /* text trimmed while the bulletin sits at the AI node (~31–40%) */
+  0%, 31%   { opacity: 0; transform: translate(0, 0) scale(1); }
+  36%       { opacity: 1; transform: translate(0, 0) scale(1); }
+  50%, 100% { opacity: 0; transform: translate(var(--dx, 0), var(--dy, -16px)) scale(0.2); }
+}
+
+/* --- the travelling bulletin (main) + comet trail, driven along the route
+   via CSS motion path (offset-path is set inline per layout). --- */
+.pipe-packet-core {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent))
+          drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 55%, transparent));
+}
+.pipe-trail {
+  fill: var(--accent);
+  opacity: 0.28;
+}
+.pipe-packet {
+  offset-rotate: auto;
+  transform-box: fill-box;
+  transform-origin: right center;   /* shrink toward the leading edge */
+  will-change: offset-distance, transform;
+  animation: pipe-run var(--pipe-cycle) linear infinite;
+}
+/* The bulletin dwells on each node ("on stage") and accelerates between them,
+   easing in and out of every stop. It shrinks while it sits at the AI node —
+   the content has just been summarised. Node fractions along the route are
+   ~0 / 17.5 / 35 / 52.5 / 82 / 100 %. */
+@keyframes pipe-run {
+  0%   { offset-distance: 0%;     opacity: 0; transform: scale(1); }
+  3%   { opacity: 1; }
+  8%   { offset-distance: 0%;     transform: scale(1); animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  16%  { offset-distance: 17.5%; }
+  24%  { offset-distance: 17.5%;  animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  31%  { offset-distance: 35%;    transform: scale(1); }
+  34%  { transform: scale(1); }
+  40%  { offset-distance: 35%;    transform: scale(0.5); animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  48%  { offset-distance: 52.5%; }
+  58%  { offset-distance: 52.5%;  transform: scale(0.5); animation-timing-function: cubic-bezier(0.5, 0, 0.4, 1); }
+  69%  { offset-distance: 82%; }
+  78%  { offset-distance: 82%;    animation-timing-function: cubic-bezier(0.5, 0, 0.12, 1); }
+  87%  { offset-distance: 100%;   transform: scale(0.5); opacity: 1; }
+  92%  { opacity: 0; }
+  100% { offset-distance: 100%;   opacity: 0; transform: scale(0.5); }
+}
+/* Ghost bulletins on the alternate routes — one that skips the AI step, one
+   going out as an AX.25 packet. They run on their own short loop, so the
+   diagram always shows "some go this way, some that way". */
+.pipe-ghost circle { fill: var(--accent); }
+.pipe-ghost {
+  offset-rotate: auto;
+  opacity: 0.5;
+  animation: pipe-ghost-run 3.4s linear infinite;
+}
+.pipe-ghost--ax25 { animation-delay: 1.7s; }
+@keyframes pipe-ghost-run {
+  0%   { offset-distance: 0%;   opacity: 0; }
+  20%  { opacity: 0.5; }
+  80%  { opacity: 0.5; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+/* A constant trickle of other bulletins along the main route — the station
+   is always doing something, behind the one bulletin we're following. */
+.pipe-flux {
+  offset-rotate: auto;
+  opacity: 0;
+  animation: pipe-flux-run 6s linear infinite;
+  animation-delay: calc(var(--flux-i) * -2s);
+}
+.pipe-flux circle { fill: var(--accent); }
+@keyframes pipe-flux-run {
+  0%   { offset-distance: 0%;   opacity: 0; }
+  12%  { opacity: 0.4; }
+  88%  { opacity: 0.4; }
+  100% { offset-distance: 100%; opacity: 0; }
+}
+
+/* --- the final node: "expand, then transmit" ---
+ * Synced to the 12s master cycle. The bulletin lands at ~70%; the node sits
+ * small and "armed" until then, expands with an overshoot as it arrives, its
+ * core flashes white-hot, and a burst of RF rings shoots outward. Then it
+ * settles back down, ready for the next bulletin. */
+.pipe-node--6 .pipe-node-core {
+  animation: pipe-tx-pop var(--pipe-cycle) cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+.pipe-node--6 .pipe-node-inner {
+  animation: pipe-tx-flash var(--pipe-cycle) ease-out infinite;
+}
+.pipe-node--6 .pipe-node-halo {
+  fill: var(--on-air);
+  animation: pipe-tx-halo var(--pipe-cycle) ease-out infinite;
+}
+.pipe-node--6 .pipe-node-ring {
+  stroke: var(--on-air);
+  stroke-width: 2.5;
+}
+.pipe-node--6 .pipe-node-icon .icon {
+  color: #fff;
+}
+@keyframes pipe-tx-pop {
+  0%, 79%  { transform: scale(0.9); }
+  84%      { transform: scale(1.06); }   /* power up */
+  88%      { transform: scale(1.4); }    /* EXPAND */
+  95%      { transform: scale(1.06); }
+  100%     { transform: scale(1.06); }
+}
+@keyframes pipe-tx-flash {
+  0%, 80%   { fill: color-mix(in srgb, var(--on-air) 78%, var(--bg-raised)); }
+  85%       { fill: var(--on-air); }
+  88%       { fill: color-mix(in srgb, #fff 82%, var(--on-air)); }   /* white-hot */
+  96%, 100% { fill: color-mix(in srgb, var(--on-air) 72%, var(--bg-raised)); }
+}
+@keyframes pipe-tx-halo {
+  0%, 80%  { opacity: 0.12; }
+  85%      { opacity: 0.34; }
+  88%      { opacity: 0.72; }
+  100%     { opacity: 0.2; }
+}
+
+/* --- RF wave burst + a single wide "propagation" ripple across the diagram --- */
+.pipe-wave {
+  fill: none;
+  stroke: var(--on-air);
+  stroke-width: 4.5;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: pipe-broadcast var(--pipe-cycle) ease-out infinite;
+}
+.pipe-wave--2 { animation-delay: 0.14s; }
+.pipe-wave--3 { animation-delay: 0.28s; }
+.pipe-wave--4 { animation-delay: 0.42s; }
+@keyframes pipe-broadcast {
+  0%, 83%   { transform: scale(0.1); opacity: 0; stroke-width: 4; }
+  86%       { opacity: 0.9; }
+  98%, 100% { transform: scale(3.4); opacity: 0; stroke-width: 0.6; }
+}
+.pipe-blast {
+  fill: none;
+  stroke: var(--on-air);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 0;
+  animation: pipe-blast var(--pipe-cycle) ease-out infinite;
+}
+@keyframes pipe-blast {
+  0%, 85%  { transform: scale(0.3); opacity: 0; stroke-width: 3; }
+  88%      { opacity: 0.3; }
+  100%     { transform: scale(4.3); opacity: 0; stroke-width: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipe {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .pipe-route-flow {
+    animation: none;
+    stroke-dasharray: none;
+    opacity: 0.5;
+  }
+  .pipe-route-charge { animation: none; display: none; }
+  .pipe-ambient { animation: none; }
+  .pipe-wglyph--sine path,
+  .pipe-wglyph--square path { animation: none; }
+  .pipe-node,
+  .pipe-node-glyph,
+  .pipe-packet,
+  .pipe-flux,
+  .pipe-ghost,
+  .pipe-chip,
+  .pipe-shed-bit,
+  .pipe-wave,
+  .pipe-blast,
+  .pipe-node--5 .pipe-node-inner,
+  .pipe-node--5 .pipe-node-ring,
+  .pipe-node--5 .pipe-node-core,
+  .pipe-node--6 .pipe-node-core,
+  .pipe-node--6 .pipe-node-inner,
+  .pipe-node--6 .pipe-node-halo {
+    animation: none;
+  }
+  .pipe-node { --lit: 0.85; }              /* every node shown "lit" */
+  .pipe-node--5 .pipe-node-inner { fill: color-mix(in srgb, #16a34a 72%, var(--bg-raised)); }
+  .pipe-node--5 .pipe-node-ring { stroke: #16a34a; }
+  .pipe-node--6 .pipe-node-core { transform: scale(1.05); }
+  .pipe-node--6 .pipe-node-inner { fill: color-mix(in srgb, var(--on-air) 72%, var(--bg-raised)); }
+  .pipe-node--6 .pipe-node-halo { opacity: 0.22; }
+  .pipe-sub--rot { animation: none; opacity: 0; }
+  .pipe-sub--any { opacity: 1; }          /* show "+ any web feed" statically */
+  .pipe-feed-dot { animation: none; opacity: 0.7; }
+  .pipe-packet, .pipe-flux, .pipe-ghost, .pipe-wave, .pipe-chips, .pipe-shed { display: none; }
 }
 
 /* ========================= Live "ON AIR" ============================= */

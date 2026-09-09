@@ -135,6 +135,31 @@ _ICONS: dict[str, str] = {
         '<line x1="22" y1="9" x2="16" y2="15"/>'
         '<line x1="16" y1="9" x2="22" y2="15"/>'
     ),
+    "badge": (
+        '<rect x="4" y="4" width="16" height="16" rx="2"/>'
+        '<path d="M9 4v2h6V4"/>'
+        '<circle cx="12" cy="11" r="2.4"/>'
+        '<path d="M8 17.5a4 4 0 0 1 8 0"/>'
+    ),
+    "route": (
+        '<circle cx="6" cy="19" r="2.4"/>'
+        '<circle cx="18" cy="5" r="2.4"/>'
+        '<path d="M8.4 19H14a3.5 3.5 0 0 0 0-7h-4a3.5 3.5 0 0 1 0-7h5.6"/>'
+    ),
+    "tune": (
+        '<line x1="4" y1="8" x2="13" y2="8"/><line x1="17" y1="8" x2="20" y2="8"/>'
+        '<circle cx="15" cy="8" r="2"/>'
+        '<line x1="4" y1="16" x2="7" y2="16"/><line x1="11" y1="16" x2="20" y2="16"/>'
+        '<circle cx="9" cy="16" r="2"/>'
+    ),
+    "shield-check": (
+        '<path d="M12 3l7 3v5c0 5-3 8.2-7 10-4-1.8-7-5-7-10V6l7-3Z"/>'
+        '<polyline points="9 12 11.3 14.3 15 10"/>'
+    ),
+    "slash-circle": (
+        '<circle cx="12" cy="12" r="9"/>'
+        '<line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>'
+    ),
 }
 
 
