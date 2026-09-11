@@ -1094,6 +1094,40 @@ def test_transmit_watermark_records_transmit_failed_on_handoff_failure(tmp_path)
     ).fetchone() is not None
 
 
+def test_transmit_watermark_removes_wav_after_successful_handoff(tmp_path, monkeypatch):
+    def _fake_synth(text, *, out_path, **k):
+        out_path.write_bytes(b"RIFF....")
+        return True
+
+    monkeypatch.setattr("beacon.voice.synthesize_speech", _fake_synth)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    tx = _RecordingWavTransmitter()
+
+    sent = main_module._transmit_watermark(
+        conn, "voice", _ctx(wav_dir=str(tmp_path), wav_transmitter=tx), datetime.now(timezone.utc),
+    )
+
+    assert sent is True
+    assert list(tmp_path.glob("watermark-*.wav")) == []
+
+
+def test_transmit_watermark_removes_wav_after_failed_handoff(tmp_path, monkeypatch):
+    def _fake_synth(text, *, out_path, **k):
+        out_path.write_bytes(b"RIFF....")
+        return True
+
+    monkeypatch.setattr("beacon.voice.synthesize_speech", _fake_synth)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    tx = _RecordingWavTransmitter(result=False)
+
+    sent = main_module._transmit_watermark(
+        conn, "voice", _ctx(wav_dir=str(tmp_path), wav_transmitter=tx), datetime.now(timezone.utc),
+    )
+
+    assert sent is False
+    assert list(tmp_path.glob("watermark-*.wav")) == []
+
+
 def test_transmit_watermark_placeholders_include_beacon_attributes_beyond_callsign(tmp_path, monkeypatch):
     synth = []
     monkeypatch.setattr("beacon.voice.synthesize_speech", lambda text, **k: synth.append(text) or True)

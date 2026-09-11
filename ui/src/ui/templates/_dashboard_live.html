@@ -59,23 +59,6 @@
     <span class="muted">{{ t('dashboard.last_manual_tx') }} <time datetime="{{ last_manual_transmit_at | iso_utc }}" data-ago>{{ last_manual_transmit_at | time_ago }}</time></span>
     {% endif %}
   </div>
-  <div class="manual-clips" data-cell="manual_clips">
-    {% if manual_clips %}
-    <span class="manual-clips-label muted">{{ t('dashboard.recent_manual_transmissions') }}</span>
-    <ul class="feed feed--manual">
-      {% for clip in manual_clips %}
-      <li>
-        <button type="button" class="feed-play" data-audio-url="/dashboard/manual-audio/{{ clip.name }}" aria-label="{{ t('dashboard.play_manual_tx_audio_aria') }}">
-          <span class="fp-play">{{ icon('play', 14) }}</span>
-          <span class="fp-stop">{{ icon('stop', 14) }}</span>
-        </button>
-        <span class="feed-title mono">{{ t('dashboard.manual_hash', n=clip.manual_id) }}</span>
-        <time class="feed-time" datetime="{{ clip.at | iso_utc }}" data-ago>{{ clip.at | time_ago }}</time>
-      </li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-  </div>
 </section>
 {% endif %}
 
@@ -198,6 +181,23 @@
     <ul class="feed feed--items" data-cell="feed_items">
       {% for item in recent_items %}
       <li>
+        {% if item.kind == "watermark" %}
+        <span class="feed-main">
+          <span class="feed-title">{{ t('dashboard.watermark_transmission_title') }}</span>
+        </span>
+        {% elif item.kind == "manual" %}
+        <span class="feed-main">
+          <span class="feed-title">{{ t('dashboard.manual_transmission_title') }}</span>
+        </span>
+        {% if item.audio_url %}
+        <span class="feed-audio">
+          <button type="button" class="feed-play" data-audio-url="{{ item.audio_url }}" aria-label="{{ t('dashboard.play_manual_tx_audio_aria') }}">
+            <span class="fp-play">{{ icon('play', 14) }}</span>
+            <span class="fp-stop">{{ icon('stop', 14) }}</span>
+          </button>
+        </span>
+        {% endif %}
+        {% else %}
         <a class="feed-main" href="/items/{{ item.source }}/{{ item.item_id }}">
           <span class="feed-title">{{ item.extracted_title or item.item_id }}</span>
           <span class="feed-meta">
@@ -231,7 +231,8 @@
           {% endif %}
         </span>
         {% endif %}
-        <time class="feed-time" datetime="{{ item.source_date_time | iso_utc }}" data-ago>{{ item.source_date_time | time_ago }}</time>
+        {% endif %}
+        <time class="feed-time" datetime="{{ item.at | iso_utc }}" data-ago>{{ item.at | time_ago }}</time>
       </li>
       {% else %}
       <li class="feed-empty">{{ t('dashboard.no_items_yet') }}</li>
@@ -252,6 +253,14 @@
             {% elif event.source %}· <span class="muted">{{ event.source }}</span>{% endif %}
           </span>
         </span>
+        {% if event.audio_url %}
+        <span class="feed-audio">
+          <button type="button" class="feed-play" data-audio-url="{{ event.audio_url }}" aria-label="{{ t('dashboard.play_manual_tx_audio_aria') }}">
+            <span class="fp-play">{{ icon('play', 14) }}</span>
+            <span class="fp-stop">{{ icon('stop', 14) }}</span>
+          </button>
+        </span>
+        {% endif %}
         <time class="feed-time" datetime="{{ event.recorded_at | iso_utc }}" data-ago>{{ event.recorded_at | time_ago }}</time>
       </li>
       {% else %}

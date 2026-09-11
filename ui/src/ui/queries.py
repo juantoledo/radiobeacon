@@ -187,6 +187,30 @@ def recent_audit_events(conn: sqlite3.Connection, limit: int = 10) -> list[sqlit
     ).fetchall()
 
 
+def recent_watermark_transmits(conn: sqlite3.Connection, limit: int = 8) -> list[sqlite3.Row]:
+    """Most recent successful watermark broadcasts, newest first -- for the
+    dashboard's Items feed, which has no `items` row to represent them (a
+    watermark carries no source/item_id) but should still show that one
+    went out."""
+    return conn.execute(
+        "SELECT * FROM audit_log WHERE event_type = 'beacon.watermark.transmitted' "
+        "ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+
+def recent_manual_transmits(conn: sqlite3.Connection, limit: int = 8) -> list[sqlite3.Row]:
+    """Most recent successful manual "Transmit now" sends, newest first --
+    for the dashboard's Items feed, which has no `items` row to represent
+    them (a manual send carries no source/item_id) but should still show
+    that one went out, with playback when its clip is still on disk."""
+    return conn.execute(
+        "SELECT * FROM audit_log WHERE event_type = 'beacon.manual.transmitted' "
+        "ORDER BY id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+
 def latest_event_at(conn: sqlite3.Connection, *event_types: str) -> str | None:
     """recorded_at of the most recent audit_log row matching any of
     event_types (or any row at all if none given) — a cheap "when did X

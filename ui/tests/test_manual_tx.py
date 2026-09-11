@@ -3,6 +3,7 @@ playback of the rendered manual clips."""
 from adapters.storage import (
     count_manual_tx_by_kind,
     pending_manual_tx,
+    record_audit_event,
     set_setting,
 )
 
@@ -99,18 +100,6 @@ def test_dashboard_shows_queued_count(client, conn):
 # --- playback of rendered manual clips ---
 
 
-def test_recent_manual_clips_newest_first(conn, tmp_path):
-    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
-    (tmp_path / "manual-1-1788400000.wav").write_bytes(b"RIFF-old")
-    (tmp_path / "manual-2-1788409999.wav").write_bytes(b"RIFF-new")
-    (tmp_path / "watermark-1788400001.wav").write_bytes(b"RIFF")  # ignored
-
-    clips = beacon_audio.recent_manual_clips(conn)
-    assert [c["name"] for c in clips] == ["manual-2-1788409999.wav", "manual-1-1788400000.wav"]
-    assert clips[0]["manual_id"] == 2
-    assert clips[0]["at"].endswith("+00:00")
-
-
 def test_manual_clip_path_rejects_bad_names(conn, tmp_path):
     set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
     assert beacon_audio.manual_clip_path(conn, "../secret.wav") is None
@@ -132,12 +121,55 @@ def test_manual_audio_route_serves_and_404s(client, conn, tmp_path):
     assert client.get("/dashboard/manual-audio/etc-passwd.wav").status_code == 404
 
 
-def test_dashboard_lists_recent_manual_clips_with_play_buttons(client, conn, tmp_path):
+def test_dashboard_audit_feed_shows_play_button_for_manual_transmit_with_clip(client, conn, tmp_path):
     _configure_beacon(conn)
     set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
     (tmp_path / "manual-3-1788400000.wav").write_bytes(b"RIFF")
+    record_audit_event(
+        conn, event_type="beacon.manual.transmitted", actor="beacon",
+        details={"kind": "voice", "chars": 4, "manual_id": 3, "clip": "manual-3-1788400000.wav"},
+    )
 
     body = client.get("/").text
-    assert "Recent manual transmissions" in body
+    assert "beacon.manual.transmitted" in body
     assert 'data-audio-url="/dashboard/manual-audio/manual-3-1788400000.wav"' in body
-    assert "manual #3" in body
+
+
+def test_dashboard_audit_feed_hides_play_button_when_clip_missing(client, conn, tmp_path):
+    _configure_beacon(conn)
+    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
+    record_audit_event(
+        conn, event_type="beacon.manual.transmitted", actor="beacon",
+        details={"kind": "voice", "chars": 4, "manual_id": 9, "clip": "manual-9-1788400000.wav"},
+    )
+
+    body = client.get("/").text
+    assert "beacon.manual.transmitted" in body
+    assert "data-audio-url=\"/dashboard/manual-audio/manual-9-1788400000.wav\"" not in body
+
+
+def test_dashboard_items_feed_shows_manual_transmit_with_play_button(client, conn, tmp_path):
+    _configure_beacon(conn)
+    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
+    (tmp_path / "manual-3-1788400000.wav").write_bytes(b"RIFF")
+    record_audit_event(
+        conn, event_type="beacon.manual.transmitted", actor="beacon",
+        details={"kind": "voice", "chars": 4, "manual_id": 3, "clip": "manual-3-1788400000.wav"},
+    )
+
+    body = client.get("/").text
+    assert "Manual transmission" in body
+    assert 'data-audio-url="/dashboard/manual-audio/manual-3-1788400000.wav"' in body
+
+
+def test_dashboard_items_feed_hides_play_button_when_manual_clip_missing(client, conn, tmp_path):
+    _configure_beacon(conn)
+    set_setting(conn, "BEACON_TTS_WAV_DIR", str(tmp_path))
+    record_audit_event(
+        conn, event_type="beacon.manual.transmitted", actor="beacon",
+        details={"kind": "voice", "chars": 4, "manual_id": 9, "clip": "manual-9-1788400000.wav"},
+    )
+
+    body = client.get("/").text
+    assert "Manual transmission" in body
+    assert "manual-9-1788400000.wav" not in body

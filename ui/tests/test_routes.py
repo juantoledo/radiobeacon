@@ -1,12 +1,12 @@
-from adapters.storage import set_setting
+from adapters.storage import record_audit_event, set_setting
 from adapters.policy import set_policy
 
 
-def _insert_item(conn, source, item_id, *, policy="informational"):
+def _insert_item(conn, source, item_id, *, policy="informational", source_date_time=None):
     conn.execute(
-        "INSERT INTO items (source, item_id, extracted_title, fetched_at, policy, rawdata) "
-        "VALUES (?, ?, 'Title', datetime('now'), ?, '{}')",
-        (source, item_id, policy),
+        "INSERT INTO items (source, item_id, extracted_title, fetched_at, source_date_time, policy, rawdata) "
+        "VALUES (?, ?, 'Title', datetime('now'), ?, ?, '{}')",
+        (source, item_id, source_date_time, policy),
     )
     conn.commit()
 
@@ -74,6 +74,46 @@ def test_dashboard_omits_auto_refresh_script_when_disabled(client, conn):
     response = client.get("/")
 
     assert "dashboard-refresh.js" not in response.text
+
+
+def test_dashboard_items_feed_includes_watermark_transmissions(client, conn):
+    """A watermark has no `items` row of its own (no source/item_id) -- it
+    should still show up on the Items tab as a plain entry, interleaved by
+    time with real items, since its WAV is deleted right after transmit and
+    there's nothing to link to or play."""
+    _insert_item(conn, "senapred", "1")
+    record_audit_event(
+        conn, event_type="beacon.watermark.transmitted", actor="beacon",
+        details={"clip": "watermark-1.wav", "kind": "voice"},
+    )
+
+    text = client.get("/").text
+
+    assert "Watermark transmission" in text
+    assert "watermark-1.wav" not in text
+
+
+def test_dashboard_items_feed_orders_watermark_correctly_against_same_day_items(client, conn):
+    """Regression test: items.source_date_time is stored as Python's
+    offset-suffixed ISO 8601 ("...T10:00:00+00:00"), while audit_log's
+    recorded_at is SQLite's offset-less datetime('now') ("...  10:00:00").
+    Comparing those two shapes as plain strings sorts the space before "T",
+    so a watermark recorded "now" would rank as older than any item dated
+    earlier the same day, and fall out of the merged feed's limit=8 window
+    even though it's chronologically the newest entry."""
+    from datetime import datetime, timezone
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for i in range(8):
+        _insert_item(conn, "senapred", str(i), source_date_time=f"{today}T0{i}:00:00+00:00")
+    record_audit_event(
+        conn, event_type="beacon.watermark.transmitted", actor="beacon",
+        details={"clip": "watermark-1.wav", "kind": "voice"},
+    )
+
+    text = client.get("/").text
+
+    assert "Watermark transmission" in text
 
 
 def test_dashboard_refresh_script_is_served_and_non_empty(client):

@@ -666,6 +666,12 @@ def _transmit_watermark(conn, beacon_type: str, ctx: dict, now_dt: datetime) -> 
     except Exception:
         logger.error("wav transmitter raised", exc_info=True)
         sent = False
+    finally:
+        # A watermark has no item and is never replayed from the UI (unlike
+        # voice/frame/manual clips), so unlike those it doesn't need to wait
+        # for the hourly retention sweep -- remove it as soon as the
+        # transmitter has had its chance to read it.
+        wav_path.unlink(missing_ok=True)
 
     if sent:
         record_audit_event(

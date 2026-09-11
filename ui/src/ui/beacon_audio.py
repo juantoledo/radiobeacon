@@ -14,7 +14,6 @@ Path comes from iterating the directory itself.
 import json
 import re
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 
 from adapters.storage import get_setting
@@ -65,32 +64,22 @@ def latest_voice_clip(conn: sqlite3.Connection, source: str, item_id: str) -> Pa
     return max(candidates, key=lambda p: p.stat().st_mtime)
 
 
-def recent_manual_clips(conn: sqlite3.Connection, limit: int = 5) -> list[dict]:
-    """The most recently rendered manual-transmission clips, newest first:
-    ``{"name", "manual_id", "at"}`` (``at`` = the file's mtime as an ISO
-    UTC string, the closest stand-in for when it went on air)."""
+def manual_tx_audio_url(conn: sqlite3.Connection, event_type: str, details_raw: str | None) -> str | None:
+    """The /dashboard/manual-audio/ playback URL for a beacon.manual.transmitted
+    audit row's clip, so the dashboard's single activity feed can offer a
+    play button on that row directly -- instead of a separate file-listing
+    panel. None for every other event type, or once the clip has been
+    removed from disk (pruned, or never rendered)."""
+    if event_type != "beacon.manual.transmitted":
+        return None
     try:
-        entries = [
-            entry
-            for entry in wav_dir(conn).iterdir()
-            if entry.is_file() and _MANUAL_CLIP.match(entry.name)
-        ]
-    except OSError:
-        return []
-    entries.sort(key=lambda e: e.stat().st_mtime, reverse=True)
-    clips = []
-    for entry in entries[:limit]:
-        match = _MANUAL_CLIP.match(entry.name)
-        clips.append(
-            {
-                "name": entry.name,
-                "manual_id": int(match.group(1)),
-                "at": datetime.fromtimestamp(
-                    entry.stat().st_mtime, tz=timezone.utc
-                ).isoformat(),
-            }
-        )
-    return clips
+        details = json.loads(details_raw) if details_raw else {}
+    except (TypeError, ValueError):
+        return None
+    name = details.get("clip")
+    if not isinstance(name, str) or manual_clip_path(conn, name) is None:
+        return None
+    return f"/dashboard/manual-audio/{name}"
 
 
 # Successful-transmission audit events that carry a `clip` filename in their
@@ -197,9 +186,9 @@ def item_clip_path(
 
 
 def manual_clip_path(conn: sqlite3.Connection, name: str) -> Path | None:
-    """Resolve one ``manual-<id>-<ts>.wav`` name (from recent_manual_clips)
-    to a file on disk, or None. Rejects anything not matching that exact
-    shape, so a path segment can't escape the wav dir."""
+    """Resolve one ``manual-<id>-<ts>.wav`` name (from a beacon.manual.transmitted
+    audit row's ``clip`` detail) to a file on disk, or None. Rejects anything
+    not matching that exact shape, so a path segment can't escape the wav dir."""
     if not _MANUAL_CLIP.match(name or ""):
         return None
     path = wav_dir(conn) / name

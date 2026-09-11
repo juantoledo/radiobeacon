@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from datetime import datetime, timezone
 
 from adapters.storage import count_manual_tx_by_kind, get_setting
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,9 +10,11 @@ from starlette.responses import StreamingResponse
 from .. import beacon_audio, queries, tx_stream
 from ..current_user import get_current_user
 from ..db import get_db
-from ..templating import templates
+from ..templating import _parse_utc, templates
 from .beacon import _status_context
 from .manual_tx import frame_max_bytes, voice_max_chars
+
+_EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 
 router = APIRouter(dependencies=[Depends(get_current_user)])
 
@@ -56,6 +59,46 @@ def _ingest_health(conn: sqlite3.Connection) -> dict:
     }
 
 
+def _merge_items_feed(
+    conn: sqlite3.Connection,
+    items: list[sqlite3.Row],
+    watermark_events: list[sqlite3.Row],
+    manual_events: list[sqlite3.Row],
+    limit: int,
+) -> list[dict]:
+    """Interleaves recent content items with recent watermark/manual beacon
+    broadcasts, newest first, for the dashboard's Items tab. Neither a
+    watermark nor a manual send has an `items` row of its own (no source/
+    item_id) so they can't appear there on their own -- this gives each a
+    plain entry (kind="watermark"/"manual") alongside real items (kind=
+    "item"), all carrying an "at" timestamp for the merged sort.
+    Watermark WAVs are deleted right after transmit (see
+    beacon._transmit_watermark), so that entry never gets a play button;
+    manual clips stick around under the normal retention sweep, so a manual
+    entry gets one whenever its clip is still on disk.
+
+    Sorting parses "at" with _parse_utc rather than comparing the raw
+    strings: items store source_date_time as Python's offset-suffixed ISO
+    8601 ("...T10:00:00+00:00") while audit_log's recorded_at is SQLite's
+    offset-less datetime('now') ("...  10:00:00") -- compared as plain
+    strings, the space sorts before "T" and silently shoves every
+    watermark/manual entry to the bottom whenever an item shares its date."""
+    entries = [{"kind": "item", "at": row["source_date_time"], **dict(row)} for row in items]
+    entries += [
+        {"kind": "watermark", "at": row["recorded_at"]} for row in watermark_events
+    ]
+    entries += [
+        {
+            "kind": "manual",
+            "at": row["recorded_at"],
+            "audio_url": beacon_audio.manual_tx_audio_url(conn, row["event_type"], row["details"]),
+        }
+        for row in manual_events
+    ]
+    entries.sort(key=lambda e: _parse_utc(e["at"]) or _EPOCH, reverse=True)
+    return entries[:limit]
+
+
 def _dashboard_context(conn: sqlite3.Connection) -> dict:
     status_ctx = _status_context(conn)
     status = status_ctx["status"]
@@ -92,21 +135,32 @@ def _dashboard_context(conn: sqlite3.Connection) -> dict:
         for key, n in tx_counts.items()
         if n > 1
     }
+    items_feed = _merge_items_feed(
+        conn,
+        recent_items,
+        queries.recent_watermark_transmits(conn, limit=8),
+        queries.recent_manual_transmits(conn, limit=8),
+        limit=8,
+    )
 
     return {
         "manual_voice_max_chars": voice_max_chars(conn),
         "manual_frame_max_bytes": frame_max_bytes(conn),
         "manual_tx_pending": manual_pending,
         "manual_tx_pending_total": sum(manual_pending.values()),
-        "manual_clips": beacon_audio.recent_manual_clips(conn),
         "last_manual_transmit_at": status.get("last_manual_transmit_at"),
         "counts": queries.dashboard_counts(conn),
         "sparkline": queries.items_sparkline(conn, days=14),
         "failed_24h": queries.failed_events_last_24h(conn),
-        "recent_items": recent_items,
+        "recent_items": items_feed,
         "item_tx_counts": tx_counts,
         "item_transmissions": item_transmissions,
-        "recent_audit_events": queries.recent_audit_events(conn, limit=8),
+        "recent_audit_events": [
+            {**dict(event), "audio_url": beacon_audio.manual_tx_audio_url(
+                conn, event["event_type"], event["details"]
+            )}
+            for event in queries.recent_audit_events(conn, limit=8)
+        ],
         "ingest": _ingest_health(conn),
         "ai_enabled": ai_enabled,
         "ai_last_run_at": queries.latest_event_at(conn, "action.ai.executed"),

@@ -366,9 +366,20 @@ def _event_badge_class(event_type: str | None) -> str:
         "beacon.tx.skipped_stale",
         "beacon.tx.superseded",
         "beacon.tx.supersede_skip",
+        "beacon.watermark.skipped_no_callsign",
+        "beacon.watermark.dropped_too_long",
+        "beacon.manual.skipped_no_callsign",
+        "beacon.manual.dropped_too_long",
     ):
         return "badge badge-warn"
-    if event_type in ("item.dispatched", "item.discovered", "item.stored", "item.created"):
+    if event_type in (
+        "item.dispatched",
+        "item.discovered",
+        "item.stored",
+        "item.created",
+        "beacon.watermark.transmitted",
+        "beacon.manual.transmitted",
+    ):
         return "badge badge-success"
     return "badge badge-neutral"
 
