@@ -1102,9 +1102,37 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "2.0",
         advanced=True,
     ),
+    # --- Setup ---
+    # Internal completion flag for the /setup first-run wizard (see
+    # ui.setup) — not an operator-meaningful setting, so deliberately left
+    # out of NAV_CATEGORY_ORDER (no /config tab). Still a normal DB-backed
+    # setting under the hood: reachable at /config/setup and resettable via
+    # the usual per-field reset endpoint if the wizard ever needs to be
+    # forced to re-run outside its own sidebar "reopen" link.
+    SettingSpec(
+        "SETUP_WIZARD_COMPLETED",
+        "Setup",
+        "Setup wizard completed",
+        "Set once the first-run setup wizard (/setup) has been completed. "
+        "Not meant to be edited directly.",
+        "bool",
+        None,
+        env_fallback=False,
+        advanced=True,
+    ),
 ]
 
 GROUPS: list[str] = list(dict.fromkeys(spec.group for spec in SETTINGS_CATALOG))
+
+_KEY_TO_SPEC: dict[str, SettingSpec] = {spec.key: spec for spec in SETTINGS_CATALOG}
+
+
+def spec_for_key(key: str) -> SettingSpec | None:
+    """Looks up a single SettingSpec by its exact key, regardless of which
+    group it belongs to — used by ui.setup's wizard steps, which curate a
+    handful of keys across several existing groups rather than showing a
+    whole group verbatim."""
+    return _KEY_TO_SPEC.get(key)
 
 
 def _slugify(text: str) -> str:

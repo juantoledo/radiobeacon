@@ -10,13 +10,16 @@ from starlette.responses import StreamingResponse
 from .. import beacon_audio, queries, tx_stream
 from ..current_user import get_current_user
 from ..db import get_db
+from ..setup import require_setup_complete
 from ..templating import _parse_utc, templates
 from .beacon import _status_context
 from .manual_tx import frame_max_bytes, voice_max_chars
 
 _EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 
-router = APIRouter(dependencies=[Depends(get_current_user)])
+router = APIRouter(
+    dependencies=[Depends(get_current_user), Depends(require_setup_complete)]
+)
 
 # NTP offset above this (seconds, absolute) flips the dashboard's Clock
 # tile to a warning — mirrors beacon's own BEACON_NTP_MAX_OFFSET_SECONDS.

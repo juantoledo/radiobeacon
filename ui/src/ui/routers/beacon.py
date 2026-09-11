@@ -8,8 +8,11 @@ from starlette.responses import RedirectResponse
 
 from ..current_user import require_role
 from ..db import get_db
+from ..setup import require_setup_complete
 
-router = APIRouter(dependencies=[Depends(require_role("admin"))])
+router = APIRouter(
+    dependencies=[Depends(require_role("admin")), Depends(require_setup_complete)]
+)
 
 # How stale process_heartbeat_at (written every transmit-loop tick, default
 # BEACON_TICK_SECONDS=2) can be before the dashboard's beacon section shows

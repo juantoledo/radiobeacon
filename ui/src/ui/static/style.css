@@ -572,6 +572,33 @@ main {
 }
 .crumb:hover { color: var(--accent); text-decoration: none; }
 
+.wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 0.5rem);
+  list-style: none;
+  margin: 0 0 var(--space-5, 1.5rem);
+  padding: 0;
+}
+.wizard-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--text-sm);
+  color: var(--fg-faint);
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--bg-subtle);
+  border: 1px solid transparent;
+}
+.wizard-steps li.done { color: var(--success); background: var(--success-bg); }
+.wizard-steps li.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
 .live-badge {
   display: inline-flex;
   align-items: center;

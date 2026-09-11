@@ -1,0 +1,14 @@
+{
+  "setup.wizard.title": "First-time setup",
+  "setup.wizard.back": "Back",
+  "setup.wizard.finish": "Finish setup",
+  "setup.finish.title": "All set",
+  "setup.finish.summary": "You can revisit any of these settings later from Config, or reopen this wizard any time from the sidebar.",
+  "setup.finish.already_complete": "Setup was already completed — finishing again just confirms it.",
+  "setup.reopen_wizard": "Run setup wizard",
+  "setup.step.identity": "Beacon identity",
+  "setup.step.transmission": "Transmission",
+  "setup.step.wav-handoff": "Radio hand-off",
+  "setup.step.voice": "Voice",
+  "setup.step.display": "Display & language"
+}

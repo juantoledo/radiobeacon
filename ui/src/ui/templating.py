@@ -16,6 +16,7 @@ from .beacon import is_beacon_configured
 from .config_catalog import NAV_CATEGORY_ORDER, category_slug
 from .i18n import DEFAULT_LOCALE, SUPPORTED_LOCALES, translate
 from .icons import render_icon
+from .setup import is_setup_complete
 from .theme import DEFAULT_THEME, SUPPORTED_THEMES
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
@@ -221,6 +222,25 @@ def _beacon_configured_global(context) -> bool:
 
 
 templates.env.globals["is_beacon_configured"] = _beacon_configured_global
+
+
+@pass_context
+def _setup_complete_global(context) -> bool:
+    """`{{ is_setup_complete() }}` — same per-request db_conn-reuse idiom as
+    _beacon_configured_global above (and the same test-fixture-visibility
+    reason it matters), for the /setup wizard's own sticky completion flag."""
+    request = context["request"]
+    conn = getattr(request.state, "db_conn", None)
+    if conn is not None:
+        return is_setup_complete(conn)
+    conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        return is_setup_complete(conn)
+    finally:
+        conn.close()
+
+
+templates.env.globals["is_setup_complete"] = _setup_complete_global
 
 
 @pass_context

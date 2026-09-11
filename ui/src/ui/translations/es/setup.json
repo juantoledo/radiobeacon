@@ -1,0 +1,14 @@
+{
+  "setup.wizard.title": "Configuración inicial",
+  "setup.wizard.back": "Atrás",
+  "setup.wizard.finish": "Finalizar configuración",
+  "setup.finish.title": "Todo listo",
+  "setup.finish.summary": "Puedes ajustar cualquiera de estos valores más tarde desde Config, o volver a abrir este asistente cuando quieras desde la barra lateral.",
+  "setup.finish.already_complete": "La configuración ya estaba completa — finalizar de nuevo solo la confirma.",
+  "setup.reopen_wizard": "Ejecutar asistente de configuración",
+  "setup.step.identity": "Identidad del beacon",
+  "setup.step.transmission": "Transmisión",
+  "setup.step.wav-handoff": "Entrega a la radio",
+  "setup.step.voice": "Voz",
+  "setup.step.display": "Pantalla e idioma"
+}

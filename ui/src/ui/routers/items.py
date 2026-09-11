@@ -13,12 +13,16 @@ from .. import beacon_audio, queries
 from ..beacon import is_beacon_configured
 from ..current_user import require_role
 from ..db import get_db
+from ..setup import require_setup_complete
 from ..templating import templates
 
 # Read routes (list, detail, audio) are open to any authenticated account —
 # the 'user' role is a read-only viewer. The mutating POST routes below
-# re-assert require_role("admin") individually.
-router = APIRouter(dependencies=[Depends(require_role("user"))])
+# re-assert require_role("admin") individually. require_setup_complete only
+# ever blocks an admin (see its docstring), so it's harmless to add here too.
+router = APIRouter(
+    dependencies=[Depends(require_role("user")), Depends(require_setup_complete)]
+)
 
 _admin_only = [Depends(require_role("admin"))]
 

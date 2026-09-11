@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ t('setup.wizard.title') }}{% endblock %}
+{% block content %}
+<div class="page-header"><h1>{{ t('setup.wizard.title') }}</h1></div>
+
+<ol class="wizard-steps">
+  {% for s in steps %}
+  <li class="{{ 'active' if not finish and step and s.slug == step.slug else '' }} {{ 'done' if loop.index0 < current_index else '' }}">{{ t('setup.step.' ~ s.slug, default=s.title) }}</li>
+  {% endfor %}
+  <li class="{{ 'active' if finish else '' }}">{{ t('setup.wizard.finish') }}</li>
+</ol>
+
+{% if finish %}
+  <div class="page-header"><h2>{{ t('setup.finish.title') }}</h2></div>
+  <p>{{ t('setup.finish.summary') }}</p>
+  {% if already_complete %}
+  <p class="banner">✓ {{ t('setup.finish.already_complete') }}</p>
+  {% endif %}
+  <form method="post" action="/setup/finish">
+    {{ csrf_field() }}
+    <button type="submit">{{ t('setup.wizard.finish') }}</button>
+  </form>
+{% else %}
+  <div class="page-header"><h2>{{ t('setup.step.' ~ step.slug, default=step.title) }}</h2></div>
+  {% include "_config_group_form_body.html" %}
+{% endif %}
+
+{% if prev_url %}<a class="crumb" href="{{ prev_url }}">&larr; {{ t('setup.wizard.back') }}</a>{% endif %}
+{% endblock %}

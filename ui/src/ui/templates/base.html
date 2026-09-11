@@ -40,7 +40,7 @@
     </div>
     <nav class="sidebar-nav">
       {% for href, ic, label, active in nav_items %}
-      <a href="{{ href }}" class="{{ 'active' if active else '' }}"{% if active %} aria-current="page"{% endif %}>{{ icon(ic, 18) }}{{ label }}{% if href == '/config' and not is_beacon_configured() %} <span class="badge badge-warn">!</span>{% endif %}</a>
+      <a href="{{ href }}" class="{{ 'active' if active else '' }}"{% if active %} aria-current="page"{% endif %}>{{ icon(ic, 18) }}{{ label }}{% if href == '/config' and not is_setup_complete() %} <span class="badge badge-warn">!</span>{% endif %}</a>
       {% endfor %}
       {% if dev_tools_enabled() and is_admin() %}
       <a href="/dev" class="{{ 'active' if request.url.path.startswith('/dev') else '' }}">{{ icon('developers', 18) }}{{ t('nav.developers') }}</a>
@@ -48,10 +48,11 @@
     </nav>
     <div class="sidebar-foot">
       {% if is_admin() %}
-        {% if is_beacon_configured() %}
+        {% if is_setup_complete() %}
         <span class="live-badge"><span class="pulse-dot" aria-hidden="true"></span>{{ t('common.beacon_identity_set') }}</span>
+        <a class="sidebar-foot-warn" href="/setup">{{ icon('beacon', 14) }} {{ t('setup.reopen_wizard') }}</a>
         {% else %}
-        <a class="sidebar-foot-warn" href="/config/beacon-identity">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
+        <a class="sidebar-foot-warn" href="/setup">{{ icon('beacon', 14) }} {{ t('common.configure_beacon_identity') }}</a>
         {% endif %}
       {% endif %}
       <div class="sidebar-prefs">
@@ -102,8 +103,8 @@
       {% if request.query_params.get('error') %}
         <p class="banner-warn">⚠ {{ request.query_params.get('error') }}</p>
       {% endif %}
-      {% if is_admin() and not is_beacon_configured() and not request.url.path.startswith('/config/beacon-identity') %}
-        <p class="banner-warn">⚠ {{ t('common.beacon_not_configured_warning', link='<a href="/config/beacon-identity">' ~ t('common.set_it_up') ~ '</a>') | safe }}</p>
+      {% if is_admin() and not is_setup_complete() and not request.url.path.startswith('/setup') %}
+        <p class="banner-warn">⚠ {{ t('common.beacon_not_configured_warning', link='<a href="/setup">' ~ t('common.set_it_up') ~ '</a>') | safe }}</p>
       {% endif %}
       {% block content %}{% endblock %}
     </main>

@@ -149,8 +149,12 @@ def test_config_group_save_ignores_blank_fields(client, conn):
         follow_redirects=False,
     )
 
-    rows = list_settings(conn)
-    assert [row[0] for row in rows] == ["DISPATCHER_INTERVAL_SECONDS"]
+    # SETUP_WIZARD_COMPLETED is a pre-existing row here too — the `client`
+    # fixture seeds it (see conftest.py) so every route test's dashboard/
+    # beacon/items requests aren't redirected to /setup — irrelevant to
+    # what this test is actually checking, so filtered out.
+    rows = [row[0] for row in list_settings(conn) if row[0] != "SETUP_WIZARD_COMPLETED"]
+    assert rows == ["DISPATCHER_INTERVAL_SECONDS"]
 
 
 def test_config_group_edit_page_shows_env_value_when_no_db_override(client, monkeypatch):

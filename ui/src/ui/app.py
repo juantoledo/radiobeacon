@@ -25,6 +25,7 @@ from .security import (
     CsrfCookieMiddleware,
     verify_csrf,
 )
+from .setup import SetupRequired
 from .theme import ThemeMiddleware
 
 from .routers import (
@@ -43,6 +44,7 @@ from .routers import (
     policies,
     quick_settings,
     rf_conf,
+    setup as setup_router,
     theme,
     users,
 )
@@ -123,6 +125,11 @@ def _redirect_to_login(request: Request, exc: NotAuthenticated):
     return RedirectResponse(url=f"/login?next={quote(exc.next_path)}", status_code=303)
 
 
+@app.exception_handler(SetupRequired)
+def _redirect_to_setup(request: Request, exc: SetupRequired):
+    return RedirectResponse(url="/setup", status_code=303)
+
+
 # Login (ui.current_user's session-cookie dependency, gating every router
 # below except auth.router's own /login) sits alongside this middleware
 # stack conceptually but isn't one of them — see ui.current_user's
@@ -141,6 +148,7 @@ app.mount(
 )
 
 app.include_router(auth.router)
+app.include_router(setup_router.router)
 app.include_router(dashboard.router)
 app.include_router(about.router)
 app.include_router(locale.router)

@@ -120,4 +120,5 @@ SETTINGS_REGISTRY: dict[str, tuple[str, tuple[str, ...]]] = {
     "BEACON_NTP_SERVER": ("text", ()),
     "BEACON_NTP_CHECK_INTERVAL_SECONDS": ("int", ()),
     "BEACON_NTP_MAX_OFFSET_SECONDS": ("float", ()),
+    "SETUP_WIZARD_COMPLETED": ("bool", ()),
 }

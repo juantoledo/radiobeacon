@@ -119,43 +119,50 @@ def test_beacon_identity_save_does_not_persist_on_validation_failure(client, con
 
 
 # --- sitewide banner / nav badge ---
+#
+# Driven by ui.setup.is_setup_complete() (the whole wizard), not
+# is_beacon_configured() alone, since /setup was unified with the older
+# beacon-identity-only nag (see base.html) — so these use
+# `fresh_install_client` (an admin whose `conn` never went through
+# ui.setup.mark_setup_complete, unlike the default `client` fixture) rather
+# than just populating beacon identity. "/" itself is gated by
+# require_setup_complete now, so the banner is exercised on a page /setup
+# doesn't cover instead (/config/adapters).
 
 
-def test_sitewide_banner_shown_when_not_configured(client):
-    response = client.get("/")
+def test_sitewide_banner_shown_when_not_configured(fresh_install_client):
+    response = fresh_install_client.get("/config/adapters")
 
-    assert "Beacon identity not configured" in response.text
-
-
-def test_sitewide_banner_hidden_once_configured(client, conn):
-    _configure_beacon(conn)
-
-    response = client.get("/")
-
-    assert "Beacon identity not configured" not in response.text
+    assert "Initial setup isn't finished" in response.text
 
 
-def test_sitewide_banner_hidden_on_beacon_identity_page_itself(client):
-    """The generic config form already asterisks/marks required fields —
+def test_sitewide_banner_hidden_once_setup_complete(client):
+    response = client.get("/config/adapters")
+
+    assert "Initial setup isn't finished" not in response.text
+
+
+def test_sitewide_banner_hidden_on_setup_wizard_pages(fresh_install_client):
+    """The wizard itself already walks the operator through what's missing —
     repeating the sitewide banner there would be redundant."""
-    response = client.get("/config/beacon-identity")
+    response = fresh_install_client.get("/setup/identity")
 
-    assert "Beacon identity not configured" not in response.text
+    assert "Initial setup isn't finished" not in response.text
 
 
 _NAV_BADGE = 'Config <span class="badge badge-warn">!</span>'
 
 
-def test_nav_badge_shown_when_not_configured(client):
-    response = client.get("/")
+def test_nav_badge_shown_when_not_configured(fresh_install_client):
+    # "/" itself is gated by require_setup_complete now — the badge is
+    # exercised on a page /setup doesn't cover instead.
+    response = fresh_install_client.get("/config/adapters")
 
     assert 'href="/config"' in response.text
     assert _NAV_BADGE in response.text
 
 
-def test_nav_badge_hidden_once_configured(client, conn):
-    _configure_beacon(conn)
-
+def test_nav_badge_hidden_once_setup_complete(client):
     response = client.get("/")
 
     # The nav link itself is always present; only its "!" badge goes away.

@@ -76,7 +76,7 @@ def plain_user(conn: sqlite3.Connection):
     return _create_test_user(conn, "operator", "user")
 
 
-def _make_client(conn: sqlite3.Connection, user):
+def _make_client(conn: sqlite3.Connection, user, *, seed_setup_complete: bool = True):
     """Shared machinery behind `client`/`user_client` below: overrides
     ui.db.get_db the same way regardless of which user is logged in, and
     overrides ui.current_user.get_current_user directly (rather than
@@ -85,11 +85,29 @@ def _make_client(conn: sqlite3.Connection, user):
     overriding get_db/verify_csrf via app.dependency_overrides instead of
     exercising the real HTTP mechanics. test_auth_routes.py's login/logout
     tests exercise the real cookie/session path directly, unaffected by
-    this override since they build their own TestClient."""
+    this override since they build their own TestClient.
+
+    seed_setup_complete=True (the default) marks the /setup wizard done on
+    this `conn` before the client is handed back — every existing route
+    test predates the wizard and assumes unblocked access to the dashboard/
+    beacon/items routers, which ui.setup.require_setup_complete would
+    otherwise redirect an admin away from on a fresh, unmigrated-by-a-wizard
+    `conn`. Setup-wizard tests themselves want the un-configured state, so
+    they use `fresh_install_client` (seed_setup_complete=False) instead."""
     from ui.app import app
     from ui.current_user import get_current_user
     from ui.db import get_db
     from ui.security import verify_csrf
+    from ui.setup import mark_setup_complete
+
+    if seed_setup_complete:
+        # set_setting (which this calls) writes its own setting.changed
+        # audit_log row — cleared right back out, same idiom as
+        # _create_test_user's post-creation cleanup above, so this seeding
+        # stays invisible to tests asserting an empty audit_log.
+        mark_setup_complete(conn, actor="test")
+        conn.execute("DELETE FROM audit_log")
+        conn.commit()
 
     # CSRF enforcement is exercised directly in test_security.py; every other
     # route test drives the app without juggling a token, the same way
@@ -136,3 +154,19 @@ def user_client(conn: sqlite3.Connection, plain_user):
     """Same wiring as `client`, but logged in as the 'user' role — for
     tests asserting that role is actually blocked from admin-only routes."""
     yield from _make_client(conn, plain_user)
+
+
+@pytest.fixture
+def fresh_install_client(conn: sqlite3.Connection, admin_user):
+    """Same wiring as `client` (admin-logged-in), but WITHOUT marking the
+    /setup wizard complete — for tests exercising the fresh-install
+    "not set up yet" state itself (test_setup_routes.py)."""
+    yield from _make_client(conn, admin_user, seed_setup_complete=False)
+
+
+@pytest.fixture
+def fresh_install_user_client(conn: sqlite3.Connection, plain_user):
+    """Same wiring as `user_client` ('user'-role-logged-in), but WITHOUT
+    marking the /setup wizard complete — proves ui.setup.require_setup_complete
+    never redirects a non-admin even on a fresh, unconfigured install."""
+    yield from _make_client(conn, plain_user, seed_setup_complete=False)

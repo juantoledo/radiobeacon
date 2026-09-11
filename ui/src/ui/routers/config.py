@@ -64,14 +64,14 @@ def _category_sections_view(conn: sqlite3.Connection, category: str) -> list[dic
     return sections
 
 
-def build_group_form_context(conn: sqlite3.Connection, group_slug: str) -> dict | None:
-    """The config_group_form.html context for one settings group, or None if
-    `group_slug` names no known group. Shared by the generic group edit page
-    (config_tab_page) and ui.routers.rf_conf's SvxLink/Direwolf pages, which
-    render the same group form plus a conf-file editor panel."""
-    specs = specs_for_group(group_slug)
-    if not specs:
-        return None
+def _build_fields(conn: sqlite3.Connection, specs: list) -> list[dict]:
+    """Per-field render context (effective value, secret masking,
+    "overridden" flag, and this field's own reset URL) for an arbitrary list
+    of specs — not necessarily a whole group's worth. Shared by
+    build_group_form_context (a full group) and ui.setup's wizard steps
+    (a curated cross-group subset), which is why reset_url is computed from
+    each spec's *own* group rather than assumed to match a single caller-wide
+    slug."""
     overrides = {row["key"]: row for row in list_settings(conn)}
     fields = []
     for spec in specs:
@@ -86,13 +86,85 @@ def build_group_form_context(conn: sqlite3.Connection, group_slug: str) -> dict 
             value = get_setting(
                 spec.key, spec.default, conn=conn, env_fallback=spec.env_fallback
             ) or ""
-        fields.append({"spec": spec, "value": value, "overridden": row is not None})
+        fields.append(
+            {
+                "spec": spec,
+                "value": value,
+                "overridden": row is not None,
+                "reset_url": f"/config/{group_slug(spec.group)}/{spec.key}/reset",
+            }
+        )
+    return fields
+
+
+def save_settings(
+    conn: sqlite3.Connection, specs: list, form
+) -> tuple[int, str | None, list[dict] | None]:
+    """Validates and writes `form` against `specs` — the group-agnostic core
+    of what used to be config_group_save_action, extracted so ui.setup's
+    wizard steps (a curated cross-group subset of specs, not a whole group)
+    can reuse the exact same required-field / blank-means-no-change /
+    secret-sentinel rules. Returns (changed_count, error, fields):
+    - success: (changed_count, None, None)
+    - required field left blank: (0, "Required: ...", fields) where `fields`
+      carries every submitted value back (not the stored ones) so the
+      caller can re-render the form exactly as the operator left it."""
+    raw_values: dict[str, str] = {}
+    for spec in specs:
+        raw = form.get(spec.key)
+        raw_values[spec.key] = raw.strip() if isinstance(raw, str) else (raw or "")
+
+    # required=True fields (currently just beacon identity) reject the
+    # WHOLE submission if any of them is blank, re-rendering with every
+    # submitted value preserved — unlike the general "blank means no
+    # change" rule below, which doesn't apply to these fields at all.
+    missing = [spec.label for spec in specs if spec.required and not raw_values[spec.key]]
+    if missing:
+        overrides = {row["key"]: row for row in list_settings(conn)}
+        fields = [
+            {
+                "spec": spec,
+                "value": raw_values[spec.key],
+                "overridden": overrides.get(spec.key) is not None,
+                "reset_url": f"/config/{group_slug(spec.group)}/{spec.key}/reset",
+            }
+            for spec in specs
+        ]
+        return 0, f"Required: {', '.join(missing)}", fields
+
+    changed = 0
+    for spec in specs:
+        raw = raw_values[spec.key]
+        # A blank field means "no explicit value provided" for every
+        # non-required field — get_setting() treats a stored empty string
+        # as a real override (distinct from "no row"), so writing "" here
+        # would silently force every unfilled field in the group to
+        # resolve to "" instead of falling through to its env var/default.
+        # Clearing an existing override is what the "Reset" button is for.
+        if raw == "":
+            continue
+        if spec.is_secret and raw == SECRET_SENTINEL:
+            continue  # unchanged — never overwrite a stored secret with the mask
+        set_setting(conn, spec.key, raw, is_secret=spec.is_secret, actor="ui.config")
+        changed += 1
+    return changed, None, None
+
+
+def build_group_form_context(conn: sqlite3.Connection, group_slug: str) -> dict | None:
+    """The config_group_form.html context for one settings group, or None if
+    `group_slug` names no known group. Shared by the generic group edit page
+    (config_tab_page) and ui.routers.rf_conf's SvxLink/Direwolf pages, which
+    render the same group form plus a conf-file editor panel."""
+    specs = specs_for_group(group_slug)
+    if not specs:
+        return None
     return {
         "group": specs[0].group,
         "slug": group_slug,
-        "fields": fields,
+        "fields": _build_fields(conn, specs),
         "sentinel": SECRET_SENTINEL,
         "error": None,
+        "form_action": f"/config/{group_slug}",
         "back_url": _group_back_url(specs[0].group, group_slug),
     }
 
@@ -158,26 +230,8 @@ async def config_group_save_action(
         raise HTTPException(status_code=404, detail="settings group not found")
 
     form = await request.form()
-    raw_values: dict[str, str] = {}
-    for spec in specs:
-        raw = form.get(spec.key)
-        raw_values[spec.key] = raw.strip() if isinstance(raw, str) else (raw or "")
-
-    # required=True fields (currently just beacon identity) reject the
-    # WHOLE submission if any of them is blank, re-rendering with every
-    # submitted value preserved — unlike the general "blank means no
-    # change" rule below, which doesn't apply to these fields at all.
-    missing = [spec.label for spec in specs if spec.required and not raw_values[spec.key]]
-    if missing:
-        overrides = {row["key"]: row for row in list_settings(conn)}
-        fields = [
-            {
-                "spec": spec,
-                "value": raw_values[spec.key],
-                "overridden": overrides.get(spec.key) is not None,
-            }
-            for spec in specs
-        ]
+    changed, error, fields = save_settings(conn, specs, form)
+    if error:
         return templates.TemplateResponse(
             request,
             "config_group_form.html",
@@ -186,27 +240,12 @@ async def config_group_save_action(
                 "slug": group,
                 "fields": fields,
                 "sentinel": SECRET_SENTINEL,
-                "error": f"Required: {', '.join(missing)}",
+                "error": error,
+                "form_action": f"/config/{group}",
                 "back_url": _group_back_url(specs[0].group, group),
             },
             status_code=400,
         )
-
-    changed = 0
-    for spec in specs:
-        raw = raw_values[spec.key]
-        # A blank field means "no explicit value provided" for every
-        # non-required field — get_setting() treats a stored empty string
-        # as a real override (distinct from "no row"), so writing "" here
-        # would silently force every unfilled field in the group to
-        # resolve to "" instead of falling through to its env var/default.
-        # Clearing an existing override is what the "Reset" button is for.
-        if raw == "":
-            continue
-        if spec.is_secret and raw == SECRET_SENTINEL:
-            continue  # unchanged — never overwrite a stored secret with the mask
-        set_setting(conn, spec.key, raw, is_secret=spec.is_secret, actor="ui.config")
-        changed += 1
 
     msg = f"{changed} setting(s) saved" if changed else "no changes"
     return RedirectResponse(
