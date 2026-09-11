@@ -40,7 +40,39 @@ def test_spool_wav_transmitter_creates_incoming_dir(tmp_path):
 
 
 def test_spool_wav_transmitter_returns_false_when_source_missing(tmp_path):
-    ok = SpoolWavTransmitter(str(tmp_path / "incoming")).transmit(
-        wav_path=tmp_path / "nope.wav", label="v"
-    )
+    tx = SpoolWavTransmitter(str(tmp_path / "incoming"))
+
+    ok = tx.transmit(wav_path=tmp_path / "nope.wav", label="v")
+
     assert ok is False
+    # last_error is what __main__.py's _transmit_*_unit functions read into the
+    # beacon.*.transmit_failed audit row's "reason" when transmit() fails
+    # without raising — see transmit.py's docstring.
+    assert "nope.wav" in tx.last_error
+
+
+def test_spool_wav_transmitter_clears_last_error_after_success(tmp_path):
+    src = tmp_path / "src.wav"
+    _make_wav(src)
+    tx = SpoolWavTransmitter(str(tmp_path / "incoming"))
+    tx.last_error = "stale from a previous failed attempt"
+
+    ok = tx.transmit(wav_path=src, label="v")
+
+    assert ok is True
+    assert tx.last_error is None
+
+
+def test_spool_wav_transmitter_captures_permission_error_message(tmp_path, monkeypatch):
+    src = tmp_path / "src.wav"
+    _make_wav(src)
+    tx = SpoolWavTransmitter(str(tmp_path / "incoming"))
+    monkeypatch.setattr(
+        "beacon.transmit.os.rename",
+        lambda *a, **k: (_ for _ in ()).throw(PermissionError(13, "Permission denied")),
+    )
+
+    ok = tx.transmit(wav_path=src, label="v")
+
+    assert ok is False
+    assert "Permission denied" in tx.last_error

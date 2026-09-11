@@ -476,13 +476,21 @@ def _transmit_voice_unit(conn, row: dict, ctx: dict) -> bool:
     if ctx["voice_attention_tone"]:
         prepend_tone_to_wav(wav_path, ctx["voice_attention_tone"])
 
+    transmit_error: str | None = None
     try:
         sent = ctx["wav_transmitter"].transmit(
             wav_path=wav_path, label=f"voice {source}/{item_id}"
         )
-    except Exception:
+    except Exception as exc:
         logger.error("wav transmitter raised", exc_info=True)
         sent = False
+        transmit_error = str(exc)
+    if not sent and transmit_error is None:
+        # SpoolWavTransmitter catches its own OSError (e.g. a permission
+        # error on the spool dir) and returns False rather than raising —
+        # last_error carries that cause through to the audit row instead of
+        # only the generic "transmitter_failed" marker below.
+        transmit_error = getattr(ctx["wav_transmitter"], "last_error", None)
 
     if sent:
         record_audit_event(
@@ -495,6 +503,7 @@ def _transmit_voice_unit(conn, row: dict, ctx: dict) -> bool:
         record_audit_event(
             conn, event_type="beacon.voice.transmit_failed", actor="beacon",
             source=source, item_id=item_id,
+            details={"reason": transmit_error or "transmitter_failed"},
         )
     return sent
 
@@ -546,13 +555,17 @@ def _transmit_frame_unit(conn, row: dict, ctx: dict) -> bool:
         )
         return False
 
+    transmit_error: str | None = None
     try:
         sent = ctx["wav_transmitter"].transmit(
             wav_path=wav_path, label=f"frame {source}/{item_id} {chunk_index}"
         )
-    except Exception:
+    except Exception as exc:
         logger.error("wav transmitter raised", exc_info=True)
         sent = False
+        transmit_error = str(exc)
+    if not sent and transmit_error is None:
+        transmit_error = getattr(ctx["wav_transmitter"], "last_error", None)
 
     if sent:
         record_audit_event(
@@ -568,6 +581,7 @@ def _transmit_frame_unit(conn, row: dict, ctx: dict) -> bool:
         record_audit_event(
             conn, event_type="beacon.frame.transmit_failed", actor="beacon",
             source=source, item_id=item_id,
+            details={"reason": transmit_error or "transmitter_failed"},
         )
     return sent
 
@@ -661,17 +675,21 @@ def _transmit_watermark(conn, beacon_type: str, ctx: dict, now_dt: datetime) -> 
     else:
         return False
 
+    transmit_error: str | None = None
     try:
         sent = ctx["wav_transmitter"].transmit(wav_path=wav_path, label="watermark")
-    except Exception:
+    except Exception as exc:
         logger.error("wav transmitter raised", exc_info=True)
         sent = False
+        transmit_error = str(exc)
     finally:
         # A watermark has no item and is never replayed from the UI (unlike
         # voice/frame/manual clips), so unlike those it doesn't need to wait
         # for the hourly retention sweep -- remove it as soon as the
         # transmitter has had its chance to read it.
         wav_path.unlink(missing_ok=True)
+    if not sent and transmit_error is None:
+        transmit_error = getattr(ctx["wav_transmitter"], "last_error", None)
 
     if sent:
         record_audit_event(
@@ -680,7 +698,10 @@ def _transmit_watermark(conn, beacon_type: str, ctx: dict, now_dt: datetime) -> 
         )
         set_beacon_status(conn, "last_watermark_transmit_at", utc_now().isoformat())
     else:
-        record_audit_event(conn, event_type="beacon.watermark.transmit_failed", actor="beacon")
+        record_audit_event(
+            conn, event_type="beacon.watermark.transmit_failed", actor="beacon",
+            details={"kind": beacon_type, "reason": transmit_error or "transmitter_failed"},
+        )
     return sent
 
 
@@ -749,11 +770,15 @@ def _transmit_manual_unit(conn, row: dict, beacon_type: str, ctx: dict, now_dt: 
     else:
         return False
 
+    transmit_error: str | None = None
     try:
         sent = ctx["wav_transmitter"].transmit(wav_path=wav_path, label=label)
-    except Exception:
+    except Exception as exc:
         logger.error("wav transmitter raised", exc_info=True)
         sent = False
+        transmit_error = str(exc)
+    if not sent and transmit_error is None:
+        transmit_error = getattr(ctx["wav_transmitter"], "last_error", None)
 
     if sent:
         record_audit_event(
@@ -767,7 +792,10 @@ def _transmit_manual_unit(conn, row: dict, beacon_type: str, ctx: dict, now_dt: 
     else:
         record_audit_event(
             conn, event_type="beacon.manual.transmit_failed", actor="beacon",
-            details={"kind": beacon_type, "manual_id": row["id"]},
+            details={
+                "kind": beacon_type, "manual_id": row["id"],
+                "reason": transmit_error or "transmitter_failed",
+            },
         )
     return sent
 

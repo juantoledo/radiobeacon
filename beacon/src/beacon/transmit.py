@@ -34,10 +34,18 @@ class LoggingWavTransmitter:
 class SpoolWavTransmitter:
     """BEACON_WAV_TRANSMITTER=spool. Copies the WAV into svxlink-txqueue's
     incoming folder via a write-then-rename so the watcher never sees a partial
-    file. Returns False (logs) on any OSError; never raises."""
+    file. Returns False (logs) on any OSError; never raises.
+
+    last_error holds the str() of that OSError after a failed transmit() (e.g.
+    "[Errno 13] Permission denied: '/var/spool/svxlink-tx'") — None after a
+    successful one, or before transmit() has ever been called. __main__.py's
+    _transmit_*_unit functions read this (via getattr, since LoggingWavTransmitter
+    has no such attribute — it never fails) to put the real cause in the
+    beacon.*.transmit_failed audit row's details instead of a generic marker."""
 
     def __init__(self, incoming_dir: str):
         self._incoming_dir = Path(incoming_dir)
+        self.last_error: str | None = None
 
     def transmit(self, *, wav_path: Path, label: str) -> bool:
         try:
@@ -47,9 +55,11 @@ class SpoolWavTransmitter:
             tmp = final.with_name(f".{final.name}.part")
             tmp.write_bytes(data)
             os.rename(tmp, final)
-        except OSError:
+        except OSError as exc:
             logger.error("failed to place clip in spool transmitter=spool clip=%s dir=%s label=%s",
                          wav_path, self._incoming_dir, label, exc_info=True)
+            self.last_error = str(exc)
             return False
+        self.last_error = None
         logger.info("queued clip transmitter=spool clip=%s label=%s", final, label)
         return True

@@ -18,6 +18,7 @@ from adapters.storage import (
 from adapters.policy import set_policy
 
 import beacon.__main__ as main_module
+from beacon.transmit import SpoolWavTransmitter
 
 
 class FakeMessage:
@@ -35,12 +36,15 @@ class FakeClient:
 
 
 class _RecordingWavTransmitter:
-    def __init__(self, result=True):
+    def __init__(self, result=True, raises: Exception | None = None):
         self.result = result
+        self.raises = raises
         self.calls = []
 
     def transmit(self, *, wav_path, label):
         self.calls.append((str(wav_path), label))
+        if self.raises is not None:
+            raise self.raises
         return self.result
 
 
@@ -307,6 +311,39 @@ def test_drain_manual_tx_deletes_row_even_when_transmitter_fails(tmp_path):
 
     assert pending_manual_tx(conn, "voice") == []
     assert "beacon.manual.transmit_failed" in _audit_types(conn)
+
+
+def test_drain_manual_tx_records_reason_when_transmitter_fails(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    enqueue_manual_tx(conn, kind="voice", text="hola", actor="ui.dashboard")
+    ctx = _ctx(wav_dir=str(tmp_path), wav_transmitter=_RecordingWavTransmitter(result=False))
+
+    main_module._drain_manual_tx(
+        threading.Event(), conn, "voice", datetime.now(timezone.utc), ctx, 0.0
+    )
+
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.manual.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "transmitter_failed"
+
+
+def test_drain_manual_tx_records_exception_message_on_transmitter_raise(tmp_path):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    enqueue_manual_tx(conn, kind="voice", text="hola", actor="ui.dashboard")
+    ctx = _ctx(
+        wav_dir=str(tmp_path),
+        wav_transmitter=_RecordingWavTransmitter(raises=OSError("disk full")),
+    )
+
+    main_module._drain_manual_tx(
+        threading.Event(), conn, "voice", datetime.now(timezone.utc), ctx, 0.0
+    )
+
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.manual.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "disk full"
 
 
 # --- content_ready -> schedule rows ---
@@ -858,6 +895,71 @@ def test_transmit_voice_unit_records_tts_failure(tmp_path, monkeypatch):
     assert json.loads(row[0])["reason"] == "tts_failed"
 
 
+def test_transmit_voice_unit_records_transmit_failed_on_handoff_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", summary="hola")
+
+    sent = main_module._transmit_voice_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": ""},
+        _ctx(wav_transmitter=_RecordingWavTransmitter(result=False)),
+    )
+
+    assert sent is False
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.voice.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "transmitter_failed"
+
+
+def test_transmit_voice_unit_records_exception_message_on_transmitter_raise(tmp_path, monkeypatch):
+    monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: True)
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", summary="hola")
+
+    sent = main_module._transmit_voice_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": ""},
+        _ctx(wav_transmitter=_RecordingWavTransmitter(raises=OSError("disk full"))),
+    )
+
+    assert sent is False
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.voice.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "disk full"
+
+
+def test_transmit_voice_unit_records_spool_transmitter_last_error(tmp_path, monkeypatch):
+    """End-to-end: a real SpoolWavTransmitter that swallows a PermissionError
+    into its own last_error (rather than raising) still gets that exact cause
+    threaded into the audit row — not just the generic "transmitter_failed"
+    marker — because _transmit_voice_unit reads transmitter.last_error when
+    transmit() returns False without raising."""
+    def _fake_synth(text, *, out_path, **k):
+        out_path.write_bytes(b"RIFF....")
+        return True
+
+    monkeypatch.setattr("beacon.voice.synthesize_speech", _fake_synth)
+    monkeypatch.setattr(
+        "beacon.transmit.os.rename",
+        lambda *a, **k: (_ for _ in ()).throw(PermissionError(13, "Permission denied")),
+    )
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_item(conn, "csn", "1", summary="hola")
+    tx = SpoolWavTransmitter(str(tmp_path / "incoming"))
+
+    sent = main_module._transmit_voice_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": ""},
+        _ctx(wav_dir=str(tmp_path), wav_transmitter=tx),
+    )
+
+    assert sent is False
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.voice.transmit_failed'"
+    ).fetchone()
+    assert "Permission denied" in json.loads(row[0])["reason"]
+
+
 def test_transmit_voice_unit_prepends_attention_tone_after_synth(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr("beacon.voice.synthesize_speech", lambda *a, **k: calls.append("synth") or True)
@@ -980,9 +1082,25 @@ def test_transmit_frame_unit_records_transmit_failed_on_handoff_failure(tmp_path
         _ctx(wav_transmitter=_RecordingWavTransmitter(result=False)),
     )
 
-    assert conn.execute(
-        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.frame.transmit_failed'"
-    ).fetchone() is not None
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "transmitter_failed"
+
+
+def test_transmit_frame_unit_records_exception_message_on_transmitter_raise(tmp_path, _stub_frame_audio):
+    conn = get_connection(tmp_path / "radiobeacon.db")
+    _insert_chunk(conn, "csn", "1", 0, "chunk text")
+
+    main_module._transmit_frame_unit(
+        conn, {"source": "csn", "item_id": "1", "ref": "0"},
+        _ctx(wav_transmitter=_RecordingWavTransmitter(raises=OSError("disk full"))),
+    )
+
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.frame.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "disk full"
 
 
 # --- watermark ---
@@ -1089,9 +1207,10 @@ def test_transmit_watermark_records_transmit_failed_on_handoff_failure(tmp_path)
     )
 
     assert sent is False
-    assert conn.execute(
-        "SELECT 1 FROM audit_log WHERE event_type = 'beacon.watermark.transmit_failed'"
-    ).fetchone() is not None
+    row = conn.execute(
+        "SELECT details FROM audit_log WHERE event_type = 'beacon.watermark.transmit_failed'"
+    ).fetchone()
+    assert json.loads(row[0])["reason"] == "transmitter_failed"
 
 
 def test_transmit_watermark_removes_wav_after_successful_handoff(tmp_path, monkeypatch):
