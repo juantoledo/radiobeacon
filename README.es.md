@@ -2,84 +2,45 @@
 
 *English version: [README.md](README.md).*
 
-**radiobeacon** es el software de una baliza experimental de propagación
-de radioafición. Es una estación de radio, no solo un programa: un nodo de
-radioafición —antes una pasarela EchoLink— que ahora transmite de forma
-automática, en una frecuencia fija, para que otros operadores usen su
-señal para comprobar si el camino entre su estación y esta está abierto.
+**RadioBeacon** es el software detrás de una estación experimental de
+radioaficionado: transmite de forma automática, en una frecuencia fija.
+Los radioaficionados llaman a una estación usada así una *baliza de
+propagación*.
 
-En vez de emitir solo un identificador, la baliza pone *contenido útil* en
-el aire: recoge comunicados de interés público (alertas tempranas de
-protección civil, reportes sísmicos), convierte cada uno en una
-transmisión corta y la emite por el canal (repetidora o simplex) cuando la
-frecuencia está libre. Quien copia la baliza obtiene a la vez una prueba
-de propagación y el comunicado en sí.
-
-Todo lo que hay en este repositorio es la automatización detrás de esa
-estación: la recolección de datos, la preparación del texto y la entrega
-al aire. Se asume que el transmisor, la interfaz de audio y el propio
-SvxLink ya están instalados; su despliegue queda fuera del alcance de este
-repositorio.
+En lugar de transmitir solo un identificador de estación, RadioBeacon
+también pone al aire boletines breves de interés público: alertas
+tempranas de protección civil e informes de sismos. Quien escucha la
+baliza obtiene dos cosas a la vez: la confirmación de que el camino de la
+señal funciona y el boletín en sí.
 
 ---
 
-## La estación
+## Cómo funciona
 
-| | |
-|---|---|
-| **Indicativo** | Se define en cada instalación (identidad de la estación, se ingresa en el panel) |
-| **Modo** | El operador elige **uno**: **voz** hablada, o **paquete AX.25** (AFSK 1200 baudios) |
-| **Frecuencia / localizador** | Se define en cada instalación (identidad de la estación, se ingresa en el panel) |
-| **Control del transmisor** | [SvxLink](https://www.svxlink.org/) — controla el PTT y reproduce cada clip solo cuando el canal está libre |
-| **Servicio** | Deshabilitado por defecto; el operador habilita la transmisión de forma explícita |
-| **Identificación** | El indicativo se emite (hablado o en el frame) con cada comunicado; queda pendiente un ID en CW continuo, exigido por la normativa chilena |
+RadioBeacon vigila un pequeño conjunto de fuentes de información en
+internet. Cuando aparece algo nuevo, convierte ese aviso en un anuncio
+hablado breve (o en un mensaje de texto digital) y lo emite por radio
+cuando la frecuencia está libre. Cada boletín se transmite varias veces,
+con un intervalo fijo entre repeticiones, para que quien sintoniza tarde
+aún tenga oportunidad de captarlo.
 
-La baliza transmite **un solo tipo de contenido a la vez**. Cambiar entre
-voz y paquete es un cambio de configuración, no una reinstalación: la cola
-de transmisión pendiente del otro tipo se limpia automáticamente.
+El recorrido de un boletín:
 
-### Voz
-
-Cada comunicado se locuta en español con un motor de texto a voz sin
-conexión (Piper, neuronal; `espeak-ng` como alternativa). El texto hablado
-se envuelve en un formato fijo de boletín —nombre de la fuente, fecha y
-una frase de cierre que remite a las fuentes oficiales— para que, incluso
-un comunicado truncado, se entienda como un aviso informativo y no se
-confunda con un canal oficial.
-
-### Paquete AX.25
-
-Cada comunicado se envía como un frame UI de AX.25 a 1200 baudios AFSK,
-generado como audio con la herramienta `gen_packets` de Direwolf (sin TNC
-en ejecución, sin conexión de red). El frame usa un formato de mensaje
-compatible con APRS (`INDICATIVO>DESTINO:texto`) **pero no se transmite en
-la frecuencia de llamada de APRS**: opera en una frecuencia experimental
-coordinada, de modo que nunca aparece en la red pública de APRS. Los
-comunicados largos se parten en varios frames; la longitud del frame se
-mantiene automáticamente bajo el límite de ~256 bytes de AX.25.
-
----
-
-## Qué sale al aire
-
-El contenido proviene de **fuentes** configurables. Cada fuente se
-consulta en su propio intervalo, los ítems nuevos se almacenan, se acortan
-de forma opcional y luego se encolan para transmisión.
-
-- **Alertas tempranas de SENAPRED** — alertas del sistema de alerta
-  temprana de protección civil de Chile (eventos meteorológicos,
-  hidrológicos y geofísicos).
-- **Reportes sísmicos del CSN** — sismos publicados por el Centro
-  Sismológico Nacional.
-- **Cualquier feed HTTP/JSON** — se agregan otras fuentes (APIs de clima,
-  lecturas de sensores locales, etc.) desde el panel, describiendo el
-  endpoint y cómo mapear sus campos; sin tocar código.
-
-Toda transmisión de tipo alerta se marca explícitamente como una
-**retransmisión experimental y no oficial** y remite a SENAPRED como
-fuente autoritativa.
-
-### Del ítem a la transmisión
+1. **Vigilar novedades** — RadioBeacon consulta cada fuente de información
+   según su propio calendario.
+2. **Recopilar** — Cada aviso nuevo se guarda, conservando intacta su
+   redacción original.
+3. **Resumir (opcional)** — Un aviso extenso se condensa en dos o tres
+   frases claras. Este paso usa IA, permanece desactivado salvo que el
+   operador lo active, y se omite en avisos que ya son breves.
+4. **Preparar el mensaje** — El texto se convierte en audio hablado en
+   español, o en un paquete digital. Se añaden automáticamente el
+   indicativo de la estación y una nota de que se trata de un relé no
+   oficial.
+5. **Esperar frecuencia libre** — No se transmite nada mientras otra
+   estación esté usando el canal.
+6. **Al aire** — El boletín se emite y se repite unas cuantas veces con un
+   intervalo fijo entre repeticiones.
 
 ```
 fuentes  →  ítem almacenado  →  (opcional) resumen por IA, 2 o 3 oraciones  →  ajustado al modo elegido
@@ -92,141 +53,139 @@ fuentes  →  ítem almacenado  →  (opcional) resumen por IA, 2 o 3 oraciones 
                                         entregado a SvxLink → se emite cuando el canal está libre
 ```
 
-### El rol de la IA
+Cada uno de estos pasos queda registrado en la consola del operador, de
+modo que el operador puede ver exactamente qué se recibió y qué salió al
+aire.
 
-La IA cumple aquí una única función acotada, y está **deshabilitada por
-defecto**: condensar un comunicado para que quepa en una transmisión al
-aire. Un ítem de una fuente suele ser un aviso web completo — demasiado
-largo para locutarlo en una ventana razonable o para caber en un frame de
-paquete. Cuando se habilita, cada ítem nuevo se envía a un modelo de
-lenguaje con un prompt fijo y editable por el operador (en español,
-«resume este aviso en 2 o 3 oraciones claras y completas, sin inventar
-nada, sin dejar oraciones a medias»). El resultado se guarda como el
-`summary` del ítem y es lo que usan luego las etapas de voz y paquete; el
-texto original queda intacto.
+## Cómo se conecta con la radio
 
-- **Independiente del proveedor** — OpenAI, Claude, o un modelo Ollama
-  autoalojado, según la configuración. Es el único paso que hace una
-  llamada saliente a un servicio externo; con Ollama es completamente
-  local.
-- **Solo cuando aporta** — los ítems ya lo bastante cortos pasan directo,
-  nunca se envían a un proveedor.
-- **Sin reescritura silenciosa ante fallos** — si la llamada al modelo
-  falla, el ítem *no* se transmite, en lugar de salir al aire con texto
-  parcial o sin revisar. Una fuente puede optar por caer de vuelta a su
-  título simple (SENAPRED lo hace).
-- **No es un filtro ni toma decisiones** — nunca elige qué se transmite,
-  ni cambia una política de transmisión, ni edita la identidad de la
-  estación. Solo acorta texto que una fuente definida por una persona ya
-  seleccionó.
+RadioBeacon no controla el transmisor directamente. Prepara un archivo de
+audio listo para reproducir y lo entrega al software de control del
+transmisor de la estación — [SvxLink](https://www.svxlink.org/) — que
+activa la radio y reproduce el clip solo cuando el canal está libre.
 
-La salida del modelo no se recorta a posteriori por longitud —el prompt
-pide un resumen corto y completo—, así que un modelo que se porte mal
-todavía queda atajado por los límites de longitud de cada modo, más
-abajo.
+RadioBeacon es solo de transmisión. Nunca escucha, decodifica ni graba a
+otras estaciones: no tiene receptor de ningún tipo.
 
-### Repetición
+## Qué sale al aire
 
-Cada ítem se pone al aire una cantidad fija de veces, con un intervalo
-fijo entre repeticiones: esos dos números son una **política de
-transmisión** con nombre. Las políticas se editan desde el panel; el
-operador puede sobreescribir la política de un ítem puntual, o rearmar un
-ítem que ya terminó sus repeticiones. Cada intento cuenta para el total,
-de modo que un comunicado no se transmite indefinidamente si el enlace
-falla. La cola se guarda en disco y sobrevive a un reinicio.
+El contenido proviene de fuentes que elige el operador. Dos vienen
+configuradas de fábrica:
+
+- **Alertas tempranas de SENAPRED** — avisos de protección civil de Chile
+  para eventos meteorológicos, hidrológicos y geofísicos.
+- **Informes de sismos del CSN** — eventos sísmicos publicados por el
+  Centro Sismológico Nacional.
+
+El operador puede añadir más fuentes — cualquier feed web público —
+describiéndolas en la consola. No hace falta programar.
+
+RadioBeacon es un relé experimental y no oficial. Toda alerta que
+transmite lo indica así, y remite a los oyentes a SENAPRED como fuente
+oficial. No es un servicio de radiodifusión de emergencias y no debe
+usarse como tal.
+
+## El papel de la IA
+
+La inteligencia artificial cumple una única función acotada en
+RadioBeacon: resumir un aviso extenso en unas pocas frases completas.
+Trabaja a partir de una instrucción fija que le indica no inventar nada y
+no dejar ninguna frase sin terminar. Es independiente del proveedor —
+OpenAI, Claude, o un modelo Ollama autoalojado, según la configuración —
+y con Ollama es completamente local.
+
+La IA nunca decide qué se transmite, nunca cambia la configuración ni la
+identidad de la estación, y está desactivada por defecto. Los avisos que
+ya son suficientemente breves nunca se le envían.
+
+Si el paso de IA falla, el operador elige de antemano qué ocurre: usar el
+texto original, usar solo el titular, o no transmitir nada.
+
+## Seguridad y control del operador
+
+- **En silencio por defecto.** Una instalación nueva no transmite nada. El
+  operador debe activar la transmisión y completar la identidad de la
+  estación — indicativo, ubicación, frecuencia — antes de que algo salga
+  al aire.
+- **Un solo tipo de mensaje a la vez.** La estación envía voz o paquete
+  digital, nunca ambos al mismo tiempo.
+- **La frecuencia libre es lo primero.** Las transmisiones esperan a que
+  el canal esté libre.
+- **Nada se acumula.** Un boletín que ha esperado demasiado caduca en
+  lugar de saturar el aire más tarde.
+- **Registro completo.** Cada descarga, cada resumen y cada transmisión
+  queda registrada en la consola, y cualquier clip de voz puede
+  reproducirse en el navegador.
+
+## Por dentro
+
+Las fuentes de información son servicios públicos de organismos del
+Estado. RadioBeacon las consulta a través de las mismas interfaces web que
+usan los sitios de esos organismos: no hay acceso especial ni convenio de
+por medio. Cada fuente se consulta con su propio temporizador
+independiente, de modo que una fuente rápida y una lenta no se frenan
+entre sí.
+
+Una emergencia en desarrollo suele aparecer como una serie de
+actualizaciones, no como un único aviso editado. RadioBeacon trata cada
+actualización como un boletín propio y nunca las reescribe ni las
+combina. Todo lo que ya vio se ignora, así el mismo reporte no sale al
+aire dos veces.
+
+RadioBeacon nunca activa la radio por sí mismo. De eso se encarga
+SvxLink, el software consolidado que controla el transmisor de la
+estación y comparte la frecuencia de forma cortés con otros operadores.
+RadioBeacon arma un clip de audio terminado y lo deja en una cola;
+SvxLink reproduce los clips de a uno, y solo después de que la frecuencia
+haya estado en silencio unos segundos. Un clip que esperó demasiado se
+descarta en vez de salir tarde.
+
+En modo digital, un boletín sale como un paquete de datos corto en lugar
+de voz. RadioBeacon usa Direwolf, un programa de paquete de radioafición
+muy difundido, para convertir el texto en los tonos que decodifica un
+receptor de paquete. Esos paquetes usan una frecuencia experimental y
+nunca tocan la red pública APRS.
+
+Salvo la descarga de actualizaciones de las fuentes —y el paso opcional
+de resumen— todo funciona en la máquina del operador sin conexión a
+internet: la voz, los tonos de paquete, la cola y el panel.
+
+## Qué no es RadioBeacon
+
+- No es un canal oficial de emergencias, ni un sustituto de SENAPRED,
+  ONEMI ni de ningún sistema estatal de alertas.
+- No es un sistema bidireccional ni de despacho: no puede recibir
+  mensajes ni confirmarlos.
+- No es un producto comercial. Es una única estación experimental,
+  operada por un radioaficionado con licencia y compartida como código
+  abierto.
 
 ---
 
-## Operación
-
-El panel (página web local, `http://127.0.0.1:8080`) es la consola del
-operador:
-
-- estado actual de la baliza — habilitada/deshabilitada, modo activo,
-  transmisiones pendientes, último latido, desviación de reloj medida por
-  NTP;
-- ítems recientes y la bitácora de auditoría al aire (qué se transmitió,
-  cuándo y con qué resultado);
-- habilitar/deshabilitar la transmisión y cambiar de modo sin reiniciar;
-- explorar/buscar ítems, sobreescribir una política de transmisión,
-  rearmar un ítem;
-- administrar fuentes y políticas de transmisión.
-
-El reloj lo disciplina el cliente NTP del propio sistema operativo. La
-baliza, además, mide su desviación de reloj contra un servidor NTP público
-solo para mostrarla; nunca ajusta el reloj por sí misma.
-
----
-
-## Ejecutar la automatización
+## Inicio rápido
 
 ```bash
-./start.sh   # clon nuevo: crea .env, prepara un venv compartido
-             # y arranca junto la recolección de datos + la entrega + las
-             # acciones + el panel + la baliza (Ctrl+C detiene todo).
-             # No requiere secretos; todos los valores por defecto son
-             # seguros, y la baliza arranca deshabilitada (BEACON_ENABLED=false).
-
-./query_history.sh --help   # consultas SQL ad-hoc contra la base local
-./stop.sh --status          # qué está corriendo, y su pid
+./start.sh   # clon nuevo: crea .env, prepara un venv compartido y arranca
+             # junto la recolección de datos + la entrega + las acciones +
+             # el panel + la baliza (Ctrl+C detiene todo). No requiere
+             # secretos; la baliza arranca deshabilitada
+             # (BEACON_ENABLED=false).
 ```
 
-Con todo en marcha, abre `http://127.0.0.1:8080`.
+Con todo en marcha, abre `http://127.0.0.1:8080` — el panel del operador.
 
-Cada componente también puede ejecutarse por separado
-(`./data-adapters/start.sh`, `./dispatcher/start.sh`, `./mq/start.sh`,
-`./actions/start.sh`, `./ui/start.sh`, `./beacon/start.sh`) — cada uno es
-autónomo y se niega a arrancar dos veces.
+## Más información
 
-### Cómo está construido
-
-Siete componentes desacoplados, conectados solo por una base de datos
-SQLite compartida (`storage/radiobeacon.db`) y, de forma opcional, un
-broker MQTT local. Cada uno tiene su propio README con el detalle.
-
-```
-data-adapters/  consulta fuentes externas, almacena ítems crudos     → data-adapters/README.md
-dispatcher/     observa ítems nuevos y los entrega a los handlers     → dispatcher/README.md
-mq/             broker MQTT local opcional (Docker)                   → mq/README.md
-actions/        pipeline MQTT opcional (resumen IA, troceo, …)        → actions/README.md
-ui/             el panel del operador (FastAPI, renderizado servidor) → ui/README.md
-beacon/         la capa de transmisión — renderiza y entrega a SvxLink → beacon/README.md
-storage/        la base de datos SQLite compartida                    → storage/README.md
-```
-
-`beacon/` renderiza cada ítem encolado a un único WAV y lo deja en la
-carpeta *spool* de `svxlink-txqueue`; SvxLink lo reproduce en el siguiente
-canal libre. Desplegar SvxLink y `svxlink-txqueue` queda fuera del
-alcance — ver
-[documentation/svxlink-txqueue-SETUP.md](documentation/svxlink-txqueue-SETUP.md).
-[CONTEXT.md](CONTEXT.md) registra el diseño original de la estación (el
-esquema TDMA de voz/paquete intercalados que `beacon/` luego reemplazó por
-el modelo más simple de un tipo a la vez).
-
----
-
-## Configuración
-
-Toda la configuración es un único archivo `.env` en la raíz del repo
-(copia `.env.example` a `.env`). La mayoría de los ajustes también se
-editan en vivo desde la página `/config` del panel. Las variables propias
-de un componente o fuente llevan su ruta como prefijo
-(`ADAPTERS_SENAPRED_*`, `BEACON_*`); las que lee directamente un SDK de
-terceros conservan el nombre propio de ese SDK.
-
-La **identidad de la estación** (indicativo, descripción, localizador,
-frecuencia, contacto del operador) se ingresa solo en el panel y nunca se
-lee del entorno: un `BEACON_CALLSIGN` perdido en la shell no puede poner
-un indicativo equivocado al aire. La baliza se niega a transmitir mientras
-falte algún campo de identidad.
-
-## La hora siempre es UTC
-
-Toda fecha/hora que se maneja en cualquier parte de este repo es UTC con
-zona horaria explícita, sin excepciones en almacenamiento, planificación
-de transmisión ni cálculo interno. El único lugar donde aparece una zona
-local es el texto mostrado a una persona —fechas de los comunicados
-hablados, el panel, logs legibles— que se convierte a `DISPLAY_TIMEZONE`
-(por defecto `America/Santiago`) en el último paso y nunca se reintroduce
-en nada almacenado. Ver los comentarios de código en
-`adapters/timeutil.py` para la regla completa.
+- [documentation/ARCHITECTURE.md](documentation/ARCHITECTURE.md) — cómo
+  encajan los siete componentes, las políticas de transmisión, y cómo
+  ejecutar cada uno por separado. *(en inglés)*
+- [documentation/CONFIGURATION.md](documentation/CONFIGURATION.md) — la
+  referencia de `.env`, la identidad de la estación, el logging y la
+  importación/exportación de configuración. *(en inglés)*
+- [documentation/svxlink-txqueue-SETUP.es.md](documentation/svxlink-txqueue-SETUP.es.md)
+  — cómo configurar la entrega al aire hacia SvxLink.
+- Cada componente tiene su propio README (en inglés):
+  [data-adapters/](data-adapters/README.md),
+  [dispatcher/](dispatcher/README.md), [mq/](mq/README.md),
+  [actions/](actions/README.md), [ui/](ui/README.md),
+  [beacon/](beacon/README.md), [storage/](storage/README.md).
