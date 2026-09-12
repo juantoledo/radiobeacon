@@ -5,6 +5,15 @@ unified version covers the whole project (`data-adapters`, `dispatcher`,
 `actions`, `beacon`, `ui`), not a version per package. Entries are added by
 `./release.sh`.
 
+## v0.4.0 — 2026-09-12
+
+- Rewrite README as product-facing, move technical detail to documentation/
+- Ui / Readme Improvements
+- Show on-air glow border and badge on every page, not just dashboard
+- Added eye candy workflow to the dashboard
+- Added responsive workflow view
+- General audit improvements
+
 ## v0.3.0 — 2026-09-12
 
 First tagged release since the versioning scheme was introduced (the prior
