@@ -21,7 +21,7 @@
 {% set _pipe_sources = ['SENAPRED', 'CSN', 'MeteoChile', t('about.pipeline.source_any')] %}
 {% set _pipe_chips = ['{callsign}', '{date}', '{source}'] %}
 
-{% macro pipe_svg(layout, extra_class='') %}
+{% macro pipe_svg(layout, extra_class='', states={}) %}
 {% set wide = layout == 'wide' %}
 {% set NH, NR, NI, NIC = 35, 29, 23, 30 %}   {# halo / ring / inner radius, icon size #}
 {% if wide %}
@@ -50,7 +50,7 @@
   {# --- routes: drawn faint, and re-used as the packet motion paths --- #}
   <path id="pl-main-{{ layout }}" class="pipe-route" d="{{ route_main }}"/>
   <path id="pl-ax25-{{ layout }}" class="pipe-route pipe-route--alt" d="{{ route_ax25 }}"/>
-  <path id="pl-skip-{{ layout }}" class="pipe-route pipe-route--alt" d="{{ route_skip }}"/>
+  <path id="pl-skip-{{ layout }}" class="pipe-route pipe-route--alt pipe-route--skip" d="{{ route_skip }}"/>
   <path class="pipe-route-flow" d="{{ route_main }}"/>
   <path class="pipe-route-flow pipe-route-flow--alt pipe-route-flow--ax25" d="{{ route_ax25 }}"/>
   <path class="pipe-route-flow pipe-route-flow--alt" d="{{ route_skip }}"/>
@@ -100,7 +100,7 @@
   </g>
   {% endif %}
 
-  <g class="pipe-node pipe-node--{{ loop.index }}" style="--pipe-at: {{ at }}">
+  <g class="pipe-node pipe-node--{{ loop.index }}" style="--pipe-at: {{ at }}"{% if states.get(key) %} data-state="{{ states[key] }}"{% endif %}>
     <g class="pipe-node-core">
       <circle class="pipe-node-halo"  cx="{{ cx }}" cy="{{ cy }}" r="{{ NH }}"/>
       <circle class="pipe-node-ring"  cx="{{ cx }}" cy="{{ cy }}" r="{{ NR }}"/>

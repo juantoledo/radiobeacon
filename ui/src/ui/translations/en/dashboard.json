@@ -2,7 +2,7 @@
   "dashboard.title": "Dashboard",
   "dashboard.live_label": "Live",
   "dashboard.on_air_indicator": "On air",
-  "dashboard.pipeline_aria": "Signal pipeline: sources are ticking over; the on-air node lights up while the station is actually transmitting.",
+  "dashboard.pipeline_aria": "Signal pipeline: each stage reflects live status — ingest health, AI summarization, the beacon process, the transmit queue — and the on-air node lights up while the station is actually transmitting.",
   "dashboard.tx_audio_toggle_label": "Transmission audio",
   "dashboard.tx_audio_mute": "Mute transmission audio",
   "dashboard.tx_audio_unmute": "Play transmission audio",

@@ -1,8 +1,30 @@
 {# Live region of the dashboard — re-rendered on its own by the auto-refresh
    (routers/dashboard.py serves this fragment when X-Auto-Refresh is set).
    dashboard-refresh.js patches each [data-cell] in place rather than
-   replacing the subtree, so only values that actually changed repaint. #}
+   replacing the subtree, so only values that actually changed repaint.
+   Imported here (not just dashboard.html) since this fragment is also
+   served standalone for the auto-refresh fetch. #}
+{% from "_pipeline_diagram.html" import pipe_svg with context %}
 <div id="dashboard-content">
+
+{# Same wide signal-pipeline SVG as the About page, but reactive: each
+   node's data-state reflects this same poll's real backend numbers below
+   (ingest health, AI toggle, beacon process, queue depth) instead of the
+   About page's always-looping demo timer. Wrapped in one data-cell so a
+   tick where nothing actually changed doesn't restart any of its CSS
+   animations. The on-air node (node6) is deliberately left out of this
+   dict — it's driven by body.is-on-air (on-air.js's faster 2s poll)
+   rather than this 5s cycle, same as the page-wide glow border. #}
+{% set pipeline_states = {
+  'node1': 'ok' if ingest.state == 'ok' else 'warn' if ingest.state == 'error' else 'idle',
+  'node2': 'ok' if ingest.state == 'ok' else 'warn' if ingest.state == 'error' else 'idle',
+  'node3': 'active' if ai_enabled else 'skipped',
+  'node4': 'active' if running else 'idle',
+  'node5': 'off' if not beacon_enabled else ('warn' if queue_bar.pct >= 90 else ('busy' if queue_depth > 0 else 'idle')),
+} %}
+<section class="dash-pipe" aria-label="{{ t('dashboard.pipeline_aria') }}" data-cell="pipeline">
+  {{ pipe_svg('wide', extra_class='pipe--reactive', states=pipeline_states) }}
+</section>
 
 {% if is_admin() %}
 {% set toggles = [
