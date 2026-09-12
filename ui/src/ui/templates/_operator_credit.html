@@ -16,5 +16,5 @@
 
 {# Full site-wide footer line. #}
 {% macro footer() -%}
-<footer class="app-footer">{{ t('common.operated_by') }} {{ credit_inline() }}</footer>
+<footer class="app-footer">{{ t('common.operated_by') }} {{ credit_inline() }} &middot; v{{ app_version() }}</footer>
 {%- endmacro %}

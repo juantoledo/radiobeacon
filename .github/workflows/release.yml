@@ -1,0 +1,65 @@
+# Publishes a GitHub Release whenever a vX.Y.Z tag is pushed — the
+# "automatic" half of the release process. The version bump itself stays
+# manual and local (./release.sh), which commits VERSION/CHANGELOG.md and
+# creates the tag; pushing that tag is what triggers this workflow, so a
+# release becomes visible on GitHub with no further steps beyond the push.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  github-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # release.sh always leaves VERSION and the pushed tag in agreement —
+      # this only catches a tag pushed by hand (or from a stale checkout)
+      # that skipped that script.
+      - name: Verify VERSION matches the pushed tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file_version="$(cat VERSION)"
+          if [ "$tag" != "$file_version" ]; then
+            echo "::error::pushed tag v$tag does not match VERSION ($file_version) — was this tag created by release.sh?"
+            exit 1
+          fi
+
+      # Pulls the "## vX.Y.Z — ..." section for this tag out of
+      # CHANGELOG.md (release.sh's own format) to use as the release body;
+      # falls back to GitHub's auto-generated notes if the tag has no
+      # matching section (e.g. a manually-created tag).
+      - name: Extract changelog section
+        id: changelog
+        run: |
+          notes_file="$(mktemp)"
+          awk -v tag="${GITHUB_REF_NAME}" '
+            $0 ~ "^## " tag { found = 1; print; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$notes_file"
+          if [ -s "$notes_file" ]; then
+            echo "notes_file=$notes_file" >> "$GITHUB_OUTPUT"
+          else
+            echo "notes_file=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "${{ steps.changelog.outputs.notes_file }}" ]; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes-file "${{ steps.changelog.outputs.notes_file }}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "${GITHUB_REF_NAME}" \
+              --generate-notes
+          fi

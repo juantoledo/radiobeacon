@@ -5,6 +5,7 @@ routers)."""
 from datetime import datetime, timezone
 from pathlib import Path
 
+from adapters import __version__ as ADAPTERS_VERSION
 from adapters.storage import DEFAULT_DB_PATH, get_connection, get_setting
 from adapters.timeutil import to_display_tz, to_utc
 from fastapi.templating import Jinja2Templates
@@ -45,6 +46,11 @@ def _icon_global(name: str, size: int = 16) -> Markup:
 
 
 templates.env.globals["icon"] = _icon_global
+
+# `{{ app_version() }}` — the whole-project version (VERSION at the repo
+# root, resolved once by adapters.version at import time), shown in the
+# site-wide footer.
+templates.env.globals["app_version"] = lambda: ADAPTERS_VERSION
 
 
 @pass_context

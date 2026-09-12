@@ -9,6 +9,11 @@
 FROM python:3.12-slim
 WORKDIR /app
 
+# Repo-root VERSION file, read by adapters.version (walks up from its own
+# __file__ looking for it) — same reason ui/src/ui/beacon_audio.py needs
+# REPO_ROOT preserved under /app, see top-of-file comment.
+COPY VERSION /app/VERSION
+
 # pyproject.toml + src for each editable dependency, then ui itself.
 COPY data-adapters/pyproject.toml /app/data-adapters/pyproject.toml
 COPY data-adapters/src /app/data-adapters/src
