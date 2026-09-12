@@ -14,7 +14,7 @@
     <tr class="{{ 'wiring-row' if f.spec.wiring else '' }}"{% if f.spec.depends_on %} data-show-if="{{ f.spec.depends_on | map('join', '=') | join('&') }}"{% endif %}>
       <th>
         <label for="{{ f.spec.key }}">{{ t('settings.' ~ f.spec.key ~ '.label', default=f.spec.label) }}{% if f.spec.required %} *{% endif %}</label>
-        <div class="mono muted" style="font-weight:400; font-size:0.78rem;">{{ f.spec.key }}</div>
+        <span class="field-key-chip" data-tooltip="{{ t('config.env_var_tooltip', default='Environment variable') }}" tabindex="0">{{ f.spec.key }}</span>
         {% if f.spec.wiring %}<span class="badge badge-warn">wiring</span>{% endif %}
       </th>
       <td>

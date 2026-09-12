@@ -160,6 +160,37 @@ _ICONS: dict[str, str] = {
         '<circle cx="12" cy="12" r="9"/>'
         '<line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/>'
     ),
+    # Item-category icons (adapters.categories) — purely decorative markers
+    # next to an item's type/subtype, wherever items are displayed.
+    "cloud": (
+        '<path d="M7 18h11a4 4 0 0 0 .4-8 6 6 0 0 0-11.6 1.6A4.5 4.5 0 0 0 7 18Z"/>'
+    ),
+    "seismograph": (
+        '<line x1="2" y1="14" x2="6" y2="14"/>'
+        '<polyline points="6 14 9 6 12 18 15 10 17 14"/>'
+        '<line x1="17" y1="14" x2="22" y2="14"/>'
+    ),
+    "tsunami": (
+        '<path d="M2 16c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/>'
+        '<path d="M2 20c1.5-2 3.5-2 5 0s3.5 2 5 0 3.5-2 5 0 3.5 2 5 0"/>'
+        '<path d="M6 12c0-4 3-7 3-9 1 2 1 3 0 4.5"/>'
+    ),
+    "satellite": (
+        '<rect x="9.5" y="9.5" width="5" height="5" rx="1" transform="rotate(45 12 12)"/>'
+        '<line x1="14.8" y1="9.2" x2="19" y2="5"/>'
+        '<line x1="9.2" y1="14.8" x2="5" y2="19"/>'
+        '<path d="M16 3l2 2M19 6l2 2"/>'
+        '<path d="M3 16l2 2M5 19l1.5 1.5"/>'
+    ),
+    "megaphone": (
+        '<path d="M3 10v4a1 1 0 0 0 1 1h2l9 4V5l-9 4H4a1 1 0 0 0-1 1Z"/>'
+        '<path d="M18 9a4 4 0 0 1 0 6"/>'
+        '<path d="M8 15v4a1.5 1.5 0 0 0 3 0v-3"/>'
+    ),
+    "tag": (
+        '<path d="M11.5 3H5a2 2 0 0 0-2 2v6.5a2 2 0 0 0 .6 1.4l8.5 8.5a2 2 0 0 0 2.8 0l6.5-6.5a2 2 0 0 0 0-2.8l-8.5-8.5a2 2 0 0 0-1.4-.6Z"/>'
+        '<circle cx="8.5" cy="8.5" r="1.5"/>'
+    ),
 }
 
 

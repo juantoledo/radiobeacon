@@ -1,0 +1,52 @@
+{# Shared "search + source/type/policy" filter bar — items_list.html and
+   dev_hub.html previously hand-rolled the exact same three-select shape
+   independently (differing only in translation namespace and
+   items_list's extra event_key field). Text is passed in pre-translated
+   since the two pages draw from different i18n namespaces
+   (items_list.* vs dev_hub.*), so the macro itself doesn't need to know
+   which. audit_log.html's filter bar is a genuinely different shape
+   (three plain text fields, no selects) and isn't built on this. #}
+{% macro source_type_policy_filter(
+  action,
+  filters,
+  sources,
+  types,
+  policies,
+  search_placeholder,
+  any_source,
+  any_type,
+  any_policy,
+  filter_button,
+  clear_button,
+  event_key_placeholder=None
+) %}
+{% set has_filters = filters.q or filters.source or filters.type or filters.policy or (event_key_placeholder and filters.event_key) %}
+<form class="filters" method="get" action="{{ action }}">
+  <input class="filter-search" type="text" name="q" placeholder="{{ search_placeholder }}" value="{{ filters.q or '' }}" aria-label="{{ search_placeholder }}">
+  <select name="source" aria-label="{{ any_source }}">
+    <option value="">{{ any_source }}</option>
+    {% for s in sources %}
+    <option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
+  <select name="type" aria-label="{{ any_type }}">
+    <option value="">{{ any_type }}</option>
+    {% for t_ in types %}
+    <option value="{{ t_ }}" {% if filters.type == t_ %}selected{% endif %}>{{ t_ }}</option>
+    {% endfor %}
+  </select>
+  <select name="policy" aria-label="{{ any_policy }}">
+    <option value="">{{ any_policy }}</option>
+    {% for p in policies %}
+    <option value="{{ p.name }}" {% if filters.policy == p.name %}selected{% endif %}>{{ p.name }}</option>
+    {% endfor %}
+  </select>
+  {% if event_key_placeholder %}
+  <input type="text" name="event_key" placeholder="{{ event_key_placeholder }}" value="{{ filters.event_key or '' }}" aria-label="{{ event_key_placeholder }}">
+  {% endif %}
+  <button type="submit">{{ filter_button }}</button>
+  {% if has_filters %}
+  <a class="btn secondary" href="{{ action }}">{{ clear_button }}</a>
+  {% endif %}
+</form>
+{% endmacro %}

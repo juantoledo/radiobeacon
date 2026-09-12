@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from adapters import __version__ as ADAPTERS_VERSION
+from adapters.categories import get_category, get_subtype
 from adapters.storage import DEFAULT_DB_PATH, get_connection, get_setting
 from adapters.timeutil import to_display_tz, to_utc
 from fastapi.templating import Jinja2Templates
@@ -129,6 +130,69 @@ def _t(context, key: str, *, default: str | None = None, **kwargs) -> str:
 
 
 templates.env.globals["t"] = _t
+
+_DEFAULT_CATEGORY_ICON = "tag"
+
+
+@pass_context
+def _type_label(context, type_key: str | None) -> str:
+    """`{{ type_label(item.type) }}` — the localized label for a recognized
+    adapters.categories key, or the raw stored string verbatim for anything
+    unrecognized (legacy data, or a custom adapter's own free-text value) —
+    this never raises and never hides a value the operator actually stored."""
+    category = get_category(type_key)
+    if category is None:
+        return type_key or ""
+    return category.label_es if _locale_global(context) == "es" else category.label_en
+
+
+templates.env.globals["type_label"] = _type_label
+
+
+@pass_context
+def _subtype_label(context, type_key: str | None, subtype_key: str | None) -> str:
+    """`{{ subtype_label(item.type, item.subtype) }}` — same fallback rule as
+    _type_label, one level down (a subtype is only resolved within its
+    parent category, so an unrecognized/mismatched type_key falls back to
+    the raw subtype string too)."""
+    subtype = get_subtype(type_key, subtype_key)
+    if subtype is None:
+        return subtype_key or ""
+    return subtype.label_es if _locale_global(context) == "es" else subtype.label_en
+
+
+templates.env.globals["subtype_label"] = _subtype_label
+
+
+@pass_context
+def _category_label(context, type_key: str | None, subtype_key: str | None = None) -> str:
+    """`{{ category_label(item.type, item.subtype) }}` — combined "Type ·
+    Subtype" display for surfaces that show them on one line."""
+    type_part = _type_label(context, type_key)
+    subtype_part = _subtype_label(context, type_key, subtype_key) if subtype_key else ""
+    if type_part and subtype_part:
+        return f"{type_part} · {subtype_part}"
+    return type_part or subtype_part
+
+
+templates.env.globals["category_label"] = _category_label
+
+
+def _category_icon(type_key: str | None, subtype_key: str | None = None) -> str:
+    """`{{ icon(category_icon(item.type, item.subtype), 14) }}` — resolves
+    to a subtype-specific icon override when one exists, else the parent
+    category's icon, else the generic fallback icon for anything
+    unrecognized (including no type at all)."""
+    subtype = get_subtype(type_key, subtype_key)
+    if subtype is not None and subtype.icon:
+        return subtype.icon
+    category = get_category(type_key)
+    if category is not None:
+        return category.icon
+    return _DEFAULT_CATEGORY_ICON
+
+
+templates.env.globals["category_icon"] = _category_icon
 
 # Icon per /config tab — purely presentational, keyed by category name (see
 # NAV_CATEGORY_ORDER) plus the one non-catalog tab, Policies.

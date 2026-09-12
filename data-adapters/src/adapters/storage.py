@@ -460,7 +460,6 @@ def fetch(config):
     for item in raw_items:
         if not (item.get("isActive") and not item.get("isDeleted")):
             continue
-        variable_riesgo = item.get("variableRiesgo") or {}
         item_type = item.get("type")
         url_access = item.get("urlAccess")
         base_url = EVENTO_BASE_URL if item_type == "Evento" else ALERTA_BASE_URL
@@ -471,8 +470,14 @@ def fetch(config):
                 "contents": _strip_html(item["contenido"]),
                 "url": (base_url + url_access) if url_access else None,
                 "event_key": url_access,
-                "type": item_type,
-                "subtype": variable_riesgo.get("nombre"),
+                # adapters.categories curated keys: SENAPRED's own
+                # "Alerta"/"Evento" split maps directly onto emergency's
+                # alert/event subtypes. variableRiesgo.nombre (the specific
+                # risk domain, e.g. "Hidrometeorologico") isn't part of the
+                # curated set and stays available via `raw` instead of
+                # being forced into subtype.
+                "type": "emergency",
+                "subtype": "alert" if item_type == "Alerta" else "event",
                 "source_date_time": to_utc(datetime.fromisoformat(item["fechaHora"])),
                 "raw": item,
             }
@@ -585,7 +590,11 @@ _SEED_ADAPTER_INSTANCES = (
                     )
                 },
                 "url": {"template": get("ADAPTERS_CSN_SITE_URL", "https://www.sismologia.cl/")},
-                "type": {"template": "Sismo"},
+                # adapters.categories curated keys — see that module's
+                # docstring; "seismology"/"quake" is what gets this item a
+                # category icon wherever items are displayed.
+                "type": {"template": "seismology"},
+                "subtype": {"template": "quake"},
             },
             "date_field": "Fecha",
             "date_format": "%Y-%m-%d %H:%M:%S",
@@ -1802,10 +1811,11 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
     `WHERE event_key = ? ORDER BY source_date_time`.
 
     `type`/`subtype` are a generic two-level category — e.g. for SENAPRED,
-    `type` is "Alerta"/"Evento" (which of its two separate GraphQL feeds
-    an item came from) and `subtype` is the risk category (e.g.
-    "Hidrometeorologico"). Any adapter with a similar broad/fine category
-    split can use the same two columns.
+    `type` is "emergency" and `subtype` is "alert"/"event" (which of its
+    two separate GraphQL feeds an item came from). See adapters.categories
+    for the curated set of type/subtype keys an adapter can use to get a
+    category icon in the UI; any adapter with a similar broad/fine category
+    split can use the same two columns, curated or not.
 
     `policy` names the Policy this item behaves under — a soft reference
     (not a SQL FOREIGN KEY) to `policies.name` (see adapters.policy). It is

@@ -198,12 +198,13 @@
         </span>
         {% endif %}
         {% else %}
+        {% if item.type %}<span class="category-watermark category-watermark-row">{{ icon(category_icon(item.type, item.subtype), 36) }}</span>{% endif %}
         <a class="feed-main" href="/items/{{ item.source }}/{{ item.item_id }}">
           <span class="feed-title">{{ item.extracted_title or item.item_id }}</span>
           <span class="feed-meta">
             <span class="badge badge-neutral">{{ item.source }}</span>
             {% if item.policy %}<span class="{{ item.policy | policy_badge }}">{{ item.policy }}</span>{% endif %}
-            {% if item.type %}<span class="muted">{{ item.type }}</span>{% endif %}
+            {% if item.type %}<span class="muted">{{ icon(category_icon(item.type, item.subtype), 13) }}{{ type_label(item.type) }}</span>{% endif %}
           </span>
         </a>
         {% set _txkey = (item.source, item.item_id) %}

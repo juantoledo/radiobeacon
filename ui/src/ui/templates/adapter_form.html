@@ -246,6 +246,27 @@
                           <input type="text" name="map_{{ name }}_template" value="{{ row.template }}" list="sample-field-names"
                                  class="mapping-value-input field-drop-target" placeholder="{{ t('adapter_form.field.mapping_template_placeholder') }}">
                           {% endif %}
+                          {% if name == 'type' %}
+                          <div class="mapping-quick-pick">
+                            <select class="category-quick-pick" data-target-input="map_type_template" aria-label="{{ t('adapter_form.field.category_quick_pick_placeholder') }}">
+                              <option value="">{{ t('adapter_form.field.category_quick_pick_placeholder') }}</option>
+                              {% for cat in categories %}
+                              <option value="{{ cat.key }}">{{ cat.label_es if locale() == 'es' else cat.label_en }}</option>
+                              {% endfor %}
+                            </select>
+                          </div>
+                          {% elif name == 'subtype' %}
+                          <div class="mapping-quick-pick">
+                            <select class="category-quick-pick" data-target-input="map_subtype_template" aria-label="{{ t('adapter_form.field.category_quick_pick_placeholder') }}">
+                              <option value="">{{ t('adapter_form.field.category_quick_pick_placeholder') }}</option>
+                              {% for cat in categories %}
+                                {% for st in cat.subtypes %}
+                                <option value="{{ st.key }}">{{ cat.label_es if locale() == 'es' else cat.label_en }} — {{ st.label_es if locale() == 'es' else st.label_en }}</option>
+                                {% endfor %}
+                              {% endfor %}
+                            </select>
+                          </div>
+                          {% endif %}
                         </td>
                         <td>
                           <input type="text" name="map_{{ name }}_date_format" value="{{ row.date_format }}"
@@ -310,6 +331,28 @@
           </p>
           <textarea id="code" name="code" class="code-editor" rows="20" spellcheck="false">{{ custom_fields.code }}</textarea>
         </div>
+        <details class="config-section">
+          <summary>{{ t('adapter_form.section.category_reference') }}</summary>
+          <p class="meta-line">{{ t('adapter_form.help.category_reference') | safe }}</p>
+          <div class="table-wrap">
+            <table class="kv-table">
+              <thead><tr>
+                <th>{{ t('adapter_form.table.category_header') }}</th>
+                <th>{{ t('adapter_form.table.category_key_header') }}</th>
+                <th>{{ t('adapter_form.table.subtype_header') }}</th>
+              </tr></thead>
+              <tbody>
+                {% for cat in categories %}
+                <tr>
+                  <td>{{ cat.label_es if locale() == 'es' else cat.label_en }}</td>
+                  <td class="mono">{{ cat.key }}</td>
+                  <td class="mono">{{ cat.subtypes | map(attribute='key') | join(', ') }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </fieldset>
 
       <fieldset id="aiprompt-fields">
@@ -338,13 +381,35 @@
             </tr>
             <tr>
               <th><label for="aip_type">{{ t('adapter_form.field.type_label') }}</label></th>
-              <td><input id="aip_type" name="aip_type" type="text" value="{{ aiprompt_fields.type }}"
-                         placeholder="{{ t('adapter_form.field.aip_type_placeholder') }}"></td>
+              <td>
+                <select id="aip_type" name="aip_type" class="category-type-select">
+                  <option value="">{{ t('adapter_form.field.category_select_placeholder') }}</option>
+                  {% for cat in categories %}
+                  <option value="{{ cat.key }}" {% if aiprompt_fields.type_key == cat.key %}selected{% endif %}>{{ cat.label_es if locale() == 'es' else cat.label_en }}</option>
+                  {% endfor %}
+                  <option value="__other__" {% if aiprompt_fields.type_key == '__other__' %}selected{% endif %}>{{ t('adapter_form.field.category_other_option') }}</option>
+                </select>
+                <input type="text" id="aip_type_other" name="aip_type_other" value="{{ aiprompt_fields.type_other }}"
+                       placeholder="{{ t('adapter_form.field.aip_type_placeholder') }}"
+                       {% if aiprompt_fields.type_key != '__other__' %}hidden{% endif %}>
+              </td>
             </tr>
             <tr>
               <th><label for="aip_subtype">{{ t('adapter_form.field.subtype_label') }}</label></th>
-              <td><input id="aip_subtype" name="aip_subtype" type="text" value="{{ aiprompt_fields.subtype }}"
-                         placeholder="{{ t('adapter_form.field.aip_subtype_placeholder') }}"></td>
+              <td>
+                <select id="aip_subtype" name="aip_subtype" class="category-subtype-select">
+                  <option value="">{{ t('adapter_form.field.category_select_placeholder') }}</option>
+                  {% for cat in categories if cat.key == aiprompt_fields.type_key %}
+                    {% for st in cat.subtypes %}
+                    <option value="{{ st.key }}" {% if aiprompt_fields.subtype_key == st.key %}selected{% endif %}>{{ st.label_es if locale() == 'es' else st.label_en }}</option>
+                    {% endfor %}
+                  {% endfor %}
+                  <option value="__other__" {% if aiprompt_fields.subtype_key == '__other__' %}selected{% endif %}>{{ t('adapter_form.field.category_other_option') }}</option>
+                </select>
+                <input type="text" id="aip_subtype_other" name="aip_subtype_other" value="{{ aiprompt_fields.subtype_other }}"
+                       placeholder="{{ t('adapter_form.field.aip_subtype_placeholder') }}"
+                       {% if aiprompt_fields.subtype_key != '__other__' %}hidden{% endif %}>
+              </td>
             </tr>
             <tr>
               <th><label for="aip_event_key_template">{{ t('adapter_form.field.aip_event_key_template_label') }}</label></th>
@@ -519,6 +584,83 @@
       added.valueInput.value = suggested[key];
     });
   }
+
+  // adapters.categories.CATEGORIES (see _categories_payload in
+  // routers/adapters.py) as plain JSON, for the aiprompt type/subtype
+  // cascading <select> and the API mapping quick-pick below.
+  var ITEM_CATEGORIES = {{ categories | tojson }};
+  var CATEGORY_LOCALE = "{{ locale() }}";
+  var CATEGORY_OTHER_KEY = "__other__";
+
+  function categoryEntryLabel(entry) {
+    return CATEGORY_LOCALE === "es" ? entry.label_es : entry.label_en;
+  }
+
+  // The type <select> and subtype <select> are independently posted
+  // strings (see routers.adapters._category_select_state) — this only
+  // rebuilds the subtype <select>'s options to match whichever category is
+  // now selected, and shows/hides each field's "Other" free-text input.
+  // The subtype select starts server-rendered with the right options (see
+  // adapter_form.html's Jinja loop scoped to the saved type), so this only
+  // needs to run on user interaction, not on page load.
+  function setupCategoryPicker(typeSelect, typeOther, subtypeSelect, subtypeOther) {
+    if (!typeSelect || !subtypeSelect) return;
+
+    function rebuildSubtypeOptions() {
+      var category = ITEM_CATEGORIES.find(function (c) { return c.key === typeSelect.value; });
+      subtypeSelect.innerHTML = "";
+      var blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "{{ t('adapter_form.field.category_select_placeholder') }}";
+      subtypeSelect.appendChild(blank);
+      (category ? category.subtypes : []).forEach(function (st) {
+        var opt = document.createElement("option");
+        opt.value = st.key;
+        opt.textContent = categoryEntryLabel(st);
+        subtypeSelect.appendChild(opt);
+      });
+      var other = document.createElement("option");
+      other.value = CATEGORY_OTHER_KEY;
+      other.textContent = "{{ t('adapter_form.field.category_other_option') }}";
+      subtypeSelect.appendChild(other);
+    }
+
+    function updateOtherVisibility() {
+      if (typeOther) typeOther.hidden = typeSelect.value !== CATEGORY_OTHER_KEY;
+      if (subtypeOther) subtypeOther.hidden = subtypeSelect.value !== CATEGORY_OTHER_KEY;
+    }
+
+    typeSelect.addEventListener("change", function () {
+      rebuildSubtypeOptions();
+      updateOtherVisibility();
+    });
+    subtypeSelect.addEventListener("change", updateOtherVisibility);
+    updateOtherVisibility();
+  }
+
+  setupCategoryPicker(
+    document.getElementById("aip_type"),
+    document.getElementById("aip_type_other"),
+    document.getElementById("aip_subtype"),
+    document.getElementById("aip_subtype_other")
+  );
+
+  // API-mapping "quick pick" — filling the constant category/subtype key
+  // straight into the mapping template input, as a convenience alongside
+  // the existing free-form template mechanism (dynamic field passthrough
+  // still works exactly as before; this is purely a shortcut for the
+  // common "map this to a constant category" case).
+  document.querySelectorAll(".category-quick-pick").forEach(function (select) {
+    select.addEventListener("change", function () {
+      if (!select.value) return;
+      var input = document.querySelector('[name="' + select.dataset.targetInput + '"]');
+      if (input) {
+        input.value = select.value;
+        input.dispatchEvent(new Event("input"));
+      }
+      select.selectedIndex = 0;
+    });
+  });
 
   function updateAdapterTypeVisibility() {
     var type = document.getElementById("adapter_type").value;

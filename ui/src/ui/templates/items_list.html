@@ -1,35 +1,24 @@
 {% extends "base.html" %}
+{% import "_filter_bar.html" as filterbar %}
 {% block title %}{{ t('items_list.title') }}{% endblock %}
 {% block content %}
 <div class="page-header"><h1>{{ t('items_list.title') }}</h1><span class="muted">{{ t('items_list.count', n=total) }}</span></div>
 
 {% set has_filters = filters.q or filters.source or filters.type or filters.policy or filters.event_key %}
-<form class="filters" method="get" action="/items">
-  <input class="filter-search" type="text" name="q" placeholder="{{ t('items_list.search_placeholder') }}" value="{{ filters.q }}" aria-label="{{ t('items_list.search_placeholder') }}">
-  <select name="source" aria-label="{{ t('items_list.col_source') }}">
-    <option value="">{{ t('items_list.any_source') }}</option>
-    {% for s in sources %}
-    <option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s }}</option>
-    {% endfor %}
-  </select>
-  <select name="type" aria-label="{{ t('items_list.col_type') }}">
-    <option value="">{{ t('items_list.any_type') }}</option>
-    {% for t_ in types %}
-    <option value="{{ t_ }}" {% if filters.type == t_ %}selected{% endif %}>{{ t_ }}</option>
-    {% endfor %}
-  </select>
-  <select name="policy" aria-label="{{ t('items_list.col_policy') }}">
-    <option value="">{{ t('items_list.any_policy') }}</option>
-    {% for p in policies %}
-    <option value="{{ p.name }}" {% if filters.policy == p.name %}selected{% endif %}>{{ p.name }}</option>
-    {% endfor %}
-  </select>
-  <input type="text" name="event_key" placeholder="{{ t('items_list.event_key_placeholder') }}" value="{{ filters.event_key }}" aria-label="{{ t('items_list.event_key_placeholder') }}">
-  <button type="submit">{{ t('items_list.filter_button') }}</button>
-  {% if has_filters %}
-  <a class="btn secondary" href="/items">{{ t('items_list.clear_button') }}</a>
-  {% endif %}
-</form>
+{{ filterbar.source_type_policy_filter(
+  action="/items",
+  filters=filters,
+  sources=sources,
+  types=types,
+  policies=policies,
+  search_placeholder=t('items_list.search_placeholder'),
+  any_source=t('items_list.any_source'),
+  any_type=t('items_list.any_type'),
+  any_policy=t('items_list.any_policy'),
+  filter_button=t('items_list.filter_button'),
+  clear_button=t('items_list.clear_button'),
+  event_key_placeholder=t('items_list.event_key_placeholder')
+) }}
 
 <div class="table-wrap cards">
 <table class="items-table">
@@ -49,6 +38,7 @@
     {% for item in items %}
     <tr>
       <td class="wrap item-cell" data-label="{{ t('items_list.col_item') }}">
+        {% if item.type %}<span class="category-watermark category-watermark-row">{{ icon(category_icon(item.type, item.subtype), 44) }}</span>{% endif %}
         <a class="item-title{% if not item.extracted_title %} mono{% endif %}" href="/items/{{ item.source }}/{{ item.item_id }}">{{ item.extracted_title or item.item_id }}</a>
         <span class="item-sub">
           <span class="badge badge-neutral">{{ item.source }}</span>
@@ -56,8 +46,10 @@
         </span>
       </td>
       <td data-label="{{ t('items_list.col_type') }}">
-        {% if item.type %}<span class="badge badge-neutral">{{ item.type }}</span>{% else %}<span class="muted">—</span>{% endif %}
-        {% if item.subtype %}<span class="item-subtype muted">{{ item.subtype }}</span>{% endif %}
+        {% if item.type %}
+        <span class="type-cell">{{ icon(category_icon(item.type, item.subtype), 14) }}<span class="badge badge-neutral">{{ type_label(item.type) }}</span></span>
+        {% else %}<span class="muted">—</span>{% endif %}
+        {% if item.subtype %}<span class="item-subtype muted">{{ subtype_label(item.type, item.subtype) }}</span>{% endif %}
       </td>
       <td data-label="{{ t('items_list.col_policy') }}">
         {% if item.policy %}<span class="{{ item.policy | policy_badge }}">{{ item.policy }}</span>{% else %}<span class="muted">—</span>{% endif %}

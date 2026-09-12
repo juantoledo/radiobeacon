@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "_filter_bar.html" as filterbar %}
 {% block title %}{{ t('dev_hub.title') }}{% endblock %}
 {% block content %}
 <div class="page-header"><h1>{{ t('dev_hub.title') }}</h1><span class="muted">{{ t('dev_hub.item_count', count=total) }}</span></div>
@@ -20,29 +21,19 @@
   </a>
 </div>
 
-<form class="filters" method="get" action="/dev">
-  <input type="text" name="q" placeholder="{{ t('dev_hub.search_placeholder') }}" value="{{ filters.q }}">
-  <select name="source">
-    <option value="">{{ t('dev_hub.any_source') }}</option>
-    {% for s in sources %}
-    <option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s }}</option>
-    {% endfor %}
-  </select>
-  <select name="type">
-    <option value="">{{ t('dev_hub.any_type') }}</option>
-    {% for t in types %}
-    <option value="{{ t }}" {% if filters.type == t %}selected{% endif %}>{{ t }}</option>
-    {% endfor %}
-  </select>
-  <select name="policy">
-    <option value="">{{ t('dev_hub.any_policy') }}</option>
-    {% for p in policies %}
-    <option value="{{ p.name }}" {% if filters.policy == p.name %}selected{% endif %}>{{ p.name }}</option>
-    {% endfor %}
-  </select>
-  <button type="submit">{{ t('dev_hub.filter_button') }}</button>
-  <a class="btn secondary" href="/dev">{{ t('dev_hub.clear_button') }}</a>
-</form>
+{{ filterbar.source_type_policy_filter(
+  action="/dev",
+  filters=filters,
+  sources=sources,
+  types=types,
+  policies=policies,
+  search_placeholder=t('dev_hub.search_placeholder'),
+  any_source=t('dev_hub.any_source'),
+  any_type=t('dev_hub.any_type'),
+  any_policy=t('dev_hub.any_policy'),
+  filter_button=t('dev_hub.filter_button'),
+  clear_button=t('dev_hub.clear_button')
+) }}
 
 <div class="table-wrap cards">
 <table>

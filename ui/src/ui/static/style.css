@@ -8,34 +8,105 @@
 :root {
   color-scheme: light dark;
 
-  --fg: #14171c;
-  --fg-muted: #57616f;
-  --fg-faint: #8892a0;
-  --bg: #f4f6f8;
-  --bg-subtle: #e8ecf0;
-  --bg-raised: #ffffff;
-  --border: #d8dee5;
-  --border-strong: #b9c2cc;
+  /* Raw light/dark palette values — the actual hex/rgba lives here ONCE.
+     The semantic tokens below (and the dark-mode blocks further down)
+     just repoint at whichever set applies, instead of each repeating the
+     same ~30 values a second (media query) and third (explicit
+     [data-theme="dark"] override) time, as they previously did. */
+  --_light-fg: #14171c;
+  --_light-fg-muted: #57616f;
+  --_light-fg-faint: #8892a0;
+  --_light-bg: #f4f6f8;
+  --_light-bg-subtle: #e8ecf0;
+  --_light-bg-raised: #ffffff;
+  --_light-border: #d8dee5;
+  --_light-border-strong: #b9c2cc;
+  --_light-accent: #d7263d;
+  --_light-accent-fg: #ffffff;
+  --_light-accent-hover: #a91c30;
+  --_light-danger: #7f1d1d;
+  --_light-danger-bg: #f8e9e7;
+  --_light-success: #15803d;
+  --_light-success-bg: #e7f6ec;
+  --_light-warn: #a16207;
+  --_light-warn-bg: #fbf1d9;
+  --_light-info: #1b5da8;
+  --_light-info-bg: #e7f1fc;
+  --_light-neutral: #4b5563;
+  --_light-neutral-bg: #e8ecf0;
+  --_light-code-kw: #a626a4;
+  --_light-code-str: #50a14f;
+  --_light-code-com: #a0a1a7;
+  --_light-code-num: #986801;
+  --_light-code-def: #4078f2;
+  --_light-code-deco: #c18401;
+  --_light-code-builtin: #0184bc;
+  --_light-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
+  --_light-shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.12), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
+  --_light-shadow-lg: 0 24px 48px -12px rgba(15, 23, 42, 0.22);
+
+  --_dark-fg: #eef1f5;
+  --_dark-fg-muted: #9aa5b1;
+  --_dark-fg-faint: #6b7684;
+  --_dark-bg: #0d1116;
+  --_dark-bg-subtle: #171c22;
+  --_dark-bg-raised: #1a2027;
+  --_dark-border: #2a323b;
+  --_dark-border-strong: #3c4650;
+  --_dark-accent: #ff5a5a;
+  --_dark-accent-fg: #1a0505;
+  --_dark-accent-hover: #ff7a7a;
+  --_dark-danger: #ff8f5e;
+  --_dark-danger-bg: #3a2013;
+  --_dark-success: #7fd99a;
+  --_dark-success-bg: #14291c;
+  --_dark-warn: #f0b429;
+  --_dark-warn-bg: #332508;
+  --_dark-info: #8ec2ff;
+  --_dark-info-bg: #13243a;
+  --_dark-neutral: #c3cad3;
+  --_dark-neutral-bg: #232a32;
+  --_dark-code-kw: #c678dd;
+  --_dark-code-str: #98c379;
+  --_dark-code-com: #7f848e;
+  --_dark-code-num: #d19a66;
+  --_dark-code-def: #61afef;
+  --_dark-code-deco: #e5c07b;
+  --_dark-code-builtin: #56b6c2;
+  --_dark-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --_dark-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+  --_dark-shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.7);
+
+  /* Semantic tokens — default to light; the dark-mode blocks further down
+     repoint these at --_dark-* instead of redeclaring the actual values. */
+  --fg: var(--_light-fg);
+  --fg-muted: var(--_light-fg-muted);
+  --fg-faint: var(--_light-fg-faint);
+  --bg: var(--_light-bg);
+  --bg-subtle: var(--_light-bg-subtle);
+  --bg-raised: var(--_light-bg-raised);
+  --border: var(--_light-border);
+  --border-strong: var(--_light-border-strong);
 
   /* Emergency-alert red accent — the siren/EAS color the rest of the
      "radio equipment" palette below is built around. */
-  --accent: #d7263d;
-  --accent-fg: #ffffff;
-  --accent-hover: #a91c30;
+  --accent: var(--_light-accent);
+  --accent-fg: var(--_light-accent-fg);
+  --accent-hover: var(--_light-accent-hover);
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
 
   /* A darker maroon, not the same red as --accent, so destructive/danger
      UI stays visually distinct from ordinary links/buttons. */
-  --danger: #7f1d1d;
-  --danger-bg: #f8e9e7;
-  --success: #15803d;
-  --success-bg: #e7f6ec;
-  --warn: #a16207;
-  --warn-bg: #fbf1d9;
-  --info: #1b5da8;
-  --info-bg: #e7f1fc;
-  --neutral: #4b5563;
-  --neutral-bg: #e8ecf0;
+  --danger: var(--_light-danger);
+  --danger-bg: var(--_light-danger-bg);
+  --success: var(--_light-success);
+  --success-bg: var(--_light-success-bg);
+  --warn: var(--_light-warn);
+  --warn-bg: var(--_light-warn-bg);
+  --info: var(--_light-info);
+  --info-bg: var(--_light-info-bg);
+  --neutral: var(--_light-neutral);
+  --neutral-bg: var(--_light-neutral-bg);
 
   /* The sidebar/mobile-bar "chassis" is a fixed gunmetal-steel panel with
      a red alert-lamp glow in both light and dark page themes — like a
@@ -50,6 +121,11 @@
   --sidebar-fg-faint: #6b7684;
   --sidebar-accent: #ff5a5a;
   --sidebar-accent-soft: color-mix(in srgb, var(--sidebar-accent) 18%, transparent);
+  /* Text on a filled --sidebar-accent chip (.theme-switcher's active
+     button) — always this near-black, regardless of page theme: the
+     sidebar chassis is a fixed dark surface in both themes (see comment
+     above), so unlike --accent-fg it never needs to flip to white. */
+  --sidebar-accent-fg: #1c0505;
   /* "ON AIR" lamp red — the live/beacon-active pulse, a pure siren red
      distinct from the sidebar's softer coral dial glow. */
   --on-air: #ff2d2d;
@@ -62,17 +138,17 @@
 
   /* Python syntax-highlight tokens — see static/code-editor.js and the
      "Code editor" section below (adapter_form.html's CUSTOM-type snippet). */
-  --code-kw: #a626a4;
-  --code-str: #50a14f;
-  --code-com: #a0a1a7;
-  --code-num: #986801;
-  --code-def: #4078f2;
-  --code-deco: #c18401;
-  --code-builtin: #0184bc;
+  --code-kw: var(--_light-code-kw);
+  --code-str: var(--_light-code-str);
+  --code-com: var(--_light-code-com);
+  --code-num: var(--_light-code-num);
+  --code-def: var(--_light-code-def);
+  --code-deco: var(--_light-code-deco);
+  --code-builtin: var(--_light-code-builtin);
 
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
-  --shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.12), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 24px 48px -12px rgba(15, 23, 42, 0.22);
+  --shadow-sm: var(--_light-shadow-sm);
+  --shadow: var(--_light-shadow);
+  --shadow-lg: var(--_light-shadow-lg);
 
   --text-xs: 0.75rem;
   --text-sm: 0.8125rem;
@@ -82,6 +158,22 @@
   --text-xl: 1.375rem;
   --text-2xl: 1.75rem;
   --text-3xl: 2.15rem;
+
+  /* Body text stays the system sans stack (see body's font-family) —
+     --font-display above is for headings/labels only. */
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Named weight scale replacing the magic numbers (550/600/650/700) that
+     were previously hand-picked per rule with no shared meaning. */
+  --weight-regular: 400;
+  --weight-medium: 550;
+  --weight-semibold: 650;
+  --weight-bold: 700;
+
+  --leading-tight: 1.22;
+  --leading-snug: 1.6;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.65;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -94,50 +186,66 @@
   --radius-sm: 0.375rem;
   --radius: 0.625rem;
   --radius-lg: 1rem;
+  --radius-pill: 999px;
+
+  /* Shared transition vocabulary — every component below now picks one of
+     these three speeds instead of hand-rolling its own (previously
+     0.1s/0.12s/0.14s/0.15s/0.18s/0.2s/0.24s all appeared as unrelated
+     "fast" transitions). */
+  --duration-fast: 0.12s;
+  --duration: 0.18s;
+  --duration-slow: 0.24s;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
 
   --sidebar-w: 15.5rem;
   --content-max: 90rem;
   --reading-max: 46rem;
 }
 
+/* All three blocks below just repoint the semantic tokens at the raw
+   --_light-* / --_dark-* values defined once at the top of :root — see
+   the comment there. Previously each of these three blocks (OS-preference
+   media query, and the two explicit [data-theme] overrides) repeated the
+   same ~30 literal color values in full; now a value only ever needs to
+   change in one place. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --fg: #eef1f5;
-    --fg-muted: #9aa5b1;
-    --fg-faint: #6b7684;
-    --bg: #0d1116;
-    --bg-subtle: #171c22;
-    --bg-raised: #1a2027;
-    --border: #2a323b;
-    --border-strong: #3c4650;
+    --fg: var(--_dark-fg);
+    --fg-muted: var(--_dark-fg-muted);
+    --fg-faint: var(--_dark-fg-faint);
+    --bg: var(--_dark-bg);
+    --bg-subtle: var(--_dark-bg-subtle);
+    --bg-raised: var(--_dark-bg-raised);
+    --border: var(--_dark-border);
+    --border-strong: var(--_dark-border-strong);
 
-    --accent: #ff5a5a;
-    --accent-fg: #1a0505;
-    --accent-hover: #ff7a7a;
+    --accent: var(--_dark-accent);
+    --accent-fg: var(--_dark-accent-fg);
+    --accent-hover: var(--_dark-accent-hover);
     --accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
 
-    --danger: #ff8f5e;
-    --danger-bg: #3a2013;
-    --success: #7fd99a;
-    --success-bg: #14291c;
-    --warn: #f0b429;
-    --warn-bg: #332508;
-    --info: #8ec2ff;
-    --info-bg: #13243a;
-    --neutral: #c3cad3;
-    --neutral-bg: #232a32;
+    --danger: var(--_dark-danger);
+    --danger-bg: var(--_dark-danger-bg);
+    --success: var(--_dark-success);
+    --success-bg: var(--_dark-success-bg);
+    --warn: var(--_dark-warn);
+    --warn-bg: var(--_dark-warn-bg);
+    --info: var(--_dark-info);
+    --info-bg: var(--_dark-info-bg);
+    --neutral: var(--_dark-neutral);
+    --neutral-bg: var(--_dark-neutral-bg);
 
-    --code-kw: #c678dd;
-    --code-str: #98c379;
-    --code-com: #7f848e;
-    --code-num: #d19a66;
-    --code-def: #61afef;
-    --code-deco: #e5c07b;
-    --code-builtin: #56b6c2;
+    --code-kw: var(--_dark-code-kw);
+    --code-str: var(--_dark-code-str);
+    --code-com: var(--_dark-code-com);
+    --code-num: var(--_dark-code-num);
+    --code-def: var(--_dark-code-def);
+    --code-deco: var(--_dark-code-deco);
+    --code-builtin: var(--_dark-code-builtin);
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-    --shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
-    --shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.7);
+    --shadow-sm: var(--_dark-shadow-sm);
+    --shadow: var(--_dark-shadow);
+    --shadow-lg: var(--_dark-shadow-lg);
   }
 }
 
@@ -147,81 +255,81 @@
    OS's own prefers-color-scheme. No "system" selector: that value omits the
    attribute entirely, leaving the media query above in charge. */
 :root[data-theme="dark"] {
-  --fg: #eef1f5;
-  --fg-muted: #9aa5b1;
-  --fg-faint: #6b7684;
-  --bg: #0d1116;
-  --bg-subtle: #171c22;
-  --bg-raised: #1a2027;
-  --border: #2a323b;
-  --border-strong: #3c4650;
+  --fg: var(--_dark-fg);
+  --fg-muted: var(--_dark-fg-muted);
+  --fg-faint: var(--_dark-fg-faint);
+  --bg: var(--_dark-bg);
+  --bg-subtle: var(--_dark-bg-subtle);
+  --bg-raised: var(--_dark-bg-raised);
+  --border: var(--_dark-border);
+  --border-strong: var(--_dark-border-strong);
 
-  --accent: #ff5a5a;
-  --accent-fg: #1a0505;
-  --accent-hover: #ff7a7a;
+  --accent: var(--_dark-accent);
+  --accent-fg: var(--_dark-accent-fg);
+  --accent-hover: var(--_dark-accent-hover);
   --accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
 
-  --danger: #ff8f5e;
-  --danger-bg: #3a2013;
-  --success: #7fd99a;
-  --success-bg: #14291c;
-  --warn: #f0b429;
-  --warn-bg: #332508;
-  --info: #8ec2ff;
-  --info-bg: #13243a;
-  --neutral: #c3cad3;
-  --neutral-bg: #232a32;
+  --danger: var(--_dark-danger);
+  --danger-bg: var(--_dark-danger-bg);
+  --success: var(--_dark-success);
+  --success-bg: var(--_dark-success-bg);
+  --warn: var(--_dark-warn);
+  --warn-bg: var(--_dark-warn-bg);
+  --info: var(--_dark-info);
+  --info-bg: var(--_dark-info-bg);
+  --neutral: var(--_dark-neutral);
+  --neutral-bg: var(--_dark-neutral-bg);
 
-  --code-kw: #c678dd;
-  --code-str: #98c379;
-  --code-com: #7f848e;
-  --code-num: #d19a66;
-  --code-def: #61afef;
-  --code-deco: #e5c07b;
-  --code-builtin: #56b6c2;
+  --code-kw: var(--_dark-code-kw);
+  --code-str: var(--_dark-code-str);
+  --code-com: var(--_dark-code-com);
+  --code-num: var(--_dark-code-num);
+  --code-def: var(--_dark-code-def);
+  --code-deco: var(--_dark-code-deco);
+  --code-builtin: var(--_dark-code-builtin);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 32px 64px -16px rgba(0, 0, 0, 0.7);
+  --shadow-sm: var(--_dark-shadow-sm);
+  --shadow: var(--_dark-shadow);
+  --shadow-lg: var(--_dark-shadow-lg);
 }
 
 :root[data-theme="light"] {
-  --fg: #14171c;
-  --fg-muted: #57616f;
-  --fg-faint: #8892a0;
-  --bg: #f4f6f8;
-  --bg-subtle: #e8ecf0;
-  --bg-raised: #ffffff;
-  --border: #d8dee5;
-  --border-strong: #b9c2cc;
+  --fg: var(--_light-fg);
+  --fg-muted: var(--_light-fg-muted);
+  --fg-faint: var(--_light-fg-faint);
+  --bg: var(--_light-bg);
+  --bg-subtle: var(--_light-bg-subtle);
+  --bg-raised: var(--_light-bg-raised);
+  --border: var(--_light-border);
+  --border-strong: var(--_light-border-strong);
 
-  --accent: #d7263d;
-  --accent-fg: #ffffff;
-  --accent-hover: #a91c30;
+  --accent: var(--_light-accent);
+  --accent-fg: var(--_light-accent-fg);
+  --accent-hover: var(--_light-accent-hover);
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
 
-  --danger: #7f1d1d;
-  --danger-bg: #f8e9e7;
-  --success: #15803d;
-  --success-bg: #e7f6ec;
-  --warn: #a16207;
-  --warn-bg: #fbf1d9;
-  --info: #1b5da8;
-  --info-bg: #e7f1fc;
-  --neutral: #4b5563;
-  --neutral-bg: #e8ecf0;
+  --danger: var(--_light-danger);
+  --danger-bg: var(--_light-danger-bg);
+  --success: var(--_light-success);
+  --success-bg: var(--_light-success-bg);
+  --warn: var(--_light-warn);
+  --warn-bg: var(--_light-warn-bg);
+  --info: var(--_light-info);
+  --info-bg: var(--_light-info-bg);
+  --neutral: var(--_light-neutral);
+  --neutral-bg: var(--_light-neutral-bg);
 
-  --code-kw: #a626a4;
-  --code-str: #50a14f;
-  --code-com: #a0a1a7;
-  --code-num: #986801;
-  --code-def: #4078f2;
-  --code-deco: #c18401;
-  --code-builtin: #0184bc;
+  --code-kw: var(--_light-code-kw);
+  --code-str: var(--_light-code-str);
+  --code-com: var(--_light-code-com);
+  --code-num: var(--_light-code-num);
+  --code-def: var(--_light-code-def);
+  --code-deco: var(--_light-code-deco);
+  --code-builtin: var(--_light-code-builtin);
 
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 1px rgba(15, 23, 42, 0.04);
-  --shadow: 0 4px 14px -4px rgba(15, 23, 42, 0.12), 0 2px 4px -2px rgba(15, 23, 42, 0.06);
-  --shadow-lg: 0 24px 48px -12px rgba(15, 23, 42, 0.22);
+  --shadow-sm: var(--_light-shadow-sm);
+  --shadow: var(--_light-shadow);
+  --shadow-lg: var(--_light-shadow-lg);
 }
 
 * { box-sizing: border-box; }
@@ -234,31 +342,31 @@ html {
 
 ::-webkit-scrollbar { width: 0.6rem; height: 0.6rem; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--radius-pill); }
 ::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); }
 
 body {
   margin: 0;
   min-height: 100dvh;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  font-size: 15px;
-  line-height: 1.55;
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
   color: var(--fg);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
   display: flex;
 }
 
-h1, h2, h3 { line-height: 1.22; margin: 0 0 var(--space-3); font-family: var(--font-display); }
-h1 { font-size: var(--text-2xl); font-weight: 600; letter-spacing: 0.01em; text-transform: uppercase; }
+h1, h2, h3 { line-height: var(--leading-tight); margin: 0 0 var(--space-3); font-family: var(--font-display); }
+h1 { font-size: var(--text-2xl); font-weight: var(--weight-semibold); letter-spacing: 0.01em; text-transform: uppercase; }
 h2 {
   font-size: var(--text-lg);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   letter-spacing: 0.01em;
   margin-top: var(--space-8);
   margin-bottom: var(--space-4);
 }
-h3 { font-size: var(--text-base); font-weight: 600; letter-spacing: -0.005em; }
+h3 { font-size: var(--text-base); font-weight: var(--weight-semibold); letter-spacing: -0.005em; }
 p { margin: 0 0 var(--space-3); }
 
 a { color: var(--accent); text-decoration: none; }
@@ -281,7 +389,7 @@ code, pre, .mono {
   color: var(--accent-fg);
   border-radius: var(--radius-sm);
   transform: translateY(-150%);
-  transition: transform 0.15s ease;
+  transition: transform var(--duration) ease;
 }
 .skip-link:focus { transform: none; text-decoration: none; }
 
@@ -315,7 +423,7 @@ code, pre, .mono {
   align-items: center;
   gap: 0.55rem;
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--text-md);
   color: var(--sidebar-fg);
   letter-spacing: 0.05em;
@@ -340,10 +448,10 @@ code, pre, .mono {
   border-radius: var(--radius-sm);
   color: var(--sidebar-fg-muted);
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   letter-spacing: 0.01em;
   position: relative;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 .sidebar-nav a:hover { color: var(--sidebar-fg); background: var(--sidebar-bg-raised); text-decoration: none; }
 .sidebar-nav a.active { color: var(--sidebar-accent); background: var(--sidebar-accent-soft); }
@@ -354,7 +462,7 @@ code, pre, .mono {
   top: 0.4rem;
   bottom: 0.4rem;
   width: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--sidebar-accent);
 }
 .sidebar-nav a .badge { margin-left: auto; }
@@ -370,7 +478,7 @@ code, pre, .mono {
   align-items: center;
   gap: 0.4rem;
   color: var(--sidebar-accent);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .sidebar-foot-warn:hover { text-decoration: none; color: var(--sidebar-accent); }
 
@@ -407,7 +515,7 @@ code, pre, .mono {
   cursor: pointer;
 }
 .theme-switcher button:hover { background: var(--sidebar-bg); color: var(--sidebar-fg); }
-.theme-switcher button.active { background: var(--sidebar-accent); color: #1c0505; }
+.theme-switcher button.active { background: var(--sidebar-accent); color: var(--sidebar-accent-fg); }
 
 /* Native <select> — the conventional language-picker control, see
    base.html's comment on why this replaced a button-per-language toggle. */
@@ -429,7 +537,7 @@ code, pre, .mono {
   border-radius: var(--radius-sm);
   color: var(--sidebar-fg);
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-family: inherit;
   cursor: pointer;
 }
@@ -482,7 +590,7 @@ code, pre, .mono {
   z-index: 45;
   background: rgba(10, 12, 20, 0.45);
   opacity: 0;
-  transition: opacity 0.2s ease;
+  transition: opacity var(--duration) ease;
 }
 
 .app-main {
@@ -524,7 +632,7 @@ main {
     height: 100dvh;
     width: min(20rem, 82vw);
     transform: translateX(-100%);
-    transition: transform 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform var(--duration-slow) var(--ease);
     box-shadow: var(--shadow-lg);
   }
   body.nav-open .sidebar { transform: none; }
@@ -554,6 +662,21 @@ main {
 .page-header h1 { margin: 0; }
 .page-header h2, .page-header h3 { margin: 0; }
 
+/* A lighter section-level counterpart to .page-header, which was designed
+   as a one-per-page title bar — for a mid-page subsection's own title +
+   trailing action (e.g. adapters_list.html's "General"/"Sources"
+   subsections under one page's real h1). Same flex layout, tighter
+   spacing, so it doesn't compete for the same visual weight. */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-6) 0 var(--space-3);
+  flex-wrap: wrap;
+}
+.section-header h2, .section-header h3 { margin: 0; }
+
 .header-badges {
   display: flex;
   align-items: center;
@@ -568,37 +691,9 @@ main {
   margin-bottom: 0.75rem;
   font-size: var(--text-sm);
   color: var(--fg-muted);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 .crumb:hover { color: var(--accent); text-decoration: none; }
-
-.wizard-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2, 0.5rem);
-  list-style: none;
-  margin: 0 0 var(--space-5, 1.5rem);
-  padding: 0;
-}
-.wizard-steps li {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: var(--text-sm);
-  color: var(--fg-faint);
-  padding: 0.3rem 0.7rem;
-  border-radius: 999px;
-  background: var(--bg-subtle);
-  border: 1px solid transparent;
-}
-.wizard-steps li.done { color: var(--success); background: var(--success-bg); }
-.wizard-steps li.active {
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  font-weight: 600;
-}
-.wizard-step-optional { font-weight: 400; opacity: 0.75; }
 
 .live-badge {
   display: inline-flex;
@@ -609,7 +704,7 @@ main {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--sidebar-fg-muted);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
 }
 
 /* An "ON AIR" lamp, not a generic status dot — --on-air is a fixed red
@@ -672,7 +767,7 @@ main {
   pointer-events: auto;
   opacity: 1;
   transform: translateY(0);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity var(--duration) ease, transform var(--duration) ease;
 }
 .toast-region .toast.toast-out { opacity: 0; transform: translateY(-0.25rem); }
 @media (prefers-reduced-motion: reduce) { .toast-region .toast { transition: none; } }
@@ -696,11 +791,11 @@ main {
   gap: 0.4rem;
   color: var(--fg-muted);
   font-size: var(--text-sm);
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   padding: 0.4rem 0.75rem;
   border-radius: var(--radius-sm);
   white-space: nowrap;
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: background-color var(--duration-fast) ease, color var(--duration-fast) ease;
 }
 .subnav a:hover { color: var(--fg); background: var(--bg-raised); text-decoration: none; }
 .subnav a.active { color: var(--accent); background: var(--bg-raised); box-shadow: var(--shadow-sm); }
@@ -722,17 +817,34 @@ main {
 details.config-section > summary {
   cursor: pointer;
   font-size: var(--text-lg);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-bottom: var(--space-3);
 }
 
 /* ============================ Dashboard ============================== */
 
-.panel {
+/* Shared card/elevation primitive — the
+   background/border/radius/shadow combo every raised surface in the app
+   wants (panels, status tiles, KPIs, tool cards, table wraps, filter/action
+   forms, the auth card). One declaration to retune elevation everywhere
+   instead of the 8+ copies this used to be. Components below add only
+   their own layout deltas (padding, margin, flex/grid). */
+.surface,
+.panel,
+.status-tile,
+.kpi,
+a.tool-card,
+.table-wrap,
+form.filters,
+form.action,
+.auth-card {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-sm);
+}
+
+.panel {
   padding: var(--space-4) var(--space-5);
   margin-bottom: var(--space-5);
 }
@@ -759,9 +871,16 @@ details.config-section > summary {
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .panel-foot a { display: inline-flex; align-items: center; gap: 0.3rem; }
+
+/* A .table-wrap/pre.contents as the last thing in a .panel (item_detail's
+   main-column sections) would otherwise stack its own bottom margin on
+   top of the panel's own padding, leaving an oversized gap before the
+   card's bottom edge. */
+.panel > .table-wrap:last-child,
+.panel > pre.contents:last-child { margin-bottom: 0; }
 
 .form-actions { display: flex; gap: var(--space-3); margin-top: var(--space-2); }
 
@@ -773,6 +892,11 @@ details.config-section > summary {
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
   gap: var(--space-2);
 }
+/* The mode picker (.segmented) is a different control shape from the
+   on/off switches it sits among — full-width its own row instead of
+   filling one grid cell like another switch, so Quick Controls reads as
+   "toggles, then mode" rather than one repeating pattern. */
+.toggle-grid > .segmented { grid-column: 1 / -1; }
 .toggle-form { margin: 0; }
 .switch {
   display: inline-flex;
@@ -790,33 +914,46 @@ details.config-section > summary {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--fg);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   text-align: left;
 }
 .toggle-form .switch:hover { background: var(--bg-subtle); border-color: var(--border-strong); }
-.switch-track {
-  flex-shrink: 0;
+/* Track/thumb visuals shared by both toggle implementations below: .switch
+   (a <button role="switch"> that posts a form on click — quick-controls)
+   and .switch-checkbox (a real <input type=checkbox>, one field among many
+   in a bigger explicitly-saved form — adapter form). Same look, different
+   interaction contract, so the positioning mechanics stay separate. */
+.switch-track,
+.switch-checkbox-track {
   width: 2.2rem;
   height: 1.25rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--border-strong);
   padding: 0.15rem;
-  transition: background-color 0.15s ease;
+  transition: background-color var(--duration) ease;
 }
-.switch-thumb {
+.switch-track { flex-shrink: 0; }
+.switch-thumb,
+.switch-checkbox-thumb {
   display: block;
   width: 0.95rem;
   height: 0.95rem;
   border-radius: 50%;
   background: #fff;
   box-shadow: var(--shadow-sm);
-  transition: transform 0.15s ease;
+  transition: transform var(--duration) ease;
 }
-.switch.is-on .switch-track { background: var(--success); }
-.switch.is-on .switch-thumb { transform: translateX(0.95rem); }
+.switch.is-on .switch-track,
+.switch-checkbox-control input:checked ~ .switch-checkbox-track {
+  background: var(--success);
+}
+.switch.is-on .switch-thumb,
+.switch-checkbox-control input:checked ~ .switch-checkbox-track .switch-checkbox-thumb {
+  transform: translateX(0.95rem);
+}
 .switch-text { display: flex; flex-direction: column; gap: 0.1rem; min-width: 0; white-space: normal; }
-.switch-label { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: 600; font-size: var(--text-sm); }
-.switch-hint { color: var(--fg-muted); font-size: var(--text-xs); font-weight: 400; }
+.switch-label { display: inline-flex; align-items: center; gap: 0.4rem; font-weight: var(--weight-semibold); font-size: var(--text-sm); }
+.switch-hint { color: var(--fg-muted); font-size: var(--text-xs); font-weight: var(--weight-regular); }
 
 /* ---- switch-styled real checkbox (adapter form) ----------------------
    .switch above is a <button role="switch"> that posts a form on click —
@@ -824,14 +961,14 @@ details.config-section > summary {
    bigger, explicitly-saved form. This wraps a real <input type=checkbox>
    (kept at the exact size/position of the visible track, not hidden to
    1px) so the existing global `input:focus-visible` outline rule
-   (style.css ~1772) lands right on the switch shape for free — no
-   focus-style duplication needed. */
+   lands right on the switch shape for free — no focus-style duplication
+   needed. */
 .switch-checkbox {
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
   cursor: pointer;
-  font-weight: 500;
+  font-weight: var(--weight-medium);
 }
 .switch-checkbox-control {
   position: relative;
@@ -851,22 +988,8 @@ details.config-section > summary {
   inset: 0;
   display: flex;
   align-items: center;
-  border-radius: 999px;
-  background: var(--border-strong);
-  padding: 0.15rem;
   pointer-events: none;
-  transition: background-color 0.15s ease;
 }
-.switch-checkbox-thumb {
-  width: 0.95rem;
-  height: 0.95rem;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.15s ease;
-}
-.switch-checkbox-control input:checked ~ .switch-checkbox-track { background: var(--success); }
-.switch-checkbox-control input:checked ~ .switch-checkbox-track .switch-checkbox-thumb { transform: translateX(0.95rem); }
 
 /* ---- compact label-above-input rows (adapter form side rail) --------- */
 .field-stack { display: flex; flex-direction: column; }
@@ -883,12 +1006,23 @@ details.config-section > summary {
 .field-stack .field input[type="text"], .field-stack .field select {
   width: 100%;
   padding: 0.45rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
   font-size: var(--text-sm);
-  font-family: inherit;
+}
+
+/* Three segmented/toggle-group controls share this "soft accent fill"
+   active-state language (also see .theme-switcher above, which uses the
+   same idiom against the sidebar's fixed dark chassis instead): .segmented
+   (a floating button row in a padded track, content-area chrome — voice/
+   frame mode pickers) and .mtx-kind below (a connected native-segmented-
+   control shape — the manual-tx dialog's mode picker). They stay separate
+   rule sets because their chassis genuinely differs (padded track vs.
+   adjacent bordered pills), not from missed de-duplication — only the
+   active-state color treatment, which is identical, is shared here. */
+.segmented button.active,
+.mtx-kind label.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .segmented {
@@ -906,7 +1040,7 @@ details.config-section > summary {
   align-items: center;
   gap: 0.4rem;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-right: auto;
 }
 .segmented form { margin: 0; }
@@ -919,14 +1053,9 @@ details.config-section > summary {
   font-size: var(--text-sm);
 }
 .segmented button:hover { background: var(--bg-subtle); color: var(--fg); }
-.segmented button.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
-}
 .segmented-drift {
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--warn);
   white-space: nowrap;
 }
@@ -970,10 +1099,9 @@ details.config-section > summary {
 }
 .mtx-kind label:first-of-type { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 .mtx-kind label:last-of-type { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; border-left: none; }
-.mtx-kind label.active { background: var(--accent-soft); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 .mtx-kind input { position: absolute; opacity: 0; pointer-events: none; }
 .mtx-mode-note { margin: 0; font-size: var(--text-xs); color: var(--warn); }
-.mtx-label { font-size: var(--text-sm); font-weight: 550; }
+.mtx-label { font-size: var(--text-sm); font-weight: var(--weight-medium); }
 .manual-tx-dialog textarea {
   width: 100%;
   font-family: inherit;
@@ -986,8 +1114,8 @@ details.config-section > summary {
   resize: vertical;
 }
 .mtx-foot { display: flex; justify-content: space-between; font-size: var(--text-xs); color: var(--fg-muted); }
-.mtx-count-over { color: var(--danger); font-weight: 600; }
-.mtx-over { color: var(--danger); font-weight: 600; }
+.mtx-count-over { color: var(--danger); font-weight: var(--weight-semibold); }
+.mtx-over { color: var(--danger); font-weight: var(--weight-semibold); }
 .mtx-banner { margin: 0; font-size: var(--text-xs); }
 .mtx-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
 #manual-tx-submit:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -1005,10 +1133,6 @@ details.config-section > summary {
   flex-direction: column;
   gap: 0.3rem;
   padding: 0.8rem 0.9rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
   color: var(--fg);
 }
 .status-tile:hover {
@@ -1021,7 +1145,7 @@ details.config-section > summary {
   align-items: center;
   gap: 0.4rem;
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--fg-muted);
@@ -1031,7 +1155,7 @@ details.config-section > summary {
   align-items: center;
   gap: 0.45rem;
   font-size: var(--text-lg);
-  font-weight: 700;
+  font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
 }
 .status-tile-sub {
@@ -1087,10 +1211,6 @@ details.config-section > summary {
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.9rem 1rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
 }
 .kpi-wide { grid-column: span 2; }
 @media (max-width: 560px) { .kpi-wide { grid-column: span 1; } }
@@ -1099,12 +1219,12 @@ details.config-section > summary {
   align-items: center;
   gap: 0.4rem;
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--fg-muted);
 }
-.kpi-value { font-size: var(--text-2xl); font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+.kpi-value { font-size: var(--text-2xl); font-weight: var(--weight-bold); letter-spacing: -0.03em; line-height: 1.1; }
 .kpi-foot { font-size: var(--text-xs); color: var(--fg-muted); }
 .kpi-spark { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.15rem; }
 
@@ -1144,7 +1264,7 @@ details.config-section > summary {
   border-radius: calc(var(--radius-sm) - 0.1rem);
   color: var(--fg-muted);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   cursor: pointer;
   user-select: none;
 }
@@ -1187,7 +1307,7 @@ details.config-section > summary {
 a.feed-main:hover { text-decoration: none; }
 a.feed-main:hover .feed-title { color: var(--accent); }
 .feed-title {
-  font-weight: 550;
+  font-weight: var(--weight-medium);
   font-size: var(--text-sm);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1207,7 +1327,7 @@ a.feed-main:hover .feed-title { color: var(--accent); }
   justify-content: center;
   padding: 0.28rem;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-raised);
   color: var(--fg-muted);
 }
@@ -1233,7 +1353,7 @@ a.feed-main:hover .feed-title { color: var(--accent); }
   font-size: var(--text-xs);
   color: var(--fg-muted);
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 0.05rem 0.4rem;
   cursor: pointer;
   user-select: none;
@@ -1261,17 +1381,13 @@ a.feed-main:hover .feed-title { color: var(--accent); }
 }
 .stat-list > div:last-child { border-bottom: none; }
 .stat-list dt { color: var(--fg-muted); }
-.stat-list dd { margin: 0; text-align: right; font-weight: 550; }
+.stat-list dd { margin: 0; text-align: right; font-weight: var(--weight-medium); }
 
 /* ============================ Tables ================================== */
 
 .table-wrap {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   overflow-x: auto;
   margin-bottom: var(--space-5);
-  background: var(--bg-raised);
-  box-shadow: var(--shadow-sm);
 }
 
 table { width: 100%; border-collapse: collapse; font-size: var(--text-base); }
@@ -1287,7 +1403,7 @@ td.wrap, th.wrap { white-space: normal; overflow-wrap: anywhere; }
 
 th {
   color: var(--fg-muted);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1296,7 +1412,7 @@ th {
   top: 0;
 }
 
-tbody tr { transition: background-color 0.1s ease; }
+tbody tr { transition: background-color var(--duration-fast) ease; }
 tbody tr:hover { background: var(--bg-subtle); }
 tbody tr:last-child td { border-bottom: none; }
 .table-wrap table { margin-bottom: 0; }
@@ -1307,7 +1423,7 @@ tbody tr:last-child td { border-bottom: none; }
   padding: var(--space-8) var(--space-4);
   font-size: var(--text-base);
 }
-.empty-row td a { color: var(--accent); font-weight: 600; }
+.empty-row td a { color: var(--accent); font-weight: var(--weight-semibold); }
 
 /* ---- items list: title-led content rows (source + id as sub-text) ---- */
 .items-table { table-layout: fixed; }
@@ -1319,7 +1435,7 @@ tbody tr:last-child td { border-bottom: none; }
 .items-table td.item-cell { padding-top: 0.5rem; padding-bottom: 0.5rem; }
 .items-table .item-title {
   display: block;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--fg);
   line-height: 1.35;
   overflow-wrap: anywhere;
@@ -1347,7 +1463,69 @@ tbody tr:last-child td { border-bottom: none; }
   margin-top: 0.25rem;
   font-size: var(--text-xs);
 }
+.type-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--fg-muted);
+}
 .items-table td.item-when { color: var(--fg-muted); font-size: var(--text-sm); }
+
+/* Large, low-opacity category icon — a decorative watermark behind an
+   item's row/card, purely for eye candy (see .type-cell/.item-subtype
+   above for the small, legible icon+label that actually conveys the
+   category). Never intercepts clicks, and sits behind the real content: a
+   size-only modifier (-row/-hero) plus the icon()-provided size is what
+   actually controls how "big" it reads. */
+.category-watermark {
+  position: absolute;
+  display: block;
+  line-height: 0;
+  color: var(--fg);
+  opacity: 0.1;
+  pointer-events: none;
+  z-index: 0;
+}
+.category-watermark-row {
+  top: 50%;
+  right: 0.4rem;
+  transform: translateY(-50%);
+}
+.category-watermark-hero {
+  top: 50%;
+  right: -0.5rem;
+  transform: translateY(-50%);
+  opacity: 0.08;
+}
+.items-table td.item-cell {
+  position: relative;
+  overflow: hidden;
+}
+.items-table td.item-cell > a,
+.items-table td.item-cell > .item-sub {
+  position: relative;
+  z-index: 1;
+}
+.feed > li {
+  position: relative;
+  overflow: hidden;
+}
+.feed > li > .feed-main,
+.feed > li > .feed-audio,
+.feed > li > .feed-time {
+  position: relative;
+  z-index: 1;
+}
+.item-hero {
+  position: relative;
+  overflow: hidden;
+  padding-right: 1rem;
+}
+.item-hero > .page-header,
+.item-hero > .meta-line {
+  position: relative;
+  z-index: 1;
+}
 
 form.filters .filter-search { flex: 3 1 18rem; }
 
@@ -1396,7 +1574,7 @@ form.filters .filter-search { flex: 3 1 18rem; }
     flex-shrink: 0;
     color: var(--fg-muted);
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -1463,7 +1641,7 @@ form.filters .filter-search { flex: 3 1 18rem; }
     flex-shrink: 0;
     color: var(--fg-muted);
     font-size: var(--text-xs);
-    font-weight: 600;
+    font-weight: var(--weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -1480,9 +1658,9 @@ form.filters .filter-search { flex: 3 1 18rem; }
   align-items: center;
   gap: 0.35rem;
   padding: 0.15rem 0.55rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   font-size: var(--text-xs);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   white-space: nowrap;
   line-height: 1.5;
 }
@@ -1504,14 +1682,14 @@ form.filters .filter-search { flex: 3 1 18rem; }
 
 .queue-bar {
   height: 0.4rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--bg-subtle);
   overflow: hidden;
   margin-top: 0.7rem;
 }
 .queue-bar-fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--success);
   transition: width 0.4s ease;
 }
@@ -1528,13 +1706,9 @@ form.filters .filter-search { flex: 3 1 18rem; }
 }
 a.tool-card {
   display: block;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
   padding: 1.15rem 1.25rem;
-  box-shadow: var(--shadow-sm);
   color: var(--fg);
-  transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+  transition: transform var(--duration-fast) ease, box-shadow var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 a.tool-card:hover {
   border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
@@ -1543,7 +1717,7 @@ a.tool-card:hover {
   text-decoration: none;
 }
 a.tool-card .tool-icon { color: var(--accent); margin-bottom: var(--space-2); display: flex; }
-a.tool-card .tool-title { font-weight: 650; margin-bottom: 0.25rem; }
+a.tool-card .tool-title { font-weight: var(--weight-semibold); margin-bottom: 0.25rem; }
 a.tool-card .tool-desc { color: var(--fg-muted); font-size: var(--text-sm); }
 
 /* ============================ SQL runner ============================= */
@@ -1585,7 +1759,7 @@ textarea.code-editor {
   color: var(--fg);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: var(--leading-snug);
   tab-size: 4;
   white-space: pre;
   overflow: auto;
@@ -1621,7 +1795,7 @@ textarea.code-editor:focus {
      overlay unreachable). */
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: var(--leading-snug);
   tab-size: 4;
   white-space: pre;
   color: var(--fg);
@@ -1647,11 +1821,11 @@ textarea.code-editor:focus {
 }
 .code-editor-wrap textarea.code-editor::selection { background: var(--accent-soft); color: transparent; }
 
-.tok-kw { color: var(--code-kw); font-weight: 600; }
+.tok-kw { color: var(--code-kw); font-weight: var(--weight-semibold); }
 .tok-str { color: var(--code-str); }
 .tok-com { color: var(--code-com); font-style: italic; }
 .tok-num { color: var(--code-num); }
-.tok-def { color: var(--code-def); font-weight: 600; }
+.tok-def { color: var(--code-def); font-weight: var(--weight-semibold); }
 .tok-deco { color: var(--code-deco); }
 .tok-builtin { color: var(--code-builtin); }
 
@@ -1661,6 +1835,58 @@ textarea.code-editor:focus {
 
 /* ============================ Forms ================================= */
 
+/* Shared text-input/select/textarea styling — border/radius/background/
+   color/focus-ring, previously redeclared with tiny variations across six
+   different form contexts (filter bars, action forms, the adapter-form
+   side rail, settings tables, mapping tables, the login form). Each
+   context below now layers on only its own padding/width/font-size. */
+.field-input,
+form.filters input,
+form.filters select,
+form.action input[type="text"],
+form.action select,
+.field-stack .field input[type="text"],
+.field-stack .field select,
+.form-table input[type="text"],
+.form-table input[type="number"],
+.form-table select,
+.form-table textarea,
+.kv-table input[type="text"],
+.kv-table select,
+.kv-table textarea.mapping-value-input,
+.auth-field input[type="text"],
+.auth-field input[type="password"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+
+.field-input:focus,
+form.filters input:focus,
+form.filters select:focus,
+form.action input[type="text"]:focus,
+form.action select:focus,
+.field-stack .field input[type="text"]:focus,
+.field-stack .field select:focus,
+.form-table input[type="text"]:focus,
+.form-table input[type="number"]:focus,
+.form-table select:focus,
+.form-table textarea:focus,
+.kv-table input[type="text"]:focus,
+.kv-table select:focus,
+.kv-table textarea.mapping-value-input:focus,
+.auth-field input[type="text"]:focus,
+.auth-field input[type="password"]:focus,
+table input:focus,
+table select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 form.filters {
   display: flex;
   gap: 0.55rem;
@@ -1668,28 +1894,13 @@ form.filters {
   align-items: center;
   margin-bottom: var(--space-5);
   padding: 0.85rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
 }
 form.filters input, form.filters select {
   padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
   font-size: var(--text-sm);
   min-width: 0;
 }
 form.filters input[type="text"] { flex: 1 1 12rem; }
-
-form.filters input:focus, form.filters select:focus,
-table input:focus, table select:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
-}
 
 form.action {
   display: flex;
@@ -1700,24 +1911,21 @@ form.action {
   max-width: 100%;
   padding: 0.9rem 1.1rem;
   margin: 0.6rem 0;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
 }
-form.action label { font-size: var(--text-sm); font-weight: 600; color: var(--fg-muted); margin: 0; }
+form.action label { font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--fg-muted); margin: 0; }
 form.action select, form.action input[type="text"] {
   padding: 0.45rem 0.65rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
   font-size: var(--text-sm);
 }
 
-label { display: block; font-size: var(--text-xs); font-weight: 600; color: var(--fg-muted); margin-bottom: 0.3rem; }
+label { display: block; font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--fg-muted); margin-bottom: 0.3rem; }
 
-/* Config / detail form: a definition-list style card, not a data grid */
+/* Config / detail form: one field per row, label stacked above its input —
+   a modern settings-form layout rather than a two-column spreadsheet grid.
+   Still real <table>/<tr>/<th>/<td> markup (just styled as blocks): that
+   keeps conditional-fields.js's `tr[data-show-if]` row show/hide and the
+   `tr[hidden]` rule below working unchanged, so this is a pure visual
+   restyle, not a markup rewrite. */
 .form-table {
   width: 100%;
   max-width: var(--content-max);
@@ -1728,69 +1936,79 @@ label { display: block; font-size: var(--text-xs); font-weight: 600; color: var(
   box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-.form-table th, .form-table td {
+.form-table, .form-table tbody, .form-table tr, .form-table th, .form-table td {
+  display: block;
+  width: 100%;
+}
+.form-table tr {
+  padding: var(--space-4) var(--space-5);
   border-bottom: 1px solid var(--border);
-  padding: 0.9rem 1.1rem;
-  white-space: normal;
-  overflow-wrap: anywhere;
+}
+.form-table tr:last-child { border-bottom: none; }
+.form-table tr.wiring-row { background: color-mix(in srgb, var(--warn-bg) 45%, var(--bg-raised)); }
+/* Higher specificity than the [hidden] UA default competing with the
+   `display: block` above — without this, a hidden row would still take
+   up space. */
+.form-table tr[hidden] { display: none; }
+
+.form-table th, .form-table td {
+  padding: 0;
+  border: none;
   background: none;
   position: static;
   text-transform: none;
   letter-spacing: normal;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .form-table th {
-  width: 16rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--fg);
-  vertical-align: top;
 }
-.form-table tr:last-child td, .form-table tr:last-child th { border-bottom: none; }
-.form-table input[type="text"], .form-table input[type="number"], .form-table textarea {
+/* The raw env-var key — previously a permanent second line under every
+   label. Now a small muted chip next to it, with the full name available
+   on hover/focus via the [data-tooltip] primitive, so a field with a long
+   description doesn't read as two stacked headings before you even reach
+   the input. */
+.field-key-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-regular);
+  color: var(--fg-faint);
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: help;
+}
+.form-table input[type="text"], .form-table input[type="number"], .form-table select, .form-table textarea {
   width: 100%;
   max-width: 36rem;
   padding: 0.5rem 0.7rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
   font-size: var(--text-base);
-  font-family: inherit;
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
-}
-.form-table input[type="text"]:focus, .form-table input[type="number"]:focus, .form-table textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .form-table textarea { min-height: 6rem; resize: vertical; }
 .form-table input[readonly] { background: var(--bg-subtle); color: var(--fg-muted); }
-.form-table tr.wiring-row { background: color-mix(in srgb, var(--warn-bg) 45%, var(--bg-raised)); }
-/* Higher specificity than the mobile block's ".form-table tr { display: block }"
-   below, so conditional-fields.js's row hiding (see [data-show-if]) still
-   works at every viewport width — the browser's own [hidden] UA rule alone
-   would otherwise lose to that author rule regardless of media query. */
-.form-table tr[hidden] { display: none; }
-
-@media (max-width: 680px) {
-  .form-table, .form-table tbody, .form-table tr, .form-table th, .form-table td { display: block; width: 100%; }
-  .form-table th { width: auto; border-bottom: none; padding-bottom: 0; }
-  .form-table td { padding-top: 0.4rem; }
-}
 
 /* key-value / mapping row tables (adapter form) */
 .kv-table td { padding: 0.4rem 0.45rem; vertical-align: middle; white-space: nowrap; }
+.mapping-quick-pick {
+  display: block;
+  white-space: normal;
+  margin-top: 0.3rem;
+}
+.mapping-quick-pick select { max-width: 100%; font-size: var(--text-xs); }
 .kv-table input[type="text"], .kv-table select {
   width: 100%;
   padding: 0.42rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
   font-size: var(--text-sm);
-  font-family: inherit;
 }
-.kv-table .field-name { font-weight: 600; white-space: nowrap; }
+.kv-table .field-name { font-weight: var(--weight-semibold); white-space: nowrap; }
 .kv-table .remove-row-btn { padding: 0.25rem 0.55rem; font-size: var(--text-xs); }
 
 /* contents mapping row: a template that reaches into nested JSON tends to
@@ -1802,12 +2020,7 @@ label { display: block; font-size: var(--text-xs); font-weight: 600; color: var(
   min-height: 4.5rem;
   resize: vertical;
   padding: 0.42rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
   font-size: var(--text-sm);
-  font-family: inherit;
 }
 
 .field-name-chip, .use-items-path-btn {
@@ -1856,12 +2069,12 @@ button, input[type="submit"], .btn {
   background: var(--accent);
   color: var(--accent-fg);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-family: inherit;
   cursor: pointer;
   text-decoration: none;
   white-space: nowrap;
-  transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.05s ease, box-shadow 0.12s ease;
+  transition: background-color var(--duration-fast) ease, border-color var(--duration-fast) ease, transform 0.05s ease, box-shadow var(--duration-fast) ease;
 }
 button:hover, input[type="submit"]:hover, .btn:hover {
   background: var(--accent-hover);
@@ -1900,6 +2113,142 @@ button.danger:hover { background: var(--danger-bg); border-color: var(--danger);
 .actions-cell { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .actions-cell form { display: inline; margin: 0; }
 
+/* ============================ Tooltips ================================= */
+/* CSS-only, matching the app's existing no-JS-first idiom (.theme-switcher,
+   the Activity feed's .af-tab tabs) — a small inverted chip above the
+   element, driven entirely by the `data-tooltip` attribute's own text via
+   `content: attr(...)`. The first tooltip component in the app; used by
+   the config form's env-var-key affordance (_config_group_form_body.html). */
+[data-tooltip] { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.4rem);
+  transform: translate(-50%, 0.25rem);
+  padding: 0.3rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: var(--fg);
+  color: var(--bg);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 60;
+  transition: opacity var(--duration-fast) ease, transform var(--duration-fast) ease;
+}
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-tooltip]::after { transition: none; }
+}
+
+/* ============================ Loading / skeleton ========================= */
+/* Nothing like this existed before — dashboard-refresh.js's poll had no
+   visual loading state at all. `.skeleton` is a shimmering placeholder
+   block; `.is-loading` dims a live content region while a fetch is in
+   flight (toggled by a small additive class swap around the existing
+   fetch call, not a rewrite of the refresh mechanism). */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--fg) 8%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-sweep {
+  100% { transform: translateX(100%); }
+}
+.is-loading { opacity: 0.6; transition: opacity var(--duration) ease; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after { animation: none; }
+  .is-loading { transition: none; }
+}
+
+/* ============================ Stepper =================================== */
+/* Horizontal counterpart to .about-flow's vertical numbered-circle spine
+   (About page, adapter_form's 4-step flow) below — same accent-circle-on-
+   a-line visual language, laid out left-to-right for a compact top-of-page
+   progress indicator (setup wizard). */
+.stepper {
+  display: flex;
+  align-items: flex-start;
+  list-style: none;
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  flex-wrap: wrap;
+}
+.stepper-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 5.5rem;
+  text-align: center;
+}
+.stepper-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 0.875rem;
+  left: calc(50% + 1.3rem);
+  right: calc(-50% + 1.3rem);
+  height: 2px;
+  background: var(--border-strong);
+}
+.stepper-step.done:not(:last-child)::after { background: var(--success); }
+.stepper-num {
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+  border: 2px solid var(--border-strong);
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+}
+.stepper-step.active .stepper-num {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.stepper-step.done .stepper-num {
+  background: var(--success);
+  color: var(--bg-raised);
+  border-color: var(--success);
+}
+.stepper-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--fg-muted);
+}
+.stepper-step.active .stepper-label { color: var(--fg); font-weight: var(--weight-semibold); }
+.stepper-optional { display: block; font-weight: var(--weight-regular); opacity: 0.75; }
+@media (max-width: 560px) {
+  .stepper-label { display: none; }
+  .stepper-step { min-width: 2.5rem; }
+}
+
 /* ============================ Misc ================================= */
 
 .muted { color: var(--fg-muted); }
@@ -1915,10 +2264,14 @@ pre.contents {
   max-height: 28rem;
   overflow: auto;
   font-size: var(--text-sm);
-  line-height: 1.65;
+  line-height: var(--leading-relaxed);
   box-shadow: var(--shadow-sm);
 }
 
+.meta-line .icon,
+.feed-meta .icon {
+  margin-right: 0.3rem;
+}
 .meta-line {
   color: var(--fg-muted);
   font-size: var(--text-sm);
@@ -1935,7 +2288,7 @@ pre.contents {
   font-size: var(--text-sm);
   flex-wrap: wrap;
 }
-.pagination a { color: var(--accent); font-weight: 600; }
+.pagination a { color: var(--accent); font-weight: var(--weight-semibold); }
 
 /* --- Login page (login.html) — standalone, doesn't extend base.html, so
    it needs its own body background/centering rather than the sidebar
@@ -1951,8 +2304,10 @@ pre.contents {
 .auth-card {
   width: 100%;
   max-width: 22rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
+  /* A larger radius + deeper shadow than the shared .surface default
+     (var(--radius)/var(--shadow-sm)) — the auth card is a standalone focal
+     point on an otherwise empty page, not one of several cards on a
+     content-dense screen, so it can afford more presence. */
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
   padding: var(--space-6);
@@ -1962,7 +2317,7 @@ pre.contents {
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   font-size: var(--text-lg);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -1979,21 +2334,17 @@ pre.contents {
 .auth-field label {
   display: block;
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   margin-bottom: var(--space-2);
 }
 .auth-field input[type="text"], .auth-field input[type="password"] {
   width: 100%;
   padding: var(--space-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--bg);
-  color: var(--fg);
+  /* A stronger border than the shared .field-input default (var(--border))
+     — this is the only field on an otherwise-empty page, so it can afford
+     to read as more clearly a field to click. */
+  border-color: var(--border-strong);
   font-size: var(--text-base);
-}
-.auth-field input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
 }
 .auth-submit { width: 100%; justify-content: center; margin-top: var(--space-2); }
 .auth-credit {
@@ -2053,12 +2404,12 @@ pre.contents {
 }
 .about-section p {
   margin: 0 0 var(--space-3);
-  line-height: 1.6;
+  line-height: var(--leading-snug);
 }
 .about-list {
   margin: 0 0 var(--space-3);
   padding-left: var(--space-5);
-  line-height: 1.6;
+  line-height: var(--leading-snug);
 }
 .about-list li { margin-bottom: var(--space-2); }
 
@@ -2105,7 +2456,7 @@ pre.contents {
   color: var(--accent-fg);
   font-family: var(--font-display);
   font-size: var(--text-sm);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2118,11 +2469,11 @@ pre.contents {
   gap: 0.15rem;
   padding-top: 0.15rem;
 }
-.about-flow-label { font-weight: 650; }
+.about-flow-label { font-weight: var(--weight-semibold); }
 .about-flow-desc {
   font-size: var(--text-sm);
   color: var(--fg-muted);
-  line-height: 1.55;
+  line-height: var(--leading-normal);
 }
 .about-flow-foot {
   font-size: var(--text-sm);
@@ -2158,7 +2509,7 @@ pre.contents {
   max-width: 40rem;
   font-size: var(--text-sm);
   color: var(--fg-muted);
-  line-height: 1.55;
+  line-height: var(--leading-normal);
 }
 .pipe {
   --pipe-cycle: 13s;          /* one full bulletin journey */
@@ -2285,13 +2636,13 @@ pre.contents {
   fill: var(--fg-muted);
   font-family: var(--font-display);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 .pipe-lane--skip {
   fill: var(--fg-faint);
-  font-weight: 500;
+  font-weight: var(--weight-medium);
   letter-spacing: 0.02em;
   text-transform: none;
   font-style: italic;
@@ -2382,7 +2733,7 @@ pre.contents {
   fill: var(--fg);
   font-family: var(--font-display);
   font-size: 17.5px;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.02em;
   text-transform: uppercase;
 }
@@ -2402,7 +2753,7 @@ pre.contents {
 }
 .pipe-sub--any {
   fill: var(--accent);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 @keyframes pipe-sub-rot {
   0%, 1%    { opacity: 0; }
@@ -2434,7 +2785,7 @@ pre.contents {
   fill: var(--accent);
   font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
 }
 .pipe-chip {
   transform-box: fill-box;
@@ -2670,12 +3021,12 @@ pre.contents {
   align-items: center;
   gap: 0.4rem;
   padding: 0.2rem 0.6rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--on-air);
   color: #fff;
   font-family: var(--font-display);
   font-size: var(--text-xs);
-  font-weight: 650;
+  font-weight: var(--weight-semibold);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;

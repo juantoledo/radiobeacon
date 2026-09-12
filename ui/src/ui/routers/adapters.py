@@ -9,6 +9,7 @@ from adapters.aiprompt_adapter import AiPromptAdapter
 from adapters.api_adapter import ApiAdapter, FieldMapping, preview_response
 from adapters.custom_adapter import CustomAdapter
 from adapters.actions_defaults import AI_PROMPT_DEFAULT
+from adapters.categories import CATEGORIES, get_category
 from adapters.storage import (
     delete_adapter_instance,
     get_adapter_instance,
@@ -72,6 +73,72 @@ AIPROMPT_FIELDS = (
 # JS-managed list (unlike headers/query_params, whose key set is
 # unbounded). See adapters.api_adapter.ApiAdapterConfig/FieldMapping.
 MAPPED_FIELDS = ("id", "title", "contents", "url", "event_key", "type", "subtype")
+
+# Sentinel posted by the aiprompt type/subtype <select> (see adapter_form.html)
+# when the operator picks "Other / custom" instead of a curated
+# adapters.categories key — the actual value then comes from the paired
+# aip_type_other/aip_subtype_other text input.
+OTHER_KEY = "__other__"
+
+
+def _categories_payload() -> list[dict]:
+    """adapters.categories.CATEGORIES as plain dicts — Jinja's |tojson needs
+    JSON-serializable data (dataclasses aren't), and the template also
+    iterates this directly for the curated <select> options and the
+    custom-adapter cheat-sheet panel."""
+    return [
+        {
+            "key": c.key,
+            "label_en": c.label_en,
+            "label_es": c.label_es,
+            "icon": c.icon,
+            "subtypes": [
+                {"key": s.key, "label_en": s.label_en, "label_es": s.label_es}
+                for s in c.subtypes
+            ],
+        }
+        for c in CATEGORIES
+    ]
+
+
+def _select_state(value: str, choices: tuple[str, ...]) -> tuple[str, str]:
+    """A stored/posted string -> (select_value, other_text): the value
+    itself when it's one of `choices`, else the OTHER_KEY sentinel plus the
+    raw value as the free-text fallback (or ("", "") when blank)."""
+    if not value:
+        return "", ""
+    if value in choices:
+        return value, ""
+    return OTHER_KEY, value
+
+
+def _category_select_state(type_value: str, subtype_value: str) -> dict:
+    """Resolves a stored (type, subtype) string pair into the curated
+    <select> + "Other" free-text state adapter_form.html's aiprompt fields
+    render, keeping the original resolved strings too (what
+    _form_to_config actually stores) so the rest of the pipeline doesn't
+    need to know this UI exists."""
+    type_key, type_other = _select_state(type_value, tuple(c.key for c in CATEGORIES))
+    category = get_category(type_key) if type_key not in ("", OTHER_KEY) else None
+    subtype_choices = tuple(s.key for s in category.subtypes) if category else ()
+    subtype_key, subtype_other = _select_state(subtype_value, subtype_choices)
+    return {
+        "type": type_value,
+        "type_key": type_key,
+        "type_other": type_other,
+        "subtype": subtype_value,
+        "subtype_key": subtype_key,
+        "subtype_other": subtype_other,
+    }
+
+
+def _resolve_select_other(form: FormData, select_name: str, other_name: str) -> str:
+    """The posted <select>+"Other" pair -> the single final string to
+    store, mirroring _category_select_state's inverse."""
+    value = (form.get(select_name) or "").strip()
+    if value == OTHER_KEY:
+        return (form.get(other_name) or "").strip()
+    return value
 
 
 def _build_test_adapter(source: str, adapter_type: str, config: dict, policy=None):
@@ -157,8 +224,7 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
         return {
             "prompt": config.get("prompt", ""),
             "title_template": config.get("title_template", ""),
-            "type": config.get("type", ""),
-            "subtype": config.get("subtype", ""),
+            **_category_select_state(config.get("type", ""), config.get("subtype", "")),
             "event_key_template": config.get("event_key_template", ""),
         }
 
@@ -197,7 +263,11 @@ def _form_to_fields(adapter_type: str, form: FormData) -> dict:
         return {"code": form.get("code") or ""}
 
     if adapter_type == "aiprompt":
-        return {name: (form.get(f"aip_{name}") or "") for name in AIPROMPT_FIELDS}
+        fields = {name: (form.get(f"aip_{name}") or "") for name in AIPROMPT_FIELDS}
+        type_value = _resolve_select_other(form, "aip_type", "aip_type_other")
+        subtype_value = _resolve_select_other(form, "aip_subtype", "aip_subtype_other")
+        fields.update(_category_select_state(type_value, subtype_value))
+        return fields
 
     mapping = {
         name: {
@@ -334,6 +404,10 @@ def _form_context(
         # never applied on its own.
         "suggested_voice_replacements": SUGGESTED_VOICE_REPLACEMENTS,
         "mapped_fields": MAPPED_FIELDS,
+        # adapters.categories.CATEGORIES as plain dicts, for the curated
+        # type/subtype <select>s (aiprompt), the mapping quick-pick
+        # (api), and the custom-code reference panel.
+        "categories": _categories_payload(),
         "api_fields": api_fields,
         "custom_fields": custom_fields,
         "aiprompt_fields": aiprompt_fields,

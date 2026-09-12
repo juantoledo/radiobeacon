@@ -3,11 +3,18 @@
 {% block content %}
 <div class="page-header"><h1>{{ t('setup.wizard.title') }}</h1></div>
 
-<ol class="wizard-steps">
+<ol class="stepper">
   {% for s in steps %}
-  <li class="{{ 'active' if not finish and step and s.slug == step.slug else '' }} {{ 'done' if loop.index0 < current_index else '' }}">{{ t('setup.step.' ~ s.slug, default=s.title) }}{% if s.slug in optional_slugs %} <span class="wizard-step-optional">({{ t('setup.wizard.optional') }})</span>{% endif %}</li>
+  {% set is_done = loop.index0 < current_index %}
+  <li class="stepper-step {{ 'active' if not finish and step and s.slug == step.slug else '' }} {{ 'done' if is_done else '' }}">
+    <span class="stepper-num">{% if is_done %}{{ icon('check', 14) }}{% else %}{{ loop.index }}{% endif %}</span>
+    <span class="stepper-label">{{ t('setup.step.' ~ s.slug, default=s.title) }}{% if s.slug in optional_slugs %}<span class="stepper-optional">({{ t('setup.wizard.optional') }})</span>{% endif %}</span>
+  </li>
   {% endfor %}
-  <li class="{{ 'active' if finish else '' }}">{{ t('setup.wizard.finish') }}</li>
+  <li class="stepper-step {{ 'active' if finish else '' }}">
+    <span class="stepper-num">{{ steps | length + 1 }}</span>
+    <span class="stepper-label">{{ t('setup.wizard.finish') }}</span>
+  </li>
 </ol>
 
 {% if finish %}
@@ -29,6 +36,10 @@
   {% include "_config_group_form_body.html" %}
 {% endif %}
 
-{% if prev_url %}<a class="crumb" href="{{ prev_url }}">&larr; {{ t('setup.wizard.back') }}</a>{% endif %}
-{% if skip_url %}<a class="crumb" href="{{ skip_url }}">{{ t('setup.wizard.skip') }} &rarr;</a>{% endif %}
+{% if prev_url or skip_url %}
+<div class="form-actions">
+  {% if prev_url %}<a class="btn secondary" href="{{ prev_url }}">&larr; {{ t('setup.wizard.back') }}</a>{% endif %}
+  {% if skip_url %}<a class="btn secondary" href="{{ skip_url }}">{{ t('setup.wizard.skip') }} &rarr;</a>{% endif %}
+</div>
+{% endif %}
 {% endblock %}
