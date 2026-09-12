@@ -17,6 +17,7 @@ from adapters.storage import (
     list_adapter_instances,
     list_settings,
     set_adapter_instance,
+    set_adapter_instance_enabled,
     set_source,
 )
 from adapters.policy import DEFAULT_POLICY_NAME, describe_policy, list_policies, resolve_policy
@@ -710,4 +711,15 @@ def _supersede_guard_rail(conn, adapter_type: str, policy_name: str, config: dic
 def adapter_delete_action(source: str, conn: sqlite3.Connection = Depends(get_db)):
     deleted = delete_adapter_instance(conn, source)
     msg = f"adapter '{source}' deleted" if deleted else f"adapter '{source}' not found"
+    return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)
+
+
+@router.post("/config/adapters/{source}/toggle")
+def adapter_toggle_action(source: str, conn: sqlite3.Connection = Depends(get_db)):
+    row = get_adapter_instance(conn, source)
+    if row is None:
+        raise HTTPException(status_code=404, detail="adapter instance not found")
+    enabled = not bool(row["enabled"])
+    set_adapter_instance_enabled(conn, source, enabled)
+    msg = f"adapter '{source}' {'enabled' if enabled else 'disabled'}"
     return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)

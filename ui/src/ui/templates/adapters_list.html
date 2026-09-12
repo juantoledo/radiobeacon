@@ -33,7 +33,14 @@
     <tr>
       <td data-label="{{ t('adapters_list.source_column') }}"><strong>{{ row.source }}</strong></td>
       <td data-label="{{ t('adapters_list.type_column') }}"><span class="badge badge-neutral">{{ row.adapter_type }}</span></td>
-      <td data-label="{{ t('adapters_list.enabled_column') }}">{% if row.enabled %}<span class="badge badge-success">{{ t('adapters_list.on') }}</span>{% else %}<span class="badge badge-neutral">{{ t('adapters_list.off') }}</span>{% endif %}</td>
+      <td data-label="{{ t('adapters_list.enabled_column') }}">
+        <form method="post" action="/config/adapters/{{ row.source }}/toggle">
+          {{ csrf_field() }}
+          <button type="submit" class="switch {{ 'is-on' if row.enabled else '' }}" role="switch" aria-checked="{{ 'true' if row.enabled else 'false' }}" aria-label="{{ t('adapters_list.disable') if row.enabled else t('adapters_list.enable') }}">
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+          </button>
+        </form>
+      </td>
       <td data-label="{{ t('adapters_list.policy_column') }}">{{ row.policy or t('adapters_list.default_value') }}</td>
       <td data-label="{{ t('adapters_list.last_fetch_column') }}" class="muted">
         {% if row.last_fetch %}

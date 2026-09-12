@@ -1716,6 +1716,30 @@ def set_adapter_instance(
     )
 
 
+def set_adapter_instance_enabled(
+    conn: sqlite3.Connection, source: str, enabled: bool, *, actor: str = "ui.adapters"
+) -> bool:
+    """Flips only the enabled flag, leaving adapter_type/policy/config untouched.
+    Returns whether a row was actually updated. Mirrors delete_adapter_instance's
+    upsert-then-audit shape."""
+    _ensure_adapter_instances_table(conn)
+    cursor = conn.execute(
+        "UPDATE adapter_instances SET enabled = ?, updated_at = datetime('now'), updated_by = ? "
+        "WHERE source = ?",
+        (int(enabled), actor, source),
+    )
+    conn.commit()
+    if cursor.rowcount > 0:
+        record_audit_event(
+            conn,
+            event_type="adapter_instance.enabled" if enabled else "adapter_instance.disabled",
+            actor=actor,
+            source=source,
+            details={"enabled": enabled},
+        )
+    return cursor.rowcount > 0
+
+
 def delete_adapter_instance(conn: sqlite3.Connection, source: str, *, actor: str = "ui.adapters") -> bool:
     """Returns whether a row was actually deleted. Mirrors delete_source —
     leaves historical `items` rows and the `sources` display-metadata row
