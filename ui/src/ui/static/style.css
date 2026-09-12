@@ -3014,6 +3014,93 @@ pre.contents {
   .pipe-packet, .pipe-flux, .pipe-ghost, .pipe-wave, .pipe-chips, .pipe-shed { display: none; }
 }
 
+/* ==================== Dashboard: reactive pipeline ==================== *
+ * Same markup/art as the About page's demo, but this instance tracks the
+ * station for real instead of looping a fake bulletin: idle, only the
+ * sources node shows signs of life; once body.is-on-air is set (see
+ * on-air.js), the on-air node lights up and radiates continuously for as
+ * long as the transmitter is actually keyed. No JS of its own — it rides
+ * the same body class the on-air badge/glow already use. */
+.dash-pipe { margin: var(--space-4) 0 var(--space-5); }
+.dash-pipe .pipe--wide { max-width: none; }
+
+/* Idle: suppress everything that implies a bulletin is mid-flight. */
+.pipe--reactive .pipe-packet,
+.pipe--reactive .pipe-ghost,
+.pipe--reactive .pipe-flux,
+.pipe--reactive .pipe-route-flow,
+.pipe--reactive .pipe-route-charge,
+.pipe--reactive .pipe-chips,
+.pipe--reactive .pipe-shed-bit,
+.pipe--reactive .pipe-sub--rot {
+  display: none;
+}
+.pipe--reactive .pipe-node { animation: none; --lit: 0; }
+/* ...except the sources node: it's genuinely still polling either way. */
+.pipe--reactive .pipe-node--1 .pipe-node-glyph { animation: pipe-breathe 3.6s ease-in-out infinite; }
+.pipe--reactive .pipe-feed-dot { animation: pipe-feed-pulse 2.4s ease-in-out infinite; }
+.pipe--reactive .pipe-node--6 .pipe-node-core,
+.pipe--reactive .pipe-node--6 .pipe-node-inner,
+.pipe--reactive .pipe-node--6 .pipe-node-halo {
+  animation: none;
+}
+.pipe--reactive .pipe-node--6 .pipe-node-halo { opacity: 0; }
+.pipe--reactive .pipe-wave,
+.pipe--reactive .pipe-blast {
+  animation: none;
+  opacity: 0;
+}
+
+/* Live: on-air node lit and radiating, on the same ~1.6s rhythm as
+   .on-air-indicator's badge pulse rather than the 13s demo cycle. */
+body.is-on-air .pipe--reactive .pipe-node--6 .pipe-node-core { transform: scale(1.12); }
+body.is-on-air .pipe--reactive .pipe-node--6 .pipe-node-inner { fill: var(--on-air); }
+body.is-on-air .pipe--reactive .pipe-node--6 .pipe-node-icon .icon { color: #fff; }
+body.is-on-air .pipe--reactive .pipe-node--6 .pipe-node-halo {
+  fill: var(--on-air);
+  opacity: 0.4;
+  animation: pipe-live-halo 1.6s ease-in-out infinite;
+}
+body.is-on-air .pipe--reactive .pipe-wave {
+  opacity: 1;
+  animation: pipe-live-wave 1.6s ease-out infinite;
+}
+body.is-on-air .pipe--reactive .pipe-wave--2 { animation-delay: 0.14s; }
+body.is-on-air .pipe--reactive .pipe-wave--3 { animation-delay: 0.28s; }
+body.is-on-air .pipe--reactive .pipe-wave--4 { animation-delay: 0.42s; }
+body.is-on-air .pipe--reactive .pipe-blast {
+  opacity: 1;
+  animation: pipe-live-blast 1.6s ease-out infinite;
+}
+@keyframes pipe-live-halo {
+  0%, 100% { opacity: 0.35; }
+  50%      { opacity: 0.65; }
+}
+@keyframes pipe-live-wave {
+  0%   { transform: scale(0.4); opacity: 0.9; stroke-width: 4.5; }
+  100% { transform: scale(3.2); opacity: 0;   stroke-width: 0.6; }
+}
+@keyframes pipe-live-blast {
+  0%   { transform: scale(0.5); opacity: 0.5; stroke-width: 3; }
+  100% { transform: scale(4);   opacity: 0;   stroke-width: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pipe--reactive .pipe-node--1 .pipe-node-glyph,
+  .pipe--reactive .pipe-feed-dot {
+    animation: none;
+  }
+  .pipe--reactive .pipe-feed-dot { opacity: 0.7; }
+  body.is-on-air .pipe--reactive .pipe-node--6 .pipe-node-halo,
+  body.is-on-air .pipe--reactive .pipe-wave,
+  body.is-on-air .pipe--reactive .pipe-blast {
+    animation: none;
+  }
+  body.is-on-air .pipe--reactive .pipe-node--6 .pipe-node-halo { opacity: 0.3; }
+  body.is-on-air .pipe--reactive .pipe-wave,
+  body.is-on-air .pipe--reactive .pipe-blast { opacity: 0; }
+}
+
 /* ========================= Live "ON AIR" ============================= */
 /* Driven by on-air.js: body.is-on-air is set only while beacon.tx_monitor
    reports the SvxLink transmitter actually keyed. --on-air is a fixed

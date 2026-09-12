@@ -21,7 +21,7 @@
 {% set _pipe_sources = ['SENAPRED', 'CSN', 'MeteoChile', t('about.pipeline.source_any')] %}
 {% set _pipe_chips = ['{callsign}', '{date}', '{source}'] %}
 
-{% macro _pipe(layout) %}
+{% macro pipe_svg(layout, extra_class='') %}
 {% set wide = layout == 'wide' %}
 {% set NH, NR, NI, NIC = 35, 29, 23, 30 %}   {# halo / ring / inner radius, icon size #}
 {% if wide %}
@@ -39,7 +39,7 @@
   {% set route_ax25 = 'M78,500 Q18,608 78,708' %}
   {% set route_skip = 'M78,320 Q16,400 78,478' %}
 {% endif %}
-<svg class="pipe pipe--{{ layout }}" viewBox="0 0 {{ W }} {{ H }}"
+<svg class="pipe pipe--{{ layout }}{{ (' ' ~ extra_class) if extra_class }}" viewBox="0 0 {{ W }} {{ H }}"
      preserveAspectRatio="xMidYMid meet"
      role="img" aria-label="{{ t('about.pipeline.aria') }}">
 
@@ -172,8 +172,8 @@
 
 {% macro pipeline_figure() %}
 <figure class="about-pipeline">
-  {{ _pipe('wide') }}
-  {{ _pipe('tall') }}
+  {{ pipe_svg('wide') }}
+  {{ pipe_svg('tall') }}
   <figcaption>{{ t('about.pipeline.caption') }}</figcaption>
 </figure>
 {% endmacro %}

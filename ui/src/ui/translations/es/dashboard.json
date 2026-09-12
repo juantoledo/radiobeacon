@@ -2,6 +2,7 @@
   "dashboard.title": "Panel",
   "dashboard.live_label": "En vivo",
   "dashboard.on_air_indicator": "Al aire",
+  "dashboard.pipeline_aria": "Cadena de la señal: las fuentes siguen activas; el nodo de salida al aire se enciende mientras la estación transmite de verdad.",
   "dashboard.tx_audio_toggle_label": "Audio de transmisión",
   "dashboard.tx_audio_mute": "Silenciar audio de transmisión",
   "dashboard.tx_audio_unmute": "Reproducir audio de transmisión",

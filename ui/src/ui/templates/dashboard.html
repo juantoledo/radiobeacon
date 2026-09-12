@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_pipeline_diagram.html" import pipe_svg with context %}
 {% block title %}{{ t('dashboard.title') }}{% endblock %}
 {% block content %}
 <div class="page-header">
@@ -32,6 +33,14 @@
   </button>
   {% endif %}
 </div>
+
+{# Same wide signal-pipeline SVG as the About page, but reactive: driven
+   purely by body.is-on-air (set by on-air.js) rather than the About
+   page's always-looping demo timer. Kept outside #dashboard-content, like
+   the on-air pill above, so the 5s fragment refresh never touches it. #}
+<section class="dash-pipe" aria-label="{{ t('dashboard.pipeline_aria') }}">
+  {{ pipe_svg('wide', extra_class='pipe--reactive') }}
+</section>
 
 {% include "_dashboard_live.html" %}
 
