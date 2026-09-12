@@ -598,6 +598,7 @@ main {
   border-color: var(--accent);
   font-weight: 600;
 }
+.wizard-step-optional { font-weight: 400; opacity: 0.75; }
 
 .live-badge {
   display: inline-flex;
@@ -1759,6 +1760,11 @@ label { display: block; font-size: var(--text-xs); font-weight: 600; color: var(
 .form-table textarea { min-height: 6rem; resize: vertical; }
 .form-table input[readonly] { background: var(--bg-subtle); color: var(--fg-muted); }
 .form-table tr.wiring-row { background: color-mix(in srgb, var(--warn-bg) 45%, var(--bg-raised)); }
+/* Higher specificity than the mobile block's ".form-table tr { display: block }"
+   below, so conditional-fields.js's row hiding (see [data-show-if]) still
+   works at every viewport width — the browser's own [hidden] UA rule alone
+   would otherwise lose to that author rule regardless of media query. */
+.form-table tr[hidden] { display: none; }
 
 @media (max-width: 680px) {
   .form-table, .form-table tbody, .form-table tr, .form-table th, .form-table td { display: block; width: 100%; }

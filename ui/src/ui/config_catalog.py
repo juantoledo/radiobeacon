@@ -21,6 +21,7 @@ Sections per CATEGORY_LAYOUT (e.g. Beacon's 11 groups become "Station",
 "Content", "Radio hand-off", "Infrastructure") — presentation-only, layered on
 top of the category/group split above; see ui.routers.config."""
 from dataclasses import dataclass, field
+from zoneinfo import available_timezones
 
 from adapters.beacon_defaults import (
     BEACON_ENABLED_DEFAULT,
@@ -76,7 +77,26 @@ class SettingSpec:
     # change" (Reset is what clears an existing override). Used by
     # beacon identity, whose fields aren't meaningfully optional.
     required: bool = False
+    # depends_on: ((other_key, value), ...) — AND semantics: this field is
+    # only relevant once every named field currently equals the given
+    # value (e.g. an API key that only matters for one provider). Presentation
+    # only, enforced client-side (conditional-fields.js hides the row; see
+    # _config_group_form_body.html) — never affects validation/storage, and
+    # a condition naming a field that isn't on the current page is simply
+    # ignored (fails open) rather than hiding anything, so the same spec is
+    # safe to reuse across pages that only show some of the related fields
+    # together (e.g. a provider select living in a different /config group
+    # than its API key).
+    depends_on: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
+
+# For DISPLAY_TIMEZONE's select — every real IANA zone name (filters out
+# single-word legacy aliases like "PRC"/"Factory"/"US/Pacific", matching
+# what a browser's Intl.supportedValuesOf('timeZone') returns). Computed
+# once at import time, same as everything else in this module-level list.
+DISPLAY_TIMEZONE_CHOICES: tuple[str, ...] = tuple(
+    sorted(z for z in available_timezones() if "/" in z or z == "UTC")
+)
 
 SETTINGS_CATALOG: list[SettingSpec] = [
     # --- Adapters — General ---
@@ -235,7 +255,8 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ACTIONS_AI_ENABLED",
         "Actions — AI",
         "Enabled",
-        "Enables/disables AiAction entirely. Applies live — no restart needed.",
+        "Turns AI-generated summaries on or off for every incoming bulletin. "
+        "Applies live — no restart needed.",
         "bool",
         "false",
     ),
@@ -279,6 +300,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "select",
         None,
         choices=("openai", "claude", "ollama"),
+        depends_on=(("ACTIONS_AI_ENABLED", "true"),),
     ),
     SettingSpec(
         "ACTIONS_AI_CLAUDE_MODEL",
@@ -311,6 +333,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Ollama server host URL, used when provider=ollama.",
         "text",
         "http://localhost:11434",
+        depends_on=(("ACTIONS_AI_ENABLED", "true"), ("ACTIONS_AI_PROVIDER", "ollama")),
     ),
     SettingSpec(
         "ACTIONS_AI_MAX_CHARS",
@@ -378,32 +401,35 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "ANTHROPIC_API_KEY",
         "Secrets",
         "Anthropic API key",
-        "Used by AiAction when ACTIONS_AI_PROVIDER=claude. Never displayed once "
-        "saved — leave unchanged to keep the current value.",
+        "Used for AI summarization when the provider is set to Claude. Never "
+        "displayed once saved — leave unchanged to keep the current value.",
         "secret",
         None,
         is_secret=True,
+        depends_on=(("ACTIONS_AI_ENABLED", "true"), ("ACTIONS_AI_PROVIDER", "claude")),
     ),
     SettingSpec(
         "OPENAI_API_KEY",
         "Secrets",
         "OpenAI API key",
-        "Used by AiAction when ACTIONS_AI_PROVIDER=openai. Never displayed once "
-        "saved — leave unchanged to keep the current value.",
+        "Used for AI summarization when the provider is set to OpenAI. Never "
+        "displayed once saved — leave unchanged to keep the current value.",
         "secret",
         None,
         is_secret=True,
+        depends_on=(("ACTIONS_AI_ENABLED", "true"), ("ACTIONS_AI_PROVIDER", "openai")),
     ),
     # --- Display ---
     SettingSpec(
         "DISPLAY_TIMEZONE",
         "Display",
         "Display timezone",
-        "IANA timezone used to convert stored UTC datetimes for presentation "
+        "Timezone used to convert stored UTC datetimes for presentation "
         "only (UI pages, beacon's transmitted {date} placeholder) — never "
         "affects storage, which stays UTC. Applies live — no restart needed.",
-        "text",
+        "select",
         "America/Santiago",
+        choices=DISPLAY_TIMEZONE_CHOICES,
     ),
     # --- UI ---
     SettingSpec(
@@ -637,6 +663,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "svxlink-txqueue's TXQUEUE_SPOOL/incoming.",
         "text",
         "/var/spool/svxlink-tx/incoming",
+        depends_on=(("BEACON_WAV_TRANSMITTER", "spool"),),
     ),
     SettingSpec(
         "BEACON_SVXLINK_CONF_PATH",
@@ -855,6 +882,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "applies when BEACON_TTS_ENGINE=espeak.",
         "text",
         "es",
+        depends_on=(("BEACON_TTS_ENGINE", "espeak"),),
     ),
     SettingSpec(
         "BEACON_TTS_PIPER_MODEL",
@@ -866,6 +894,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Spanish) voice model shipped at beacon/storage/piper_voices/.",
         "text",
         "storage/piper_voices/es_MX-claude-high.onnx",
+        depends_on=(("BEACON_TTS_ENGINE", "piper"),),
     ),
     SettingSpec(
         "BEACON_TTS_PIPER_BINARY",
@@ -958,6 +987,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "transmissions and of BEACON_TICK_SECONDS.",
         "int",
         BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT,
+        depends_on=(("BEACON_WATERMARK_ENABLED", "true"),),
     ),
     SettingSpec(
         "BEACON_WATERMARK_VOICE_TEMPLATE",
@@ -969,6 +999,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Rendered through the same TTS engine/voice as regular content.",
         "text",
         BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT,
+        depends_on=(("BEACON_WATERMARK_ENABLED", "true"),),
     ),
     SettingSpec(
         "BEACON_WATERMARK_FRAME_TEMPLATE",
@@ -981,6 +1012,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "render is dropped and logged rather than transmitted.",
         "text",
         BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT,
+        depends_on=(("BEACON_WATERMARK_ENABLED", "true"),),
     ),
     # --- Beacon — Queue ---
     SettingSpec(

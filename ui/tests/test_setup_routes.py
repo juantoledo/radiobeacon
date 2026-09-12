@@ -25,6 +25,8 @@ STEP_VALUES = {
         "BEACON_TTS_VOICE": "es",
         "BEACON_TTS_PIPER_MODEL": "storage/piper_voices/es_MX-claude-high.onnx",
     },
+    "watermark": {"BEACON_WATERMARK_ENABLED": "false"},
+    "ai": {"ACTIONS_AI_ENABLED": "false"},
     "display": {
         "DISPLAY_TIMEZONE": "America/Santiago",
         "UI_DEFAULT_LOCALE": "en",
@@ -112,6 +114,55 @@ def test_setup_wizard_walks_every_step_in_order(fresh_install_client):
         assert last_response.status_code == 303
 
     assert last_response.headers["location"] == "/setup/finish"
+
+
+# --- UX: timezone select, conditional fields, optional-step skip link ---
+
+
+def test_display_step_renders_timezone_as_a_select(fresh_install_client):
+    response = fresh_install_client.get("/setup/display")
+
+    assert response.status_code == 200
+    assert '<select id="DISPLAY_TIMEZONE"' in response.text
+    assert '<option value="America/Santiago" selected>' in response.text
+    assert '<option value="Europe/London"' in response.text
+
+
+def test_ai_step_marks_provider_specific_fields_conditional(fresh_install_client):
+    response = fresh_install_client.get("/setup/ai")
+
+    assert response.status_code == 200
+    assert 'data-show-if="ACTIONS_AI_ENABLED=true"' in response.text
+    assert (
+        'data-show-if="ACTIONS_AI_ENABLED=true&amp;ACTIONS_AI_PROVIDER=claude"'
+        in response.text
+    )
+    assert (
+        'data-show-if="ACTIONS_AI_ENABLED=true&amp;ACTIONS_AI_PROVIDER=openai"'
+        in response.text
+    )
+
+
+def test_watermark_step_marks_interval_conditional(fresh_install_client):
+    response = fresh_install_client.get("/setup/watermark")
+
+    assert response.status_code == 200
+    assert 'data-show-if="BEACON_WATERMARK_ENABLED=true"' in response.text
+
+
+def test_optional_step_shows_skip_link(fresh_install_client):
+    response = fresh_install_client.get("/setup/watermark")
+
+    assert response.status_code == 200
+    assert 'href="/setup/ai"' in response.text  # the skip link's target
+
+
+def test_required_step_has_no_skip_link(fresh_install_client):
+    response = fresh_install_client.get("/setup/identity")
+
+    assert response.status_code == 200
+    assert "Skip for now" not in response.text
+    assert 'href="/setup/transmission"' not in response.text
 
 
 # --- finish ---

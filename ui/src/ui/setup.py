@@ -2,7 +2,8 @@
 install actually needs to look at before going on air: beacon identity
 (reusing ui.beacon's existing required-field group), transmission mode, the
 WAV hand-off to SvxLink (BEACON_WAV_TRANSMITTER's "logging" vs "spool"
-choice), the TTS engine, and display/locale defaults.
+choice), the TTS engine, the on-air watermark, AI summarization, and
+display/locale defaults.
 
 Completion is tracked by a single sticky DB flag (SETUP_WIZARD_COMPLETED,
 see config_catalog.py) rather than by re-deriving "are all these fields
@@ -81,6 +82,22 @@ SETUP_WIZARD_STEPS: tuple[WizardStep, ...] = (
         "voice",
         "Voice",
         ("BEACON_TTS_ENGINE", "BEACON_TTS_VOICE", "BEACON_TTS_PIPER_MODEL"),
+    ),
+    WizardStep(
+        "watermark",
+        "On-air watermark",
+        ("BEACON_WATERMARK_ENABLED", "BEACON_WATERMARK_INTERVAL_SECONDS"),
+    ),
+    WizardStep(
+        "ai",
+        "AI summarization",
+        (
+            "ACTIONS_AI_ENABLED",
+            "ACTIONS_AI_PROVIDER",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY",
+            "ACTIONS_AI_OLLAMA_HOST",
+        ),
     ),
     WizardStep(
         "display",

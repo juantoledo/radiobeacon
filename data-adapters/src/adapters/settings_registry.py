@@ -23,7 +23,17 @@ hand-edited or maliciously-crafted import file could still name one, and
 this catches that independent of whatever `settings` row state happens to
 say on the target DB."""
 
+from zoneinfo import available_timezones
+
 SECRET_SETTING_KEYS: frozenset[str] = frozenset({"ANTHROPIC_API_KEY", "OPENAI_API_KEY"})
+
+# Computed the exact same way as ui.config_catalog.DISPLAY_TIMEZONE_CHOICES
+# (both from the stdlib's own zoneinfo database) rather than hand-copied as
+# a ~450-entry literal — the one entry in this file not worth hand-checking
+# string-for-string; every other key's (type, choices) below still is.
+_DISPLAY_TIMEZONE_CHOICES: tuple[str, ...] = tuple(
+    sorted(z for z in available_timezones() if "/" in z or z == "UTC")
+)
 
 # key -> (type, choices). `type` mirrors ui.config_catalog.SettingSpec.type
 # ("text" | "int" | "float" | "bool" | "select"; "secret" entries are
@@ -62,7 +72,7 @@ SETTINGS_REGISTRY: dict[str, tuple[str, tuple[str, ...]]] = {
     "ACTIONS_AI_EVENT_INCLUDE_PROMPT": ("bool", ()),
     "ACTIONS_CONTENT_READY_POLL_INTERVAL_SECONDS": ("int", ()),
     "ACTIONS_CONTENT_READY_OUTPUT_TOPIC": ("text", ()),
-    "DISPLAY_TIMEZONE": ("text", ()),
+    "DISPLAY_TIMEZONE": ("select", _DISPLAY_TIMEZONE_CHOICES),
     "UI_PAGE_SIZE": ("int", ()),
     "UI_DEV_TOOLS_ENABLED": ("bool", ()),
     "UI_DASHBOARD_REFRESH_SECONDS": ("int", ()),

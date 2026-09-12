@@ -5,7 +5,7 @@
 
 <ol class="wizard-steps">
   {% for s in steps %}
-  <li class="{{ 'active' if not finish and step and s.slug == step.slug else '' }} {{ 'done' if loop.index0 < current_index else '' }}">{{ t('setup.step.' ~ s.slug, default=s.title) }}</li>
+  <li class="{{ 'active' if not finish and step and s.slug == step.slug else '' }} {{ 'done' if loop.index0 < current_index else '' }}">{{ t('setup.step.' ~ s.slug, default=s.title) }}{% if s.slug in optional_slugs %} <span class="wizard-step-optional">({{ t('setup.wizard.optional') }})</span>{% endif %}</li>
   {% endfor %}
   <li class="{{ 'active' if finish else '' }}">{{ t('setup.wizard.finish') }}</li>
 </ol>
@@ -21,9 +21,14 @@
     <button type="submit">{{ t('setup.wizard.finish') }}</button>
   </form>
 {% else %}
-  <div class="page-header"><h2>{{ t('setup.step.' ~ step.slug, default=step.title) }}</h2></div>
+  <div class="page-header">
+    <h2>{{ t('setup.step.' ~ step.slug, default=step.title) }}{% if step_optional %} <span class="badge badge-neutral">{{ t('setup.wizard.optional') }}</span>{% endif %}</h2>
+  </div>
+  {% set intro = t('setup.step.' ~ step.slug ~ '.intro', default='') %}
+  {% if intro %}<p class="meta-line">{{ intro }}</p>{% endif %}
   {% include "_config_group_form_body.html" %}
 {% endif %}
 
 {% if prev_url %}<a class="crumb" href="{{ prev_url }}">&larr; {{ t('setup.wizard.back') }}</a>{% endif %}
+{% if skip_url %}<a class="crumb" href="{{ skip_url }}">{{ t('setup.wizard.skip') }} &rarr;</a>{% endif %}
 {% endblock %}

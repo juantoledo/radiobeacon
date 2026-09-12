@@ -30,18 +30,31 @@ from .config import SECRET_SENTINEL, _build_fields, save_settings
 
 router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
+# Computed once — which steps have no required field at all, so the
+# progress list can mark them "optional" regardless of which step is
+# currently being viewed (not just the active one).
+_OPTIONAL_STEP_SLUGS = frozenset(
+    step.slug
+    for step in SETUP_WIZARD_STEPS
+    if not any(spec_for_key(key).required for key in step.keys)
+)
+
 
 @router.get("/setup")
 def setup_root_redirect():
     return RedirectResponse(url=f"/setup/{SETUP_WIZARD_STEPS[0].slug}", status_code=307)
 
 
-def _step_context(slug: str, *, fields: list[dict] | None, error: str | None) -> dict:
+def _step_context(
+    slug: str, *, specs: list, fields: list[dict] | None, error: str | None
+) -> dict:
     """Shared setup_wizard.html context builder for a real step's GET and its
     POST error-path re-render — the two only differ in whether `fields`
     holds stored values or the operator's just-submitted ones."""
+    step_optional = not any(spec.required for spec in specs)
     return {
         "steps": SETUP_WIZARD_STEPS,
+        "optional_slugs": _OPTIONAL_STEP_SLUGS,
         "step": step_for_slug(slug),
         "current_index": step_index(slug),
         "finish": False,
@@ -50,12 +63,18 @@ def _step_context(slug: str, *, fields: list[dict] | None, error: str | None) ->
         "error": error,
         "form_action": f"/setup/{slug}",
         "prev_url": f"/setup/{prev_step_slug(slug)}" if prev_step_slug(slug) else None,
+        "step_optional": step_optional,
+        # A plain GET link (not a POST) — "skip" means "don't save
+        # anything, just move on," matching save_settings' own "blank
+        # means no change" rule for every non-required field.
+        "skip_url": f"/setup/{next_step_slug(slug)}" if step_optional else None,
     }
 
 
 def _finish_context(conn: sqlite3.Connection) -> dict:
     return {
         "steps": SETUP_WIZARD_STEPS,
+        "optional_slugs": _OPTIONAL_STEP_SLUGS,
         "step": None,
         "current_index": step_index(FINISH_SLUG),
         "finish": True,
@@ -75,7 +94,7 @@ def setup_step_page(request: Request, slug: str, conn: sqlite3.Connection = Depe
         raise HTTPException(status_code=404, detail="setup step not found")
 
     specs = [spec_for_key(key) for key in step.keys]
-    ctx = _step_context(slug, fields=_build_fields(conn, specs), error=None)
+    ctx = _step_context(slug, specs=specs, fields=_build_fields(conn, specs), error=None)
     return templates.TemplateResponse(request, "setup_wizard.html", ctx)
 
 
@@ -95,7 +114,7 @@ async def setup_step_save_action(
     form = await request.form()
     changed, error, fields = save_settings(conn, specs, form)
     if error:
-        ctx = _step_context(slug, fields=fields, error=error)
+        ctx = _step_context(slug, specs=specs, fields=fields, error=error)
         return templates.TemplateResponse(request, "setup_wizard.html", ctx, status_code=400)
 
     return RedirectResponse(url=f"/setup/{next_step_slug(slug)}", status_code=303)
