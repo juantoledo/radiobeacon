@@ -1,8 +1,10 @@
-// Live "ON AIR" indicator. Polls /dashboard/tx-state (a ~50-byte JSON the
-// server derives from beacon.tx_monitor's SvxLink log tail) on its own
-// short timer — deliberately separate from dashboard-refresh.js's 5s
-// fragment poll so the glow reacts within ~2s and a brief frame
-// transmission isn't missed.
+// Live "ON AIR" indicator. Loaded site-wide from base.html (not just the
+// dashboard) so the glow border and nav badge follow the operator to
+// every page. Polls /dashboard/tx-state (a ~50-byte JSON the server
+// derives from beacon.tx_monitor's SvxLink log tail) on its own short
+// timer — deliberately separate from dashboard-refresh.js's 5s fragment
+// poll so the glow reacts within ~2s and a brief frame transmission isn't
+// missed.
 //
 // When the monitor isn't reporting (SvxLink unreachable, not configured,
 // log unreadable) both flags come back false and this does nothing
@@ -18,14 +20,16 @@
   var intervalMs = parseInt(script.dataset.intervalMs, 10);
   if (!(intervalMs > 0)) return;
 
-  var pill = document.getElementById("on-air-indicator");
+  // Every page can carry a copy (nav chrome in base.html, plus dashboard's
+  // own richer one with the audio mute toggle) — keep them all in sync.
+  var pills = document.querySelectorAll(".on-air-indicator");
   var timer = null;
 
   var IDLE = { on_air: false, monitor_active: false };
 
   function apply(onAir) {
     document.body.classList.toggle("is-on-air", onAir);
-    if (pill) pill.hidden = !onAir;
+    pills.forEach(function (pill) { pill.hidden = !onAir; });
   }
 
   function broadcast(data) {

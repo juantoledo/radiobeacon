@@ -29,6 +29,11 @@
   <div class="mobile-bar">
     <button type="button" class="nav-toggle" aria-label="{{ t('common.open_navigation') }}" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 20) }}</button>
     <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
+    {% if request.url.path != '/' %}
+    <span class="on-air-indicator" role="status" hidden>
+      <span class="on-air-dot" aria-hidden="true"></span>{{ t('dashboard.on_air_indicator') }}
+    </span>
+    {% endif %}
   </div>
 
   <div class="nav-scrim" hidden></div>
@@ -36,7 +41,14 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
       <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
-      <button type="button" class="nav-close" aria-label="{{ t('common.close_navigation') }}">{{ icon('close', 20) }}</button>
+      <div class="sidebar-head-controls">
+        {% if request.url.path != '/' %}
+        <span class="on-air-indicator" role="status" hidden>
+          <span class="on-air-dot" aria-hidden="true"></span>{{ t('dashboard.on_air_indicator') }}
+        </span>
+        {% endif %}
+        <button type="button" class="nav-close" aria-label="{{ t('common.close_navigation') }}">{{ icon('close', 20) }}</button>
+      </div>
     </div>
     <nav class="sidebar-nav">
       {% for href, ic, label, active in nav_items %}
@@ -118,6 +130,9 @@
   <script src="{{ static_url('app-shell.js') }}" defer></script>
   <script src="{{ static_url('ajax-forms.js') }}" defer></script>
   <script src="{{ static_url('conditional-fields.js') }}" defer></script>
+  {# Drives the on-air glow border + nav badge on every page, not just the
+     dashboard (which loads its own richer copy of the badge below). #}
+  <script src="{{ static_url('on-air.js') }}" defer data-interval-ms="2000"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

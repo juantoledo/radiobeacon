@@ -104,7 +104,6 @@
 <script src="{{ static_url('dashboard-refresh.js') }}" defer data-interval-ms="{{ refresh_seconds * 1000 }}"
         data-i18n='{{ ({"just_now": t("dashboard.just_now"), "minutes_ago": t("dashboard.minutes_ago"), "hours_ago": t("dashboard.hours_ago"), "days_ago": t("dashboard.days_ago"), "updated_just_now": t("dashboard.updated_just_now"), "updated_ago": t("dashboard.updated_ago"), "update_failed": t("dashboard.update_failed")} | tojson) }}'></script>
 {% endif %}
-<script src="{{ static_url('on-air.js') }}" defer data-interval-ms="2000"></script>
 {% if dashboard_tx_stream_configured %}
 <script src="{{ static_url('tx-audio.js') }}" defer data-stream-src="/dashboard/tx-stream"
         data-i18n='{{ {"mute": t("dashboard.tx_audio_mute"), "unmute": t("dashboard.tx_audio_unmute")} | tojson }}'></script>

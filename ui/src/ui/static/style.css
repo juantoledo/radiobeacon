@@ -418,6 +418,12 @@ code, pre, .mono {
   padding: var(--space-2) var(--space-2) var(--space-4);
 }
 
+.sidebar-head-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;
@@ -583,6 +589,7 @@ code, pre, .mono {
   border-bottom: 1px solid var(--sidebar-border);
 }
 .mobile-bar .brand { color: var(--sidebar-fg); }
+.mobile-bar .on-air-indicator { margin-left: auto; }
 
 .nav-scrim {
   position: fixed;
