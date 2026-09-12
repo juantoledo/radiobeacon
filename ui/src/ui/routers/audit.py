@@ -6,6 +6,7 @@ from adapters.storage import get_setting
 from fastapi import APIRouter, Depends, Request
 
 from .. import queries
+from ..audit_ack import AUDIT_ACK_COOKIE_NAME
 from ..current_user import require_role
 from ..db import get_db
 from ..templating import templates
@@ -19,6 +20,9 @@ def audit_log_page(
     event_type: str | None = None,
     source: str | None = None,
     item_id: str | None = None,
+    q: str | None = None,
+    status: str | None = None,
+    since: str | None = None,
     page: int = 1,
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -30,6 +34,9 @@ def audit_log_page(
         event_type=event_type or None,
         source=source or None,
         item_id=item_id or None,
+        q=q or None,
+        status=status or None,
+        since=since or None,
         limit=page_size,
         offset=offset,
     )
@@ -38,7 +45,7 @@ def audit_log_page(
         {k: v for k, v in request.query_params.items() if k != "page"}
     )
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request,
         "audit_log.html",
         {
@@ -48,10 +55,28 @@ def audit_log_page(
             "total_pages": total_pages,
             "qs": qs,
             "base_url": "/audit",
+            "event_types": queries.distinct_audit_event_types(conn),
+            "sources": queries.distinct_audit_sources(conn),
             "filters": {
                 "event_type": event_type or "",
                 "source": source or "",
                 "item_id": item_id or "",
+                "q": q or "",
+                "status": status or "",
+                "since": since or "",
             },
         },
     )
+    if status == "failed":
+        # Acknowledges every failure recorded so far — the dashboard
+        # banner (routers/dashboard.py) hides anything at or below this
+        # id and reappears only once a genuinely new failure lands.
+        response.set_cookie(
+            AUDIT_ACK_COOKIE_NAME,
+            str(queries.max_audit_log_id(conn)),
+            httponly=False,
+            samesite="strict",
+            path="/",
+            max_age=60 * 60 * 24 * 365,
+        )
+    return response

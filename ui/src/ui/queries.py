@@ -92,12 +92,20 @@ def list_audit_log_for_item(
     ).fetchall()
 
 
+_FAILURE_EVENT_TYPE_LIKE = "%failed%"
+
+_SINCE_WINDOWS = {"24h": "-1 day", "7d": "-7 day", "30d": "-30 day"}
+
+
 def list_audit_log(
     conn: sqlite3.Connection,
     *,
     event_type: str | None = None,
     source: str | None = None,
     item_id: str | None = None,
+    q: str | None = None,
+    status: str | None = None,
+    since: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> AuditPage:
@@ -113,6 +121,16 @@ def list_audit_log(
     if item_id:
         where.append("item_id = ?")
         params.append(item_id)
+    if q:
+        where.append("(event_type LIKE ? OR actor LIKE ? OR details LIKE ?)")
+        needle = f"%{q}%"
+        params.extend([needle, needle, needle])
+    if status == "failed":
+        where.append("event_type LIKE ?")
+        params.append(_FAILURE_EVENT_TYPE_LIKE)
+    if since in _SINCE_WINDOWS:
+        where.append("recorded_at >= datetime('now', ?)")
+        params.append(_SINCE_WINDOWS[since])
 
     clause = f" WHERE {' AND '.join(where)}" if where else ""
 
@@ -229,15 +247,43 @@ def latest_event_at(conn: sqlite3.Connection, *event_types: str) -> str | None:
     return row[0] if row else None
 
 
-def failed_events_last_24h(conn: sqlite3.Connection) -> int:
+def failed_events_last_24h(conn: sqlite3.Connection, *, since_id: int = 0) -> int:
     """Count of audit rows in the last 24h for a failure event — the repo
     writes both `*.transmit_failed`/`*.dispatch_failed` and the dot form
     `action.ai.failed`, so match `failed` anywhere in the type. Surfaced
-    on the dashboard as a pipeline-health warning banner."""
+    on the dashboard as a pipeline-health warning banner.
+
+    since_id (default 0, i.e. no floor) excludes rows the admin has
+    already acknowledged by following the banner's own link — see
+    ui.audit_ack. audit_log.id is AUTOINCREMENT, so it orders the same as
+    recorded_at without the ambiguity of comparing timestamp strings."""
     return conn.execute(
         "SELECT COUNT(*) FROM audit_log "
-        "WHERE recorded_at >= datetime('now', '-1 day') AND event_type LIKE '%failed%'"
+        "WHERE recorded_at >= datetime('now', '-1 day') AND event_type LIKE ? AND id > ?",
+        (_FAILURE_EVENT_TYPE_LIKE, since_id),
     ).fetchone()[0]
+
+
+def max_audit_log_id(conn: sqlite3.Connection) -> int:
+    return conn.execute("SELECT COALESCE(MAX(id), 0) FROM audit_log").fetchone()[0]
+
+
+def distinct_audit_event_types(conn: sqlite3.Connection) -> list[str]:
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT event_type FROM audit_log ORDER BY event_type"
+        )
+    ]
+
+
+def distinct_audit_sources(conn: sqlite3.Connection) -> list[str]:
+    return [
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT source FROM audit_log WHERE source IS NOT NULL ORDER BY source"
+        )
+    ]
 
 
 def distinct_sources(conn: sqlite3.Connection) -> list[str]:

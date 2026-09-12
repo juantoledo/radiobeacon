@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
 from .. import beacon_audio, queries, tx_stream
+from ..audit_ack import resolve_ack_id
 from ..current_user import get_current_user
 from ..db import get_db
 from ..setup import require_setup_complete
@@ -102,7 +103,7 @@ def _merge_items_feed(
     return entries[:limit]
 
 
-def _dashboard_context(conn: sqlite3.Connection) -> dict:
+def _dashboard_context(conn: sqlite3.Connection, request: Request) -> dict:
     status_ctx = _status_context(conn)
     status = status_ctx["status"]
 
@@ -154,7 +155,7 @@ def _dashboard_context(conn: sqlite3.Connection) -> dict:
         "last_manual_transmit_at": status.get("last_manual_transmit_at"),
         "counts": queries.dashboard_counts(conn),
         "sparkline": queries.items_sparkline(conn, days=14),
-        "failed_24h": queries.failed_events_last_24h(conn),
+        "failed_24h": queries.failed_events_last_24h(conn, since_id=resolve_ack_id(request)),
         "recent_items": items_feed,
         "item_tx_counts": tx_counts,
         "item_transmissions": item_transmissions,
@@ -196,7 +197,7 @@ def _safe_int(value: object) -> int:
 @router.get("/")
 def dashboard(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     refresh_seconds = int(get_setting("UI_DASHBOARD_REFRESH_SECONDS", "5", conn=conn))
-    context = {"refresh_seconds": refresh_seconds, **_dashboard_context(conn)}
+    context = {"refresh_seconds": refresh_seconds, **_dashboard_context(conn, request)}
 
     # The client-side auto-refresh asks for just the live region (smaller
     # payload, and it patches cells in place rather than reloading) — same

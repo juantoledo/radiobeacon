@@ -1,5 +1,6 @@
 from adapters.storage import record_audit_event, set_setting
 from adapters.policy import set_policy
+from ui.audit_ack import AUDIT_ACK_COOKIE_NAME
 
 
 def _insert_item(conn, source, item_id, *, policy="informational", source_date_time=None):
@@ -30,6 +31,30 @@ def test_dashboard_returns_200(client):
     response = client.get("/")
     assert response.status_code == 200
     assert "Dashboard" in response.text
+
+
+def test_dashboard_failed_events_banner_links_to_prefiltered_audit_log(client, conn):
+    record_audit_event(conn, event_type="item.dispatch_failed", actor="test")
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert 'href="/audit?status=failed&since=24h"' in response.text
+
+
+def test_dashboard_banner_hides_after_ack_and_reappears_for_new_failures(client, conn):
+    record_audit_event(conn, event_type="item.dispatch_failed", actor="test")
+    assert "check the audit log" in client.get("/").text
+
+    # Following the banner's own link (status=failed) acknowledges every
+    # failure recorded so far.
+    ack = client.get("/audit", params={"status": "failed", "since": "24h"})
+    assert AUDIT_ACK_COOKIE_NAME in ack.cookies
+
+    assert "check the audit log" not in client.get("/").text
+
+    record_audit_event(conn, event_type="beacon.voice.transmit_failed", actor="test")
+    assert "check the audit log" in client.get("/").text
 
 
 def test_dashboard_includes_auto_refresh_script_when_enabled(client, conn):
@@ -369,3 +394,51 @@ def test_audit_log_filters_by_event_type(client, conn):
 
     assert response.status_code == 200
     assert "item.stored" in response.text
+
+
+def test_audit_log_status_failed_filters_to_failures_only(client, conn):
+    conn.execute(
+        "INSERT INTO audit_log (event_type, actor) VALUES ('item.dispatch_failed', 'test')"
+    )
+    conn.execute("INSERT INTO audit_log (event_type, actor) VALUES ('item.stored', 'test')")
+    conn.commit()
+
+    response = client.get("/audit", params={"status": "failed"})
+
+    assert response.status_code == 200
+    # "item.stored" still legitimately appears in the event_type <select>'s
+    # option list (populated from all distinct event types, not the
+    # filtered result set) — the table body itself is what must be scoped
+    # to failures only.
+    table_body = response.text.split("<tbody>")[1]
+    assert "item.dispatch_failed" in table_body
+    assert "item.stored" not in table_body
+
+
+def test_audit_log_event_type_and_source_render_as_selects(client, conn):
+    conn.execute(
+        "INSERT INTO audit_log (event_type, actor, source) "
+        "VALUES ('item.dispatch_failed', 'test', 'SENAPRED')"
+    )
+    conn.commit()
+
+    response = client.get("/audit")
+
+    assert response.status_code == 200
+    assert '<select name="event_type"' in response.text
+    assert '<select name="source"' in response.text
+    assert '<option value="item.dispatch_failed"' in response.text
+    assert '<option value="SENAPRED"' in response.text
+
+
+def test_audit_log_q_searches_details(client, conn):
+    record_audit_event(
+        conn, event_type="beacon.voice.transmit_failed", actor="beacon",
+        details={"error": "timeout waiting for rig"},
+    )
+    conn.commit()
+
+    response = client.get("/audit", params={"q": "timeout"})
+
+    assert response.status_code == 200
+    assert "beacon.voice.transmit_failed" in response.text

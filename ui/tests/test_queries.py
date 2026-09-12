@@ -235,6 +235,69 @@ def test_failed_events_last_24h(conn):
     assert queries.failed_events_last_24h(conn) == 1
 
 
+def test_failed_events_last_24h_since_id_excludes_acknowledged_rows(conn):
+    record_audit_event(conn, event_type="action.ai.failed", actor="t", source="csn", item_id="1")
+    ack_id = queries.max_audit_log_id(conn)
+
+    assert queries.failed_events_last_24h(conn, since_id=ack_id) == 0
+
+    record_audit_event(conn, event_type="item.dispatch_failed", actor="t", source="csn", item_id="1")
+
+    assert queries.failed_events_last_24h(conn, since_id=ack_id) == 1
+
+
+def test_list_audit_log_status_failed_matches_failure_naming_variants(conn):
+    record_audit_event(conn, event_type="item.dispatch_failed", actor="t", source="csn", item_id="1")
+    record_audit_event(conn, event_type="action.ai.failed", actor="t", source="csn", item_id="1")
+    record_audit_event(conn, event_type="item.stored", actor="t", source="csn", item_id="1")
+
+    rows, total = queries.list_audit_log(conn, status="failed")
+
+    assert total == 2
+    assert {r["event_type"] for r in rows} == {"item.dispatch_failed", "action.ai.failed"}
+
+
+def test_list_audit_log_q_searches_event_type_actor_and_details(conn):
+    record_audit_event(
+        conn, event_type="beacon.voice.transmit_failed", actor="beacon",
+        source="csn", item_id="1", details={"error": "timeout waiting for rig"},
+    )
+    record_audit_event(conn, event_type="item.stored", actor="test", source="csn", item_id="2")
+
+    by_event = queries.list_audit_log(conn, q="transmit_failed")[0]
+    by_actor = queries.list_audit_log(conn, q="beacon")[0]
+    by_details = queries.list_audit_log(conn, q="timeout")[0]
+    no_match = queries.list_audit_log(conn, q="nonexistent")[0]
+
+    assert len(by_event) == 1
+    assert len(by_actor) == 1
+    assert len(by_details) == 1
+    assert no_match == []
+
+
+def test_distinct_audit_event_types_and_sources(conn):
+    record_audit_event(conn, event_type="item.dispatch_failed", actor="t", source="csn", item_id="1")
+    record_audit_event(conn, event_type="item.stored", actor="t", source="csn", item_id="1")
+    record_audit_event(conn, event_type="user.login", actor="t")
+
+    assert queries.distinct_audit_event_types(conn) == ["item.dispatch_failed", "item.stored", "user.login"]
+    assert queries.distinct_audit_sources(conn) == ["csn"]
+
+
+def test_list_audit_log_since_window_excludes_older_rows(conn):
+    record_audit_event(conn, event_type="item.stored", actor="t", source="csn", item_id="1")
+    conn.execute(
+        "UPDATE audit_log SET recorded_at = datetime('now', '-2 day') WHERE item_id = '1'"
+    )
+    record_audit_event(conn, event_type="item.stored", actor="t", source="csn", item_id="2")
+    conn.commit()
+
+    rows, total = queries.list_audit_log(conn, since="24h")
+
+    assert total == 1
+    assert rows[0]["item_id"] == "2"
+
+
 def test_recent_items_orders_newest_first_and_respects_limit(conn):
     for i in range(3):
         _insert_item(conn, "csn", str(i))

@@ -4,29 +4,58 @@
 <div class="page-header"><h1>{{ t('audit_log.title') }}</h1><span class="muted">{{ t('audit_log.total_count', n=total) }}</span></div>
 
 <form class="filters" method="get" action="/audit">
-  <input type="text" name="event_type" placeholder="event_type" value="{{ filters.event_type }}">
-  <input type="text" name="source" placeholder="source" value="{{ filters.source }}">
+  <input class="filter-search" type="text" name="q" placeholder="{{ t('audit_log.search_placeholder') }}" value="{{ filters.q }}" aria-label="{{ t('audit_log.search_placeholder') }}">
+  <select name="event_type" aria-label="{{ t('audit_log.any_event_type') }}">
+    <option value="">{{ t('audit_log.any_event_type') }}</option>
+    {% for et in event_types %}
+    <option value="{{ et }}" {% if filters.event_type == et %}selected{% endif %}>{{ et }}</option>
+    {% endfor %}
+  </select>
+  <select name="source" aria-label="{{ t('audit_log.any_source') }}">
+    <option value="">{{ t('audit_log.any_source') }}</option>
+    {% for s in sources %}
+    <option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s }}</option>
+    {% endfor %}
+  </select>
   <input type="text" name="item_id" placeholder="item_id" value="{{ filters.item_id }}">
+  <select name="since">
+    <option value="" {% if not filters.since %}selected{% endif %}>{{ t('audit_log.window_all') }}</option>
+    <option value="24h" {% if filters.since == '24h' %}selected{% endif %}>{{ t('audit_log.window_24h') }}</option>
+    <option value="7d" {% if filters.since == '7d' %}selected{% endif %}>{{ t('audit_log.window_7d') }}</option>
+    <option value="30d" {% if filters.since == '30d' %}selected{% endif %}>{{ t('audit_log.window_30d') }}</option>
+  </select>
+  <label>
+    <input type="checkbox" name="status" value="failed" {% if filters.status == 'failed' %}checked{% endif %}>
+    {{ t('audit_log.failures_only') }}
+  </label>
   <button type="submit">{{ t('audit_log.filter') }}</button>
   <a class="btn secondary" href="/audit">{{ t('audit_log.clear') }}</a>
 </form>
 
 <div class="table-wrap cards">
-<table>
+<table class="audit-table">
+  <colgroup>
+    <col class="col-event">
+    <col class="col-actor">
+    <col class="col-source">
+    <col class="col-item">
+    <col class="col-details">
+    <col class="col-recorded">
+  </colgroup>
   <thead><tr><th>{{ t('audit_log.event_column') }}</th><th>{{ t('audit_log.actor_column') }}</th><th>{{ t('audit_log.source_column') }}</th><th>{{ t('audit_log.item_column') }}</th><th class="wrap">{{ t('audit_log.details_column') }}</th><th>{{ t('audit_log.recorded_column') }}</th></tr></thead>
   <tbody>
     {% for event in events %}
     <tr>
-      <td data-label="{{ t('audit_log.event_column') }}"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
-      <td data-label="{{ t('audit_log.actor_column') }}" class="muted">{{ event.actor }}</td>
-      <td data-label="{{ t('audit_log.source_column') }}">{{ event.source or "" }}</td>
-      <td data-label="{{ t('audit_log.item_column') }}" class="mono">
+      <td data-label="{{ t('audit_log.event_column') }}" class="wrap"><span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span></td>
+      <td data-label="{{ t('audit_log.actor_column') }}" class="wrap muted">{{ event.actor }}</td>
+      <td data-label="{{ t('audit_log.source_column') }}" class="wrap">{{ event.source or "" }}</td>
+      <td data-label="{{ t('audit_log.item_column') }}" class="wrap mono">
         {% if event.source and event.item_id %}
           <a href="/items/{{ event.source }}/{{ event.item_id }}">{{ event.item_id }}</a>
         {% else %}{{ event.item_id or "" }}{% endif %}
       </td>
       <td data-label="{{ t('audit_log.details_column') }}" class="wrap muted mono">{{ event.details or "" }}</td>
-      <td data-label="{{ t('audit_log.recorded_column') }}" class="muted">{{ event.recorded_at | display_dt }}</td>
+      <td data-label="{{ t('audit_log.recorded_column') }}" class="wrap muted">{{ event.recorded_at | display_dt }}</td>
     </tr>
     {% else %}
     <tr class="empty-row"><td colspan="6">{{ t('audit_log.empty_state') }}</td></tr>

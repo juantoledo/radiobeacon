@@ -1432,6 +1432,17 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .empty-row td a { color: var(--accent); font-weight: var(--weight-semibold); }
 
+/* ---- audit log: long unbroken JSON in Details must not squeeze every
+   other column down to nothing under the browser's auto table-layout ---- */
+.audit-table { table-layout: fixed; }
+.audit-table td { vertical-align: top; }
+.audit-table td .badge { white-space: normal; }
+.audit-table col.col-event { width: 13rem; }
+.audit-table col.col-actor { width: 10rem; }
+.audit-table col.col-source { width: 8rem; }
+.audit-table col.col-item { width: 6rem; }
+.audit-table col.col-recorded { width: 11rem; }
+
 /* ---- items list: title-led content rows (source + id as sub-text) ---- */
 .items-table { table-layout: fixed; }
 .items-table td { vertical-align: middle; white-space: normal; }

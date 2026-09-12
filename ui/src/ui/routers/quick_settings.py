@@ -44,7 +44,7 @@ def _render_live(request: Request, conn: sqlite3.Connection) -> str:
     page with the exact same RB.patchCells cell-diffing an auto-refresh
     poll would apply."""
     return templates.get_template("_dashboard_live.html").render(
-        request=request, **_dashboard_context(conn)
+        request=request, **_dashboard_context(conn, request)
     )
 
 

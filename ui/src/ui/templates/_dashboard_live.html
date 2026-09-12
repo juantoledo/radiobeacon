@@ -154,7 +154,7 @@
 </section>
 
 {% if failed_24h %}
-{% set audit_link = ('<a href="/audit">' ~ t('dashboard.check_audit_log_link_text') ~ '</a>') if is_admin() else t('dashboard.check_audit_log_link_text') %}
+{% set audit_link = ('<a href="/audit?status=failed&since=24h">' ~ t('dashboard.check_audit_log_link_text') ~ '</a>') if is_admin() else t('dashboard.check_audit_log_link_text') %}
 <p class="banner-warn">⚠ {{ (t('dashboard.failed_events_banner_one', n=failed_24h, link=audit_link) if failed_24h == 1 else t('dashboard.failed_events_banner_other', n=failed_24h, link=audit_link)) | safe }}</p>
 {% endif %}
 
