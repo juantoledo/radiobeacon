@@ -25,11 +25,21 @@ _DEFAULT_MODELS = {
 }
 _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
+# Every call_* helper below runs synchronously on whichever thread invoked
+# it -- for actions.ai that's paho-mqtt's own loop_start() network thread,
+# which also has to keep servicing that connection's keepalive
+# PINGREQ/PINGRESP. Each SDK's own default timeout is otherwise multi-minute
+# (or, for ollama, unbounded), so a slow/hung provider could starve the
+# keepalive long enough for the broker to drop the connection. This bounds
+# the worst case instead of inheriting each SDK's default.
+_REQUEST_TIMEOUT_SECONDS = 30
+
 
 def call_openai(prompt: str, model: str, api_key: str | None) -> str:
     import openai
 
-    client = openai.OpenAI(api_key=api_key) if api_key else openai.OpenAI()
+    client = openai.OpenAI(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECONDS) if api_key \
+        else openai.OpenAI(timeout=_REQUEST_TIMEOUT_SECONDS)
     response = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
@@ -40,7 +50,8 @@ def call_openai(prompt: str, model: str, api_key: str | None) -> str:
 def call_claude(prompt: str, model: str, api_key: str | None) -> str:
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
+    client = anthropic.Anthropic(api_key=api_key, timeout=_REQUEST_TIMEOUT_SECONDS) if api_key \
+        else anthropic.Anthropic(timeout=_REQUEST_TIMEOUT_SECONDS)
     response = client.messages.create(
         model=model,
         max_tokens=1024,
@@ -52,7 +63,7 @@ def call_claude(prompt: str, model: str, api_key: str | None) -> str:
 def call_ollama(prompt: str, model: str, host: str) -> str:
     import ollama
 
-    client = ollama.Client(host=host)
+    client = ollama.Client(host=host, timeout=_REQUEST_TIMEOUT_SECONDS)
     response = client.chat(model=model, messages=[{"role": "user", "content": prompt}])
     return response["message"]["content"]
 

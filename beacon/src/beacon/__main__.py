@@ -963,6 +963,75 @@ def _prune_old_wavs(wav_dir, retention_days: int, now: float) -> int:
     return removed
 
 
+def _run_housekeeping_loop(stop_event: threading.Event, wake_event: threading.Event) -> None:
+    """Beacon's own liveness/maintenance work -- heartbeat, NTP check,
+    missed-content-ready reconciliation, stale-row purging, WAV retention
+    pruning -- on its own thread and tick, independent of
+    _run_transmit_loop. TTS/gen_packets synthesis in that other loop is a
+    blocking subprocess call (up to piper's 60s timeout, per unit) -- were
+    this work interleaved into that same loop (as it used to be), a slow
+    synthesis would leave the dashboard heartbeat stale and delay
+    reconcile's catch-up of a missed item.content_ready for just as long."""
+    conn = get_connection(DEFAULT_DB_PATH)
+    try:
+        last_ntp_check_at = 0.0
+        last_reconcile_at = 0.0
+        last_prune_at = 0.0
+
+        logger.info("housekeeping loop starting")
+
+        while not stop_event.is_set():
+            refresh_level(conn=conn)
+            now = time.time()
+            now_dt = utc_now()
+            tick_seconds = int(get_setting("BEACON_TICK_SECONDS", "2", conn=conn))
+            beacon_type = _resolve_beacon_type(conn)
+
+            ntp_interval = int(get_setting("BEACON_NTP_CHECK_INTERVAL_SECONDS", "3600", conn=conn))
+            reconcile_interval = int(
+                get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
+            )
+            max_queued_age = int(
+                get_setting(
+                    "BEACON_MAX_QUEUED_AGE_SECONDS", BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT, conn=conn
+                )
+            )
+            wav_dir = _resolve_wav_dir(get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn))
+
+            if now - last_ntp_check_at >= ntp_interval:
+                _run_ntp_check(conn)
+                last_ntp_check_at = now
+
+            if now - last_reconcile_at >= reconcile_interval:
+                reconciled = _reconcile_missed_content_ready(conn, wake_event)
+                if reconciled:
+                    logger.warning("reconciled %d missed item.content_ready publish(es)", reconciled)
+                last_reconcile_at = now
+
+            _write_heartbeat(conn, beacon_type)
+
+            # Independent of BEACON_ENABLED: content that queued up while
+            # transmit was off still ages out, so re-enabling doesn't replay
+            # a stale overnight backlog.
+            if beacon_type in KIND_TRANSMITTERS:
+                _purge_stale_rows(conn, beacon_type, max_queued_age, now_dt)
+
+            # Bound the rendered-WAV directory — checked ~hourly, independent
+            # of BEACON_ENABLED (clips keep accruing from every airing).
+            if now - last_prune_at >= 3600:
+                _prune_old_wavs(
+                    wav_dir,
+                    int(get_setting("BEACON_TTS_RETENTION_DAYS", BEACON_TTS_RETENTION_DAYS_DEFAULT, conn=conn)),
+                    now,
+                )
+                last_prune_at = now
+
+            stop_event.wait(timeout=tick_seconds)
+    finally:
+        conn.close()
+    logger.info("housekeeping loop stopped")
+
+
 def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event) -> None:
     conn = get_connection(DEFAULT_DB_PATH)
     try:
@@ -976,15 +1045,11 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 removed, last_beacon_type,
             )
 
-        last_ntp_check_at = 0.0
-        last_reconcile_at = 0.0
         last_watermark_at = 0.0
-        last_prune_at = 0.0
 
         logger.info("transmit loop starting type=%s", last_beacon_type)
 
         while not stop_event.is_set():
-            refresh_level(conn=conn)
             now = time.time()
             now_dt = utc_now()
             tick_seconds = int(get_setting("BEACON_TICK_SECONDS", "2", conn=conn))
@@ -999,16 +1064,7 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 last_beacon_type = beacon_type
 
             enabled = get_setting("BEACON_ENABLED", BEACON_ENABLED_DEFAULT, conn=conn).lower() == "true"
-            ntp_interval = int(get_setting("BEACON_NTP_CHECK_INTERVAL_SECONDS", "3600", conn=conn))
-            reconcile_interval = int(
-                get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
-            )
             inter_tx_delay = float(get_setting("BEACON_INTER_TX_DELAY_SECONDS", "2", conn=conn))
-            max_queued_age = int(
-                get_setting(
-                    "BEACON_MAX_QUEUED_AGE_SECONDS", BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT, conn=conn
-                )
-            )
             watermark_enabled = get_setting(
                 "BEACON_WATERMARK_ENABLED", BEACON_WATERMARK_ENABLED_DEFAULT, conn=conn
             ).lower() == "true"
@@ -1053,37 +1109,9 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                 "wav_transmitter": _build_wav_transmitter(conn),
             }
 
-            if now - last_ntp_check_at >= ntp_interval:
-                _run_ntp_check(conn)
-                last_ntp_check_at = now
-
-            if now - last_reconcile_at >= reconcile_interval:
-                reconciled = _reconcile_missed_content_ready(conn)
-                if reconciled:
-                    logger.warning("reconciled %d missed item.content_ready publish(es)", reconciled)
-                last_reconcile_at = now
-
             if enabled and watermark_enabled and now - last_watermark_at >= watermark_interval:
                 _transmit_watermark(conn, beacon_type, ctx, now_dt)
                 last_watermark_at = now
-
-            _write_heartbeat(conn, beacon_type)
-
-            # Independent of BEACON_ENABLED: content that queued up while
-            # transmit was off still ages out, so re-enabling doesn't replay
-            # a stale overnight backlog.
-            if beacon_type in KIND_TRANSMITTERS:
-                _purge_stale_rows(conn, beacon_type, max_queued_age, now_dt)
-
-            # Bound the rendered-WAV directory — checked ~hourly, independent
-            # of BEACON_ENABLED (clips keep accruing from every airing).
-            if now - last_prune_at >= 3600:
-                _prune_old_wavs(
-                    ctx["wav_dir"],
-                    int(get_setting("BEACON_TTS_RETENTION_DAYS", BEACON_TTS_RETENTION_DAYS_DEFAULT, conn=conn)),
-                    now,
-                )
-                last_prune_at = now
 
             if enabled and beacon_type in KIND_TRANSMITTERS:
                 _drain_manual_tx(stop_event, conn, beacon_type, now_dt, ctx, inter_tx_delay)
@@ -1126,6 +1154,15 @@ def main() -> None:
         name="beacon-transmit",
         daemon=True,
     )
+    # Heartbeat/NTP/reconcile/purge/prune, decoupled from _run_transmit_loop
+    # so a slow TTS/gen_packets synthesis there never delays them (see
+    # _run_housekeeping_loop's docstring).
+    housekeeping_thread = threading.Thread(
+        target=_run_housekeeping_loop,
+        args=(stop_event, wake_event),
+        name="beacon-housekeeping",
+        daemon=True,
+    )
     # Read-only tail of the SvxLink log that feeds the dashboard's "ON AIR"
     # indicator; dormant and harmless when the log isn't reachable.
     tx_monitor_thread = threading.Thread(
@@ -1137,10 +1174,12 @@ def main() -> None:
 
     mqtt_thread.start()
     transmit_thread.start()
+    housekeeping_thread.start()
     tx_monitor_thread.start()
 
     mqtt_thread.join()
     transmit_thread.join()
+    housekeeping_thread.join()
     tx_monitor_thread.join()
 
 
