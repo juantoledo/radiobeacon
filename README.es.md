@@ -19,6 +19,15 @@ baliza obtiene dos cosas a la vez: la confirmación de que el camino de la
 señal funciona y el boletín en sí.
 
 <p align="center">
+  <a href="https://www.youtube.com/watch?v=S9j9hCDz_KQ">
+    <img src="https://img.youtube.com/vi/S9j9hCDz_KQ/maxresdefault.jpg" alt="Video: presentación de RadioBeacon" width="70%">
+  </a>
+  <br>
+  <a href="https://www.youtube.com/watch?v=S9j9hCDz_KQ">▶ Ver video de presentación</a>
+</p>
+
+
+<p align="center">
   <img src="documentation/images/dashboard.png" alt="Panel de control de RadioBeacon" width="49%">
   <img src="documentation/images/about.png" alt="Página Acerca de RadioBeacon" width="49%">
 </p>
