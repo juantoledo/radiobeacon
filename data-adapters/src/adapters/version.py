@@ -1,11 +1,9 @@
 """Resolves the whole-project version from the repo-root VERSION file —
 the single source of truth every component's pyproject.toml and the UI
 footer read from, bumped only by release.sh. Walks up from this file's own
-location rather than assuming a fixed relative depth, since the same
-version.py lives at a different depth under an editable install
-(data-adapters/src/adapters/) than inside the ui Docker image
-(/app/data-adapters/src/adapters/, with /app/VERSION copied in
-alongside it)."""
+location rather than assuming a fixed relative depth, so it keeps working
+regardless of how deep an editable install places
+data-adapters/src/adapters/ under the repo root."""
 from pathlib import Path
 
 _FALLBACK = "0.0.0-unknown"

@@ -24,7 +24,7 @@
   "settings.BEACON_TXQUEUE_INCOMING_DIR.label": "svxlink-txqueue incoming dir",
   "settings.BEACON_TXQUEUE_INCOMING_DIR.description": "Folder the \"spool\" WAV transmitter drops rendered WAV files into — svxlink-txqueue's documented drop point, which stamps a FIFO timestamp, validates, and sanitizes the name. Must match svxlink-txqueue's TXQUEUE_SPOOL/incoming.",
   "settings.BEACON_SVXLINK_CONF_PATH.label": "svxlink.conf path",
-  "settings.BEACON_SVXLINK_CONF_PATH.description": "Absolute path to svxlink.conf, used ONLY by the in-dashboard editor on this page — the beacon never reads this file itself. Blank disables the editor. In the Docker deployment this file must also be bind-mounted into the UI container and writable by its user.",
+  "settings.BEACON_SVXLINK_CONF_PATH.description": "Absolute path to svxlink.conf, used ONLY by the in-dashboard editor on this page — the beacon never reads this file itself. Blank disables the editor. The UI process must have write access to it.",
   "settings.BEACON_RF_CONF_EDITOR_ENABLED.label": "Enable svxlink.conf / direwolf.conf editor",
   "settings.BEACON_RF_CONF_EDITOR_ENABLED.description": "Allow editing svxlink.conf (this page) and direwolf.conf (the Direwolf page) from this dashboard. OFF by default: the dashboard has no login, so with this on, anyone who can reach it can read or overwrite any file the UI process can write. Only enable on a trusted host. A timestamped .bak is written on every save; no service is restarted (the page shows the systemctl command).",
   "settings.BEACON_VOICE_TEMPLATE.label": "Voice template",

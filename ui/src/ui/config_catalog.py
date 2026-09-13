@@ -671,8 +671,7 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "svxlink.conf path",
         "Absolute path to svxlink.conf, used ONLY by the in-dashboard editor "
         "on this page — the beacon never reads this file itself. Blank "
-        "disables the editor. In the Docker deployment this file must also be "
-        "bind-mounted into the UI container and writable by its user.",
+        "disables the editor. The UI process must have write access to it.",
         "text",
         "/etc/svxlink/svxlink.conf",
     ),
@@ -711,9 +710,8 @@ SETTINGS_CATALOG: list[SettingSpec] = [
         "Log file the ON AIR indicator tails for "
         "\"Turning the transmitter ON/OFF\" (the same line svxlink-txqueue "
         "watches). The beacon process needs read access — typically by "
-        "adding its user to the \"svxlink\" or \"adm\" group. In the Docker "
-        "deployment the file must be bind-mounted into whichever container "
-        "runs the beacon. Blank disables the indicator.",
+        "adding its user to the \"svxlink\" or \"adm\" group. Blank "
+        "disables the indicator.",
         "text",
         BEACON_SVXLINK_LOG_PATH_DEFAULT,
         advanced=True,

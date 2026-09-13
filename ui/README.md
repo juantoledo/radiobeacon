@@ -135,8 +135,8 @@ speech.
 The clips come straight from `BEACON_TTS_WAV_DIR` (`ui.beacon_audio`), the
 directory the beacon writes into. A relative value there is resolved
 against the repo root by both processes, so the default `storage/beacon_tts`
-is the top-level `storage/` the `ui/` container already bind-mounts. In a
-split deployment (beacon on the host, UI in Docker) point it at a path
+is the top-level `storage/` both share when run on the same host. In a
+split deployment (beacon and UI on different hosts) point it at a path
 both can see, or no button appears.
 
 ### Hear the transmission live
@@ -262,44 +262,6 @@ Env vars, in `.env` at the repo root (see `.env.example`).
 Optional MQTT publishing of override/rearm/policy-set/policy-deleted audit
 events is controlled by `DISPATCHER_MQ_HOST` (and the other
 `DISPATCHER_MQ_*` vars) — see [dispatcher/README.md](../dispatcher/README.md#publishing-to-a-message-queue-cloudevents-over-mqtt).
-
-## Running in Docker
-
-Built from the **repo root**, not `ui/` alone — `ui/requirements.txt`
-installs the sibling `data-adapters/` and `dispatcher/` packages editable
-(`-e ../data-adapters`, `-e ../dispatcher`), so the image copies all three
-in under `/app` and runs `pip install` from `/app/ui`.
-
-```bash
-docker compose -f ui/docker-compose.yml up --build
-```
-
-or, without Compose:
-
-```bash
-docker build -f ui/Dockerfile -t radiobeacon-ui .
-docker run --rm -p 8080:8080 \
-  -v "$(pwd)/storage:/app/storage" \
-  -e UI_DB_PATH=/app/storage/radiobeacon.db \
-  radiobeacon-ui
-```
-
-`UI_HOST` already defaults to `0.0.0.0` and `UI_ALLOWED_HOSTS` to `*`, so
-no host env vars are needed. Use `-p 127.0.0.1:8080:8080` if you want it
-reachable only from `localhost`, not the LAN. To re-arm the Host guard,
-set `UI_ALLOWED_HOSTS` to whatever name you open the dashboard under
-(e.g. the mini-PC's LAN IP or `.local` name) — then a `Host` header that
-isn't listed gets a 400.
-
-The `storage/` directory is bind-mounted read-write (not a named volume,
-and not `:ro`) — the UI writes to `radiobeacon.db` via its override/rearm/
-policy actions, and this is the same file every other process (Dockerized
-or not) reads and writes, so it has to be the real one on disk, not a
-container-private copy. The default `UI_HOST=0.0.0.0` is what makes the
-app reachable through the container's port mapping — `127.0.0.1` inside
-the container is unreachable from outside it; the `ports:`/`-p` binding
-is what actually controls host-side access (loopback-only vs. all
-interfaces).
 
 ## Tests
 

@@ -6,10 +6,10 @@ The beacon writes one WAV per voice unit into BEACON_TTS_WAV_DIR, named
 ``{source}-{item_id}-{unix_ts}.wav`` (frame/packet clips get an extra
 ``-{chunk_index}`` segment and are *not* offered for playback — they're
 AFSK modem tones, not speech). beacon.__main__ anchors a relative
-BEACON_TTS_WAV_DIR at the repo root, and ui/docker-compose.yml bind-mounts
-that same top-level storage/ directory, so both processes see one shared
-folder. Nothing here ever opens a caller-supplied path — every returned
-Path comes from iterating the directory itself.
+BEACON_TTS_WAV_DIR at the repo root, the same top-level storage/
+directory the UI reads from, so both processes see one shared folder.
+Nothing here ever opens a caller-supplied path — every returned Path
+comes from iterating the directory itself.
 """
 import json
 import re
