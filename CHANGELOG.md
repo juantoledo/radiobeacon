@@ -5,6 +5,11 @@ unified version covers the whole project (`data-adapters`, `dispatcher`,
 `actions`, `beacon`, `ui`), not a version per package. Entries are added by
 `./release.sh`.
 
+## v0.4.2 — 2026-09-13
+
+- Remove dockerized UI deployment option
+- Add GitHub badges, MIT license, and README screenshots
+
 ## v0.4.1 — 2026-09-13
 
 - Add SvxLink + Direwolf install guide, automated installer, and About page links
