@@ -1,7 +1,12 @@
 import json
 from unittest.mock import patch
 
-from adapters.storage import get_adapter_instance, get_source_fields, set_adapter_instance
+from adapters.storage import (
+    get_adapter_instance,
+    get_source_fields,
+    set_adapter_instance,
+    set_setting,
+)
 
 
 def test_adapters_list_returns_200_and_shows_seeded_instances(client):
@@ -916,3 +921,162 @@ def test_adapter_edit_page_prefills_saved_voice_replacements(client, conn):
     assert response.status_code == 200
     assert 'name="vrepl_key" value="SENAPRED"' in response.text
     assert 'name="vrepl_value" value="Senapred"' in response.text
+
+
+# --------------------------------- per-adapter export ---------------------------------
+
+
+def test_adapter_export_download_is_an_attachment_with_expected_filename(client, conn):
+    set_adapter_instance(conn, "demo", "api", {"url": "https://example.com"})
+
+    response = client.get("/config/adapters/demo/export")
+
+    assert response.status_code == 200
+    assert "attachment" in response.headers["content-disposition"]
+    assert "radiobeacon-adapter-demo-" in response.headers["content-disposition"]
+    data = response.json()
+    assert data["kind"] == "radiobeacon.adapter_instance"
+    assert data["adapter"]["source"] == "demo"
+
+
+def test_adapter_export_download_404s_for_unknown_source(client):
+    response = client.get("/config/adapters/does-not-exist/export")
+
+    assert response.status_code == 404
+
+
+# --------------------------------- per-adapter import ---------------------------------
+
+
+def _upload_adapter(client, payload, url="/config/adapters/import/preview", **kwargs):
+    files = {"upload": ("adapter.json", json.dumps(payload), "application/json")}
+    return client.post(url, files=files, **kwargs)
+
+
+def _adapter_payload(**over):
+    base = {
+        "kind": "radiobeacon.adapter_instance",
+        "schema_version": 1,
+        "adapter": {"source": "brand-new", "adapter_type": "api", "config": {"url": "https://x"}},
+    }
+    base.update(over)
+    return base
+
+
+def test_adapter_import_page_returns_200(client):
+    response = client.get("/config/adapters/import")
+
+    assert response.status_code == 200
+
+
+def test_adapter_import_of_a_brand_new_source_applies_immediately_no_confirm_page(client, conn):
+    payload = _adapter_payload()
+
+    response = _upload_adapter(
+        client, payload, url="/config/adapters/import/preview", follow_redirects=False
+    )
+
+    assert response.status_code == 303
+    assert "/config/adapters" in response.headers["location"]
+    assert get_adapter_instance(conn, "brand-new") is not None
+
+
+def test_adapter_import_of_an_existing_source_renders_confirm_page(client, conn):
+    set_adapter_instance(conn, "csn", "api", {"url": "https://old"})
+    payload = _adapter_payload(
+        adapter={"source": "csn", "adapter_type": "api", "config": {"url": "https://new"}}
+    )
+
+    response = _upload_adapter(client, payload)
+
+    assert response.status_code == 200
+    assert "config_json" in response.text
+    assert 'name="confirm_overwrite"' in response.text
+    # not applied yet
+    assert json.loads(get_adapter_instance(conn, "csn")["config"])["url"] == "https://old"
+
+
+def test_adapter_import_apply_without_overwrite_confirmation_is_rejected(client, conn):
+    set_adapter_instance(conn, "csn", "api", {"url": "https://old"})
+    payload = _adapter_payload(
+        adapter={"source": "csn", "adapter_type": "api", "config": {"url": "https://new"}}
+    )
+
+    response = client.post(
+        "/config/adapters/import/apply", data={"config_json": json.dumps(payload)}
+    )
+
+    assert response.status_code == 400
+    assert json.loads(get_adapter_instance(conn, "csn")["config"])["url"] == "https://old"
+
+
+def test_adapter_import_apply_with_overwrite_confirmation_upserts(client, conn):
+    set_adapter_instance(conn, "csn", "api", {"url": "https://old"})
+    payload = _adapter_payload(
+        adapter={"source": "csn", "adapter_type": "api", "config": {"url": "https://new"}}
+    )
+
+    response = client.post(
+        "/config/adapters/import/apply",
+        data={"config_json": json.dumps(payload), "confirm_overwrite": "on"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert json.loads(get_adapter_instance(conn, "csn")["config"])["url"] == "https://new"
+
+
+def test_adapter_import_custom_type_requires_code_review_checkbox_when_dev_tools_on(client, conn):
+    payload = _adapter_payload(
+        adapter={"source": "reviewed", "adapter_type": "custom",
+                 "config": {"code": "def fetch(config): return []"}}
+    )
+
+    preview = _upload_adapter(client, payload)
+    assert preview.status_code == 200
+    assert 'name="confirm_custom_code"' in preview.text
+
+    rejected = client.post(
+        "/config/adapters/import/apply", data={"config_json": json.dumps(payload)}
+    )
+    assert rejected.status_code == 400
+    assert get_adapter_instance(conn, "reviewed") is None
+
+    applied = client.post(
+        "/config/adapters/import/apply",
+        data={"config_json": json.dumps(payload), "confirm_custom_code": "on"},
+        follow_redirects=False,
+    )
+    assert applied.status_code == 303
+    assert get_adapter_instance(conn, "reviewed") is not None
+
+
+def test_adapter_import_custom_type_rejected_when_dev_tools_off(client, conn):
+    set_setting(conn, "UI_DEV_TOOLS_ENABLED", "false")
+    payload = _adapter_payload(
+        adapter={"source": "sneaky", "adapter_type": "custom",
+                 "config": {"code": "def fetch(config): return []"}}
+    )
+
+    response = client.post(
+        "/config/adapters/import/apply", data={"config_json": json.dumps(payload)}
+    )
+
+    assert response.status_code == 400
+    assert get_adapter_instance(conn, "sneaky") is None
+
+
+def test_adapter_import_override_source_field_imports_under_new_key(client, conn):
+    payload = _adapter_payload(
+        adapter={"source": "original", "adapter_type": "api", "config": {"url": "https://x"}}
+    )
+
+    response = client.post(
+        "/config/adapters/import/apply",
+        data={"config_json": json.dumps(payload), "override_source": "original-copy"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert get_adapter_instance(conn, "original-copy") is not None
+    assert get_adapter_instance(conn, "original") is None

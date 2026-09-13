@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ t('adapter_import.title') }}{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+<a class="crumb" href="/config/adapters">&larr; {{ t('adapter_import.back_to_adapters') }}</a>
+<div class="page-header"><h1>{{ t('adapter_import.title') }}</h1></div>
+
+<p class="meta-line">{{ t('adapter_import.intro') }}</p>
+
+<form method="post" action="/config/adapters/import/preview" enctype="multipart/form-data">
+  {{ csrf_field() }}
+  <p><input type="file" name="upload" accept="application/json,.json" required></p>
+  <p><button type="submit">{{ t('adapter_import.preview_button') }}</button></p>
+</form>
+{% endblock %}

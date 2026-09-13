@@ -10,6 +10,7 @@ from adapters.api_adapter import ApiAdapter, FieldMapping, preview_response
 from adapters.custom_adapter import CustomAdapter
 from adapters.actions_defaults import AI_PROMPT_DEFAULT
 from adapters.categories import CATEGORIES, get_category
+from adapters.config_transfer import build_adapter_export, import_adapter_export
 from adapters.storage import (
     delete_adapter_instance,
     get_adapter_instance,
@@ -22,11 +23,12 @@ from adapters.storage import (
     set_source,
 )
 from adapters.policy import DEFAULT_POLICY_NAME, describe_policy, list_policies, resolve_policy
+from adapters.timeutil import utc_now
 from adapters.voice_replacements import SUGGESTED_VOICE_REPLACEMENTS
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from markupsafe import Markup
 from starlette.datastructures import FormData
-from starlette.responses import RedirectResponse
+from starlette.responses import RedirectResponse, Response
 
 from .. import queries
 from ..config_catalog import specs_for_group
@@ -539,6 +541,21 @@ def adapter_edit_page(request: Request, source: str, conn: sqlite3.Connection = 
     )
 
 
+@router.get("/config/adapters/{source}/export")
+def adapter_export_action(source: str, conn: sqlite3.Connection = Depends(get_db)):
+    try:
+        export = build_adapter_export(conn, source, actor="ui.adapters.export")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="adapter instance not found")
+    body = json.dumps(export, indent=2) + "\n"
+    filename = f"radiobeacon-adapter-{source}-{utc_now().strftime('%Y%m%dT%H%M%SZ')}.json"
+    return Response(
+        body,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 def _voice_replacement_rows(form: FormData) -> list[dict]:
     """Posted pronunciation-map rows as [{"key":.., "value":..}], order and
     blanks preserved — kept intact for a re-render; blank keys are dropped
@@ -796,4 +813,171 @@ def adapter_toggle_action(source: str, conn: sqlite3.Connection = Depends(get_db
     enabled = not bool(row["enabled"])
     set_adapter_instance_enabled(conn, source, enabled)
     msg = f"adapter '{source}' {'enabled' if enabled else 'disabled'}"
+    return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)
+
+
+# --------------------------------- per-adapter import ---------------------------------
+# Counterpart to ui.routers.config_transfer's whole-DB import flow, scoped to
+# one adapter_instances record — see adapters.config_transfer.
+# import_adapter_export's docstring for the shared validation path. Unlike the
+# whole-DB flow, a brand-new/non-custom adapter applies immediately with no
+# confirm page; a confirm step only appears when overwriting an existing
+# source or importing CUSTOM (exec()'d) code.
+
+_ADAPTER_CODE_PREVIEW_CHARS = 400
+
+
+def _coerce_adapter_entry(data: dict) -> dict:
+    """data["adapter"] straight from an uploaded/carried-over file — never
+    trust its shape; a malformed file (string/list/missing) becomes an
+    empty dict here, which import_adapter_export/its own preview then
+    reports as a normal 'missing source' skip rather than a 500."""
+    raw = data.get("adapter")
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _adapter_import_reject(message: str) -> RedirectResponse:
+    return RedirectResponse(
+        url=f"/config/adapters/import?{urlencode({'error': message})}", status_code=303
+    )
+
+
+def _adapter_code_preview(entry: dict) -> dict | None:
+    if not isinstance(entry, dict) or entry.get("adapter_type") != "custom":
+        return None
+    config = entry.get("config")
+    code = config.get("code") if isinstance(config, dict) else None
+    code = code if isinstance(code, str) else ""
+    return {
+        "code_preview": code[:_ADAPTER_CODE_PREVIEW_CHARS],
+        "truncated": len(code) > _ADAPTER_CODE_PREVIEW_CHARS,
+    }
+
+
+def _adapter_import_preview_context(
+    *, result, entry: dict, raw_text: str, override_source: str, error: str | None,
+    dev_tools_enabled: bool,
+) -> dict:
+    return {
+        "result": result,
+        "raw_text": raw_text,
+        "entry": entry,
+        "code_preview": _adapter_code_preview(entry) if dev_tools_enabled else None,
+        "skipped_custom": entry.get("adapter_type") == "custom" and not dev_tools_enabled,
+        "needs_overwrite_confirm": result.action == "updated",
+        "override_source": override_source,
+        "error": error,
+    }
+
+
+@router.get("/config/adapters/import")
+def adapter_import_page(request: Request):
+    return templates.TemplateResponse(request, "adapter_import.html", {})
+
+
+@router.post("/config/adapters/import/preview")
+async def adapter_import_preview_action(
+    request: Request,
+    upload: UploadFile = File(...),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    raw_bytes = await upload.read()
+    try:
+        raw_text = raw_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        return _adapter_import_reject("the uploaded file is not valid UTF-8 text")
+    try:
+        data = json.loads(raw_text)
+    except json.JSONDecodeError as e:
+        return _adapter_import_reject(f"the uploaded file is not valid JSON ({e})")
+    if not isinstance(data, dict):
+        return _adapter_import_reject("the uploaded file's top level must be a JSON object")
+
+    dev_tools_enabled = _dev_tools_enabled(conn)
+    try:
+        result = import_adapter_export(
+            conn, data, allow_custom_code=dev_tools_enabled, actor="ui.adapters.import",
+            dry_run=True,
+        )
+    except ValueError as e:
+        return _adapter_import_reject(str(e))
+
+    entry = _coerce_adapter_entry(data)
+    context = _adapter_import_preview_context(
+        result=result, entry=entry, raw_text=raw_text,
+        override_source=entry.get("source", ""), error=None,
+        dev_tools_enabled=dev_tools_enabled,
+    )
+
+    # Nothing risky (brand-new source, not CUSTOM code) and nothing wrong
+    # with the record — apply straight away, same as saving the form by hand.
+    if result.action == "created" and context["code_preview"] is None:
+        import_adapter_export(
+            conn, data, allow_custom_code=dev_tools_enabled, actor="ui.adapters.import",
+        )
+        msg = f"adapter '{result.key}' imported"
+        return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)
+
+    return templates.TemplateResponse(request, "adapter_import_preview.html", context)
+
+
+@router.post("/config/adapters/import/apply")
+async def adapter_import_apply_action(
+    request: Request,
+    config_json: str = Form(...),
+    override_source: str | None = Form(None),
+    confirm_overwrite: str | None = Form(None),
+    confirm_custom_code: str | None = Form(None),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    try:
+        data = json.loads(config_json)
+    except json.JSONDecodeError:
+        return _adapter_import_reject("the carried-over adapter data was not valid JSON")
+
+    dev_tools_enabled = _dev_tools_enabled(conn)
+    override = (override_source or "").strip() or None
+    try:
+        # Re-validated fresh (never trusting the confirm page) — dry_run=True
+        # makes no writes, safe to run again right before the real apply.
+        result = import_adapter_export(
+            conn, data, allow_custom_code=dev_tools_enabled, actor="ui.adapters.import",
+            override_source=override, dry_run=True,
+        )
+    except ValueError as e:
+        return _adapter_import_reject(str(e))
+
+    entry = _coerce_adapter_entry(data)
+    if override:
+        entry["source"] = override
+    context = _adapter_import_preview_context(
+        result=result, entry=entry, raw_text=config_json,
+        override_source=override or entry.get("source", ""), error=None,
+        dev_tools_enabled=dev_tools_enabled,
+    )
+
+    if result.action == "skipped":
+        # Nothing to confirm — the record itself is invalid (bad
+        # adapter_type/config) or CUSTOM code is refused on this install;
+        # show why instead of silently "succeeding".
+        return templates.TemplateResponse(
+            request, "adapter_import_preview.html", context, status_code=400
+        )
+
+    errors = []
+    if context["needs_overwrite_confirm"] and not confirm_overwrite:
+        errors.append("Check the confirmation box to overwrite this existing adapter.")
+    if context["code_preview"] is not None and not confirm_custom_code:
+        errors.append("Check the code-review confirmation box to import this CUSTOM adapter.")
+    if errors:
+        context["error"] = " ".join(errors)
+        return templates.TemplateResponse(
+            request, "adapter_import_preview.html", context, status_code=400
+        )
+
+    result = import_adapter_export(
+        conn, data, allow_custom_code=dev_tools_enabled, actor="ui.adapters.import",
+        override_source=override, dry_run=False,
+    )
+    msg = f"adapter '{result.key}' imported"
     return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)

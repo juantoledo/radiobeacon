@@ -1,6 +1,14 @@
 import pytest
 
-from adapters.config_transfer import SCHEMA_VERSION, build_export, import_config
+from adapters.config_transfer import (
+    ADAPTER_EXPORT_KIND,
+    ADAPTER_EXPORT_SCHEMA_VERSION,
+    SCHEMA_VERSION,
+    build_adapter_export,
+    build_export,
+    import_adapter_export,
+    import_config,
+)
 from adapters.custom_adapter import CustomAdapter
 from adapters.storage import (
     get_adapter_instance,
@@ -14,6 +22,7 @@ from adapters.storage import (
 from adapters.policy import get_policy, set_policy
 
 V = SCHEMA_VERSION
+AV = ADAPTER_EXPORT_SCHEMA_VERSION
 
 
 @pytest.fixture
@@ -308,3 +317,146 @@ def test_full_round_trip_from_a_populated_db_into_a_fresh_one(conn, target):
 
     summary2 = import_config(target, export, allow_custom_code=True, actor="test")
     assert all(c["created"] == 0 for c in summary2.counts().values())
+
+
+# --------------------------------- single-adapter export ---------------------------------
+
+
+def _adapter_export(**over):
+    base = {
+        "kind": ADAPTER_EXPORT_KIND,
+        "schema_version": AV,
+        "adapter": {"source": "demo", "adapter_type": "api", "config": {"url": "https://x"}},
+    }
+    base.update(over)
+    return base
+
+
+def test_build_adapter_export_has_expected_envelope_kind_and_schema_version(conn):
+    set_adapter_instance(conn, "demo", "api", {"url": "https://example.com"})
+
+    export = build_adapter_export(conn, "demo", actor="test")
+
+    assert export["kind"] == ADAPTER_EXPORT_KIND
+    assert export["schema_version"] == ADAPTER_EXPORT_SCHEMA_VERSION
+    assert export["adapter"]["source"] == "demo"
+    assert export["adapter"]["adapter_type"] == "api"
+    assert export["adapter"]["config"] == {"url": "https://example.com"}
+
+
+def test_build_adapter_export_includes_linked_display_name_and_site_url(conn):
+    set_adapter_instance(conn, "demo", "api", {"url": "https://example.com"})
+    set_source(conn, "demo", "Demo Source", "https://example.com")
+
+    export = build_adapter_export(conn, "demo", actor="test")
+
+    assert export["adapter"]["display_name"] == "Demo Source"
+    assert export["adapter"]["site_url"] == "https://example.com"
+
+
+def test_build_adapter_export_omits_display_name_when_no_linked_source(conn):
+    set_adapter_instance(conn, "demo", "api", {"url": "https://example.com"})
+
+    export = build_adapter_export(conn, "demo", actor="test")
+
+    assert "display_name" not in export["adapter"]
+
+
+def test_build_adapter_export_raises_for_unknown_source(conn):
+    with pytest.raises(LookupError):
+        build_adapter_export(conn, "does-not-exist", actor="test")
+
+
+# --------------------------------- single-adapter import ---------------------------------
+
+
+def test_import_adapter_export_round_trip_creates_on_a_fresh_target(conn, target):
+    set_adapter_instance(conn, "demo", "api", {"url": "https://example.com"}, policy="urgent")
+    set_source(conn, "demo", "Demo Source", "https://example.com")
+    export = build_adapter_export(conn, "demo", actor="test")
+
+    result = import_adapter_export(target, export, allow_custom_code=True, actor="test")
+
+    assert result.action == "created"
+    stored = get_adapter_instance(target, "demo")
+    assert stored is not None
+    assert stored["policy"] == "urgent"
+    row = target.execute("SELECT display_name FROM sources WHERE source='demo'").fetchone()
+    assert row[0] == "Demo Source"
+
+
+def test_import_adapter_export_overwrites_existing_source_when_reimported(target):
+    set_adapter_instance(target, "demo", "api", {"url": "https://old"})
+    export = _adapter_export(adapter={"source": "demo", "adapter_type": "api", "config": {"url": "https://new"}})
+
+    result = import_adapter_export(target, export, allow_custom_code=True, actor="test")
+
+    assert result.action == "updated"
+    assert get_adapter_instance(target, "demo")["config"] == '{"url": "https://new"}'
+
+
+def test_import_adapter_export_dry_run_makes_no_writes(target):
+    export = _adapter_export()
+
+    result = import_adapter_export(target, export, allow_custom_code=True, actor="test", dry_run=True)
+
+    assert result.action == "created"
+    assert get_adapter_instance(target, "demo") is None
+
+
+def test_import_adapter_export_rejects_wrong_kind(target):
+    export = _adapter_export(kind="something.else")
+    with pytest.raises(ValueError):
+        import_adapter_export(target, export, allow_custom_code=True, actor="test")
+
+
+def test_import_adapter_export_rejects_wrong_schema_version(target):
+    export = _adapter_export(schema_version=AV + 1)
+    with pytest.raises(ValueError):
+        import_adapter_export(target, export, allow_custom_code=True, actor="test")
+
+
+def test_import_adapter_export_override_source_imports_under_new_key(target):
+    export = _adapter_export()
+
+    result = import_adapter_export(
+        target, export, allow_custom_code=True, actor="test", override_source="demo-copy"
+    )
+
+    assert result.key == "demo-copy"
+    assert get_adapter_instance(target, "demo-copy") is not None
+    assert get_adapter_instance(target, "demo") is None
+
+
+def test_import_adapter_export_skips_custom_type_when_allow_custom_code_false(target):
+    export = _adapter_export(
+        adapter={"source": "sneaky", "adapter_type": "custom",
+                 "config": {"code": "def fetch(config): return []"}}
+    )
+
+    result = import_adapter_export(target, export, allow_custom_code=False, actor="test")
+
+    assert result.action == "skipped"
+    assert get_adapter_instance(target, "sneaky") is None
+
+
+def test_import_adapter_export_warns_on_unknown_policy_name(target):
+    export = _adapter_export(
+        adapter={"source": "demo", "adapter_type": "api", "policy": "does-not-exist",
+                 "config": {"url": "https://x"}}
+    )
+
+    result = import_adapter_export(target, export, allow_custom_code=True, actor="test")
+
+    assert result.action == "created"
+    assert len(result.warnings) == 1
+    assert "does-not-exist" in result.warnings[0]
+
+
+def test_import_adapter_export_skips_when_config_is_not_an_object(target):
+    export = _adapter_export(adapter={"source": "demo", "adapter_type": "api", "config": "not-an-object"})
+
+    result = import_adapter_export(target, export, allow_custom_code=True, actor="test")
+
+    assert result.action == "skipped"
+    assert get_adapter_instance(target, "demo") is None

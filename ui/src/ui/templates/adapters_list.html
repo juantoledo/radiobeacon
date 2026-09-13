@@ -23,7 +23,13 @@
 </table>
 </div>
 
-<div class="section-header"><h3>{{ t('adapters_list.sources_heading') }}</h3><a class="btn" href="/config/adapters/new">+ {{ t('adapters_list.new_adapter') }}</a></div>
+<div class="section-header">
+  <h3>{{ t('adapters_list.sources_heading') }}</h3>
+  <div>
+    <a class="btn secondary" href="/config/adapters/import">{{ t('adapters_list.import_adapter') }}</a>
+    <a class="btn" href="/config/adapters/new">+ {{ t('adapters_list.new_adapter') }}</a>
+  </div>
+</div>
 
 <div class="table-wrap cards">
 <table>
@@ -52,6 +58,7 @@
       </td>
       <td class="actions-cell">
         <a class="btn secondary" href="/config/adapters/{{ row.source }}/edit">{{ t('adapters_list.edit') }}</a>
+        <a class="btn secondary" href="/config/adapters/{{ row.source }}/export">{{ t('adapters_list.export') }}</a>
         <form method="post" action="/config/adapters/{{ row.source }}/delete">
           {{ csrf_field() }}
           <button type="submit" class="danger">{{ t('adapters_list.delete') }}</button>

@@ -21,7 +21,14 @@ not even as a placeholder key — matching set_setting's own "secret
 plaintext never reaches audit_log" discipline. See settings_registry.py for
 why the settings' type/choices metadata lives in its own small module here
 rather than importing ui.config_catalog.SETTINGS_CATALOG (wrong dependency
-direction)."""
+direction).
+
+build_adapter_export/import_adapter_export are a separate, independently
+versioned pair (ADAPTER_EXPORT_KIND/ADAPTER_EXPORT_SCHEMA_VERSION) for
+exporting/importing a single adapter instead of the whole DB — used by
+ui.routers.adapters' per-adapter export/import routes. They share
+_import_one_adapter_instance's validate-then-upsert logic with the
+whole-DB path above rather than duplicating it."""
 import json
 import sqlite3
 from dataclasses import dataclass, field
@@ -29,6 +36,7 @@ from typing import Any
 
 from .settings_registry import SECRET_SETTING_KEYS, SETTINGS_REGISTRY
 from .storage import (
+    get_adapter_instance,
     get_setting,
     list_adapter_instances,
     list_settings,
@@ -42,6 +50,13 @@ from .timeutil import utc_now
 from .policy import DEFAULT_POLICY_NAME, list_policies, set_policy
 
 SCHEMA_VERSION = 2
+
+# Single-adapter export/import (build_adapter_export/import_adapter_export
+# below) is a separate, independently-versioned envelope — distinct from
+# SCHEMA_VERSION/_SECTIONS above so a whole-DB file and a lone-adapter file
+# can never be fed into the wrong importer.
+ADAPTER_EXPORT_KIND = "radiobeacon.adapter_instance"
+ADAPTER_EXPORT_SCHEMA_VERSION = 1
 
 _SECTIONS = ("settings", "policies", "sources", "adapter_instances")
 _ADAPTER_TYPES = ("api", "custom", "aiprompt")
@@ -318,6 +333,78 @@ def _import_sources(
     return results
 
 
+def _import_one_adapter_instance(
+    conn: sqlite3.Connection,
+    entry: Any,
+    *,
+    existing_sources: set[str],
+    known_policy_names: set[str],
+    allow_custom_code: bool,
+    dry_run: bool,
+) -> ImportItemResult:
+    """The validate-then-upsert body for one adapter_instances record —
+    shared by _import_adapter_instances's bulk loop and
+    import_adapter_export's single-record path, so both check adapter_type,
+    gate CUSTOM code behind allow_custom_code, validate config is an
+    object, warn on an unresolvable policy cross-reference, and upsert via
+    set_adapter_instance/set_source identically."""
+    source = entry.get("source") if isinstance(entry, dict) else "?"
+    try:
+        if not isinstance(entry, dict):
+            return ImportItemResult("adapter_instances", "?", "skipped", reason="not an object")
+        if not source:
+            return ImportItemResult(
+                "adapter_instances", "?", "skipped", reason="missing 'source'"
+            )
+        adapter_type = entry.get("adapter_type")
+        if adapter_type not in _ADAPTER_TYPES:
+            return ImportItemResult(
+                "adapter_instances", source, "skipped",
+                reason=f"adapter_type must be one of {_ADAPTER_TYPES}, got {adapter_type!r}",
+            )
+        # A pure string check — config is never read further, exec()'d,
+        # or test-fetched here whether this branch is taken or not.
+        if adapter_type == "custom" and not allow_custom_code:
+            return ImportItemResult(
+                "adapter_instances", source, "skipped",
+                reason="custom adapter code refused: target's UI_DEV_TOOLS_ENABLED is off",
+            )
+        config = entry.get("config")
+        if not isinstance(config, dict):
+            return ImportItemResult(
+                "adapter_instances", source, "skipped", reason="'config' must be an object",
+            )
+        policy_name = entry.get("policy")
+
+        warnings: list[str] = []
+        if (
+            policy_name
+            and policy_name != DEFAULT_POLICY_NAME
+            and policy_name not in known_policy_names
+        ):
+            warnings.append(
+                f"policy {policy_name!r} not found on the target — items will "
+                f"fall back to {DEFAULT_POLICY_NAME!r} until a Policy with that name exists"
+            )
+
+        action = "updated" if source in existing_sources else "created"
+        if not dry_run:
+            set_adapter_instance(
+                conn,
+                source,
+                adapter_type,
+                config,
+                enabled=bool(entry.get("enabled", True)),
+                policy=policy_name,
+            )
+            display_name = entry.get("display_name")
+            if display_name:
+                set_source(conn, source, display_name, entry.get("site_url"))
+        return ImportItemResult("adapter_instances", source, action, warnings=warnings)
+    except Exception as e:  # noqa: BLE001
+        return ImportItemResult("adapter_instances", source or "?", "skipped", reason=str(e))
+
+
 def _import_adapter_instances(
     conn: sqlite3.Connection,
     entries: list[Any],
@@ -327,84 +414,17 @@ def _import_adapter_instances(
     dry_run: bool,
 ) -> list[ImportItemResult]:
     existing = {row["source"] for row in list_adapter_instances(conn)}
-    results: list[ImportItemResult] = []
-    for entry in entries:
-        source = entry.get("source") if isinstance(entry, dict) else "?"
-        try:
-            if not isinstance(entry, dict):
-                results.append(
-                    ImportItemResult("adapter_instances", "?", "skipped", reason="not an object")
-                )
-                continue
-            if not source:
-                results.append(
-                    ImportItemResult(
-                        "adapter_instances", "?", "skipped", reason="missing 'source'"
-                    )
-                )
-                continue
-            adapter_type = entry.get("adapter_type")
-            if adapter_type not in _ADAPTER_TYPES:
-                results.append(
-                    ImportItemResult(
-                        "adapter_instances", source, "skipped",
-                        reason=f"adapter_type must be one of {_ADAPTER_TYPES}, got {adapter_type!r}",
-                    )
-                )
-                continue
-            # A pure string check — config is never read further, exec()'d,
-            # or test-fetched here whether this branch is taken or not.
-            if adapter_type == "custom" and not allow_custom_code:
-                results.append(
-                    ImportItemResult(
-                        "adapter_instances", source, "skipped",
-                        reason="custom adapter code refused: target's UI_DEV_TOOLS_ENABLED is off",
-                    )
-                )
-                continue
-            config = entry.get("config")
-            if not isinstance(config, dict):
-                results.append(
-                    ImportItemResult(
-                        "adapter_instances", source, "skipped",
-                        reason="'config' must be an object",
-                    )
-                )
-                continue
-            policy_name = entry.get("policy")
-
-            warnings: list[str] = []
-            if (
-                policy_name
-                and policy_name != DEFAULT_POLICY_NAME
-                and policy_name not in known_policy_names
-            ):
-                warnings.append(
-                    f"policy {policy_name!r} not found on the target — items will "
-                    f"fall back to {DEFAULT_POLICY_NAME!r} until a Policy with that name exists"
-                )
-
-            action = "updated" if source in existing else "created"
-            if not dry_run:
-                set_adapter_instance(
-                    conn,
-                    source,
-                    adapter_type,
-                    config,
-                    enabled=bool(entry.get("enabled", True)),
-                    policy=policy_name,
-                )
-                display_name = entry.get("display_name")
-                if display_name:
-                    set_source(conn, source, display_name, entry.get("site_url"))
-            results.append(
-                ImportItemResult("adapter_instances", source, action, warnings=warnings)
-            )
-        except Exception as e:  # noqa: BLE001
-            results.append(
-                ImportItemResult("adapter_instances", source or "?", "skipped", reason=str(e))
-            )
-    return results
+    return [
+        _import_one_adapter_instance(
+            conn,
+            entry,
+            existing_sources=existing,
+            known_policy_names=known_policy_names,
+            allow_custom_code=allow_custom_code,
+            dry_run=dry_run,
+        )
+        for entry in entries
+    ]
 
 
 def import_config(
@@ -474,3 +494,88 @@ def import_config(
             conn, event_type="config.imported", actor=actor, details=summary.counts()
         )
     return summary
+
+
+def build_adapter_export(conn: sqlite3.Connection, source: str, *, actor: str) -> dict[str, Any]:
+    """One adapter_instances row (+ its linked sources row, if any) as a
+    standalone JSON-serializable envelope — the single-adapter counterpart
+    to build_export, for an operator who wants to export/back up/share just
+    one adapter instead of the whole DB. Raises LookupError if `source` has
+    no adapter_instances row. Records one `adapter_instance.exported` audit
+    event."""
+    row = get_adapter_instance(conn, source)
+    if row is None:
+        raise LookupError(f"no adapter instance for source {source!r}")
+
+    adapter: dict[str, Any] = {
+        "source": row["source"],
+        "adapter_type": row["adapter_type"],
+        "enabled": bool(row["enabled"]),
+        "policy": row["policy"],
+        "config": json.loads(row["config"]),
+    }
+    linked = {s: (dn, su) for s, dn, su in list_sources(conn)}.get(source)
+    if linked is not None:
+        adapter["display_name"], adapter["site_url"] = linked
+
+    export = {
+        "kind": ADAPTER_EXPORT_KIND,
+        "schema_version": ADAPTER_EXPORT_SCHEMA_VERSION,
+        "exported_at": utc_now().isoformat(),
+        "exported_by": actor,
+        # Operator sanity metadata only — never read back by import_adapter_export.
+        "source_install": get_setting("BEACON_CALLSIGN", None, conn=conn, env_fallback=False),
+        "adapter": adapter,
+    }
+    record_audit_event(
+        conn, event_type="adapter_instance.exported", actor=actor, source=source,
+    )
+    return export
+
+
+def import_adapter_export(
+    conn: sqlite3.Connection,
+    data: dict[str, Any],
+    *,
+    allow_custom_code: bool,
+    actor: str,
+    override_source: str | None = None,
+    dry_run: bool = False,
+) -> ImportItemResult:
+    """The single-adapter counterpart to import_config: validates the
+    envelope's `kind`/`schema_version` (raises ValueError otherwise), then
+    upserts the one `adapter` record through the exact same
+    _import_one_adapter_instance path the bulk importer uses.
+    `override_source`, when given, replaces the file's own `source` before
+    validation — lets an operator import someone else's adapter file under
+    a new key instead of overwriting a same-named adapter they already
+    have.
+
+    No wrapping audit event here: set_adapter_instance/set_source each
+    already emit their own per-call audit event, full traceability for
+    exactly one record."""
+    kind = data.get("kind")
+    if kind != ADAPTER_EXPORT_KIND:
+        raise ValueError(f"expected kind={ADAPTER_EXPORT_KIND!r}, got {kind!r}")
+    version = data.get("schema_version")
+    if version != ADAPTER_EXPORT_SCHEMA_VERSION:
+        raise ValueError(
+            f"adapter export schema_version {version!r} is not supported "
+            f"(this build imports v{ADAPTER_EXPORT_SCHEMA_VERSION} only)"
+        )
+
+    raw_entry = data.get("adapter")
+    entry = dict(raw_entry) if isinstance(raw_entry, dict) else {}
+    if override_source:
+        entry["source"] = override_source
+
+    existing = {row["source"] for row in list_adapter_instances(conn)}
+    known_policy_names = {p.name for p in list_policies(conn)}
+    return _import_one_adapter_instance(
+        conn,
+        entry,
+        existing_sources=existing,
+        known_policy_names=known_policy_names,
+        allow_custom_code=allow_custom_code,
+        dry_run=dry_run,
+    )

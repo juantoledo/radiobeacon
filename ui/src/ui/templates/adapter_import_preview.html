@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}{{ t('adapter_import_preview.title') }}{% endblock %}
+{% block content %}
+{% include "_config_nav.html" %}
+<a class="crumb" href="/config/adapters/import">&larr; {{ t('adapter_import.back_to_import') }}</a>
+<div class="page-header"><h1>{{ t('adapter_import_preview.title') }}</h1></div>
+
+{% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
+
+{% if result.action == "skipped" %}
+<p class="banner-warn">⚠ {{ t('adapter_import_preview.skipped', reason=result.reason) }}</p>
+{% else %}
+<p class="meta-line">{{ t('adapter_import_preview.intro') }}</p>
+
+<div class="table-wrap cards">
+<table>
+  <tbody>
+    <tr><td>{{ t('adapters_list.source_column') }}</td><td class="mono">{{ entry.source }}</td></tr>
+    <tr><td>{{ t('adapters_list.type_column') }}</td><td><span class="badge badge-neutral">{{ entry.adapter_type }}</span></td></tr>
+    <tr><td>{{ t('adapters_list.policy_column') }}</td><td>{{ entry.policy or t('adapters_list.default_value') }}</td></tr>
+    <tr><td>{{ t('adapters_list.enabled_column') }}</td><td>{{ entry.enabled }}</td></tr>
+  </tbody>
+</table>
+</div>
+
+{% if skipped_custom %}
+<p class="banner-warn">
+  ⚠ {{ t('adapter_import_preview.skipped_custom_warning', link='<a href="/config/ui">' ~ t('config.import_preview.ui_dev_tools_link') ~ '</a>') | safe }}
+</p>
+{% endif %}
+
+{% if code_preview %}
+<div class="banner-warn">
+  <p>⚠ {{ t('adapter_import_preview.custom_warning') }}</p>
+  <pre class="contents mono">{{ code_preview.code_preview }}{% if code_preview.truncated %}
+{{ t('config.import_preview.truncated_note') }}{% endif %}</pre>
+</div>
+{% endif %}
+
+{% if needs_overwrite_confirm %}
+<p class="banner-warn">⚠ {{ t('adapter_import_preview.overwrite_warning', source=entry.source) }}</p>
+{% endif %}
+
+<form method="post" action="/config/adapters/import/apply">
+  {{ csrf_field() }}
+  <textarea name="config_json" hidden>{{ raw_text }}</textarea>
+
+  <p>
+    <label for="override_source">{{ t('adapter_import_preview.override_source_label') }}</label>
+    <input type="text" id="override_source" name="override_source" value="{{ override_source }}">
+  </p>
+
+  {% if code_preview %}
+  <p><label><input type="checkbox" name="confirm_custom_code" required>
+    {{ t('config.import_preview.confirm_custom_code_label') }}</label></p>
+  {% endif %}
+
+  {% if needs_overwrite_confirm %}
+  <p><label><input type="checkbox" name="confirm_overwrite" required>
+    {{ t('adapter_import_preview.confirm_overwrite_label') }}</label></p>
+  {% endif %}
+
+  <p><button type="submit">{{ t('adapter_import_preview.confirm_button') }}</button></p>
+</form>
+{% endif %}
+{% endblock %}
