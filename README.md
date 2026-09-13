@@ -14,6 +14,14 @@ itself.
 
 ---
 
+**Contents:** [How it works](#how-it-works) ·
+[How it connects with the radio](#how-it-connects-with-the-radio) ·
+[What goes on air](#what-goes-on-air) · [The role of AI](#the-role-of-ai) ·
+[Safety and operator control](#safety-and-operator-control) ·
+[Under the hood](#under-the-hood) · [What do I need?](#what-do-i-need) ·
+[What RadioBeacon is not](#what-radiobeacon-is-not) ·
+[Quick start](#quick-start) · [Learn more](#learn-more)
+
 ## How it works
 
 RadioBeacon watches a small number of information sources on the
@@ -141,6 +149,60 @@ Aside from fetching source updates — and the optional shortening step —
 everything runs on the operator's own machine with no internet connection:
 the speech, the packet tones, the queue, and the dashboard.
 
+## What do I need?
+
+RadioBeacon only prepares the audio (or packet) — turning it into an
+actual radio signal takes a few pieces of hardware and software that
+live outside this repository:
+
+- **A computer** to run RadioBeacon and its components. Even modest,
+  low-power hardware is enough — e.g. a Raspberry Pi or a
+  [ZimaBoard](mq/README.md).
+- **[SvxLink](https://www.svxlink.org/)**, installed and configured —
+  the software that actually keys the radio. RadioBeacon only hands it
+  a finished audio file; see
+  [documentation/svxlink-txqueue-SETUP.md](documentation/svxlink-txqueue-SETUP.md).
+- **An amateur-radio license** authorizing transmission on the chosen
+  frequency; RadioBeacon is meant to be run by a licensed operator.
+- **An internet connection** so RadioBeacon can fetch updates from its
+  information sources — everything else it does runs on the local
+  machine.
+
+### The radio interface
+
+Between the computer and the radio sits an interface device — SvxLink
+talks to it, not to the radio directly. It does two jobs: it feeds the
+computer's audio output into the radio's microphone input so the
+prepared clip can be transmitted, and it carries the PTT (push-to-talk)
+signal that keys the radio for exactly as long as the clip plays, then
+releases it. Depending on the model, that PTT line rides on a USB sound
+chip's GPIO pins, a serial port's RTS/DTR lines, or a CAT command —
+SvxLink supports all of these.
+
+A combined USB sound-card-and-PTT interface built for this purpose —
+something like the **R1 2023** — is the simplest option: one USB cable
+to the computer, one audio-and-PTT cable to the radio's accessory port,
+with no separate sound card or serial adapter to wire up and configure
+by hand.
+
+### The radio itself
+
+Any transmitter that can be keyed by an external PTT signal and held
+keyed for the length of a transmission works — RadioBeacon and SvxLink
+don't need anything more advanced than that. Commercial land-mobile
+transceivers are a common choice for a build like this because they're
+rugged, inexpensive secondhand, and designed for exactly this kind of
+unattended duty cycle; a **Motorola PRO 5100** (or a similar model) is a
+reasonable example.
+
+Whatever radio is used, it has to be:
+
+- **programmed** — with the manufacturer's programming software and
+  cable — to transmit on the beacon's chosen amateur frequency,
+- **connected to an antenna and feedline** suited to that band, and
+- **able to key up repeatedly**, back to back, for as many repeats as
+  the transmission schedule calls for.
+
 ## What RadioBeacon is not
 
 - Not an official emergency channel, and not a substitute for SENAPRED,
@@ -163,6 +225,13 @@ the speech, the packet tones, the queue, and the dashboard.
 ```
 
 Once running, open `http://127.0.0.1:8080` — the operator dashboard.
+
+Setting up the radio hardware next? See
+[documentation/svxlink-txqueue-SETUP.md](documentation/svxlink-txqueue-SETUP.md)
+for installing and configuring SvxLink and Direwolf from a fresh Debian/Ubuntu
+box, apt install through on-air — or run
+[`documentation/svxlink-txqueue-install.sh`](documentation/svxlink-txqueue-install.sh)
+to automate it.
 
 ## Learn more
 

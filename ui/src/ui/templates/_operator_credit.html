@@ -7,6 +7,7 @@
 {% set OP_NAME = "Juan" %}
 {% set OP_CALL = "CD3DXZ" %}
 {% set OP_URL = "https://cd3dxz.radio" %}
+{% set GITHUB_URL = "https://github.com/juantoledo/radiobeacon" %}
 
 {# Inline fragment: "Juan · CD3DXZ" with the callsign linking to the operator's
    site in a new tab. #}
@@ -16,5 +17,5 @@
 
 {# Full site-wide footer line. #}
 {% macro footer() -%}
-<footer class="app-footer">{{ t('common.operated_by') }} {{ credit_inline() }} &middot; v{{ app_version() }}</footer>
+<footer class="app-footer">{{ t('common.operated_by') }} {{ credit_inline() }} &middot; v{{ app_version() }} &middot; <a href="{{ GITHUB_URL }}" target="_blank" rel="noopener">{{ t('common.github') }}</a></footer>
 {%- endmacro %}

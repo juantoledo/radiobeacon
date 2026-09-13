@@ -15,6 +15,14 @@ señal funciona y el boletín en sí.
 
 ---
 
+**Contenidos:** [Cómo funciona](#cómo-funciona) ·
+[Cómo se conecta con la radio](#cómo-se-conecta-con-la-radio) ·
+[Qué sale al aire](#qué-sale-al-aire) · [El papel de la IA](#el-papel-de-la-ia) ·
+[Seguridad y control del operador](#seguridad-y-control-del-operador) ·
+[Por dentro](#por-dentro) · [¿Qué necesito?](#qué-necesito) ·
+[Qué no es RadioBeacon](#qué-no-es-radiobeacon) ·
+[Inicio rápido](#inicio-rápido) · [Más información](#más-información)
+
 ## Cómo funciona
 
 RadioBeacon vigila un pequeño conjunto de fuentes de información en
@@ -150,6 +158,64 @@ Salvo la descarga de actualizaciones de las fuentes —y el paso opcional
 de resumen— todo funciona en la máquina del operador sin conexión a
 internet: la voz, los tonos de paquete, la cola y el panel.
 
+## ¿Qué necesito?
+
+RadioBeacon solo prepara el audio (o el paquete) — convertirlo en una
+señal de radio real requiere algunas piezas de hardware y software que
+están fuera de este repositorio:
+
+- **Una computadora** para ejecutar RadioBeacon y sus componentes.
+  Basta con hardware modesto y de bajo consumo — por ejemplo, una
+  Raspberry Pi o una [ZimaBoard](mq/README.md).
+- **[SvxLink](https://www.svxlink.org/)**, instalado y configurado — el
+  software que realmente activa la radio. RadioBeacon solo le entrega
+  un archivo de audio terminado; ver
+  [documentation/svxlink-txqueue-SETUP.es.md](documentation/svxlink-txqueue-SETUP.es.md).
+- **Una licencia de radioaficionado** que autorice transmitir en la
+  frecuencia elegida; RadioBeacon está pensado para ser operado por un
+  radioaficionado con licencia.
+- **Una conexión a internet** para que RadioBeacon pueda descargar
+  actualizaciones de sus fuentes de información — todo lo demás corre
+  en la máquina local.
+
+### La interfaz de radio
+
+Entre la computadora y la radio va un dispositivo de interfaz — SvxLink
+habla con él, no directamente con la radio. Cumple dos funciones: entrega
+la salida de audio de la computadora a la entrada de micrófono de la
+radio para que el clip preparado pueda transmitirse, y lleva la señal de
+PTT (push-to-talk) que activa la radio durante exactamente el tiempo que
+dura el clip, y luego la libera. Según el modelo, esa línea de PTT puede
+ir por los pines GPIO de un chip de sonido USB, por las líneas RTS/DTR de
+un puerto serie, o por un comando CAT — SvxLink admite las tres formas.
+
+Una interfaz combinada de tarjeta de sonido USB y PTT construida para
+este propósito — algo como el **R1 2023** — es la opción más simple: un
+cable USB a la computadora, un cable de audio y PTT al puerto de
+accesorios de la radio, sin necesidad de cablear ni configurar por
+separado una tarjeta de sonido o un adaptador serie.
+
+### La radio en sí
+
+Cualquier transmisor que pueda activarse con una señal de PTT externa y
+mantenerse activo durante la duración de una transmisión sirve —
+RadioBeacon y SvxLink no necesitan nada más avanzado que eso. Los
+transceptores comerciales de radio móvil terrestre son una opción común
+para un montaje como este porque son resistentes, económicos de segunda
+mano, y están diseñados justamente para este tipo de ciclo de trabajo sin
+supervisión; un **Motorola PRO 5100** (o un modelo similar) es un
+ejemplo razonable.
+
+Sea cual sea la radio usada, tiene que estar:
+
+- **programada** — con el software y el cable de programación del
+  fabricante — para transmitir en la frecuencia de radioaficionado
+  elegida para la baliza,
+- **conectada a una antena y una línea de transmisión** adecuadas para
+  esa banda, y
+- **en condiciones de activarse repetidamente**, una tras otra, tantas
+  veces como indique el calendario de transmisión.
+
 ## Qué no es RadioBeacon
 
 - No es un canal oficial de emergencias, ni un sustituto de SENAPRED,
@@ -173,6 +239,13 @@ internet: la voz, los tonos de paquete, la cola y el panel.
 ```
 
 Con todo en marcha, abre `http://127.0.0.1:8080` — el panel del operador.
+
+¿Vas a configurar el hardware de radio a continuación? Consulta
+[documentation/svxlink-txqueue-SETUP.es.md](documentation/svxlink-txqueue-SETUP.es.md)
+para instalar y configurar SvxLink y Direwolf desde una máquina Debian/Ubuntu
+recién instalada, desde el `apt install` hasta salir al aire — o ejecuta
+[`documentation/svxlink-txqueue-install.sh`](documentation/svxlink-txqueue-install.sh)
+para automatizarlo.
 
 ## Más información
 

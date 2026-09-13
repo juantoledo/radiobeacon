@@ -53,19 +53,164 @@ Una lógica `TYPE=Repeater` *sí* repite el audio de RX, pero aun así no convie
 falsear un receptor solo para anuncios — `COMMAND_PTY` también funciona ahí, de
 forma idéntica.
 
+### Dónde encaja un boletín digital (frame)
+
+No todo clip que llega a `incoming/` es voz. En modo `BEACON_TYPE=frame`, el
+propio proceso `beacon` de radiobeacon renderiza una trama AX.25 UI a un WAV
+AFSK llamando **directamente**, como subproceso de una sola vez, a
+`gen_packets` de Direwolf — no corre ningún demonio de Direwolf, y Direwolf
+nunca toca `COMMAND_PTY` ni TCL. Ese WAV se deposita en la misma carpeta
+`incoming/` que usaría un clip de voz:
+
+```
+  WAV de voz (TTS)          ─┐
+                              ├─► incoming/*.wav ──► queue/ ──► … (como arriba)
+  WAV de frame (gen_packets) ─┘
+```
+
+Una vez en staging, un WAV de frame es indistinguible de uno de voz para este
+demonio — ambos pasan por exactamente el mismo traspaso `EVENT ::playFile`.
+Ver
+[2. Instalación de SvxLink y Direwolf](#2-instalación-de-svxlink-y-direwolf-debianubuntu)
+para dejar `gen_packets` listo, y la sección "Frame: AX.25 → AFSK WAV" de
+`beacon/README.md` para cómo se arma la trama en sí.
+
+> **¿Prefieres automatizar esto?**
+> [`svxlink-txqueue-install.sh`](svxlink-txqueue-install.sh) automatiza
+> [2. Instalación de SvxLink y Direwolf](#2-instalación-de-svxlink-y-direwolf-debianubuntu)
+> y [4. Instalación](#4-instalación) más abajo — paquetes, `svxlink.conf`,
+> directorios de spool, el demonio, la unidad de systemd y, opcionalmente,
+> cablear el `.env` de radiobeacon. Se mantiene acotado a exactamente lo que
+> documenta esta guía: la programación de la radio, la antena/línea de
+> transmisión y tu licencia siguen siendo cosa tuya.
+> `sudo ./documentation/svxlink-txqueue-install.sh --help` para ver todas las
+> opciones, o `--dry-run` para previsualizar sin hacer ningún cambio.
+
 ---
 
-## 2. Requisitos previos
+## 2. Instalación de SvxLink y Direwolf (Debian/Ubuntu)
+
+Partiendo de una máquina Debian/Ubuntu recién instalada. Si SvxLink ya está
+instalado y en ejecución, salta a
+[3. Requisitos previos](#3-requisitos-previos).
+
+### 2.1 Instalar los paquetes
+
+```sh
+sudo apt update
+sudo apt install svxlink-server direwolf alsa-utils
+```
+
+`svxlink-server` es el demonio (`svxlink` es un paquete cliente aparte — no
+hace falta aquí). `alsa-utils` aporta `arecord`/`aplay`, usados a
+continuación. `direwolf` solo hace falta por su binario `gen_packets` — ver
+2.5.
+
+### 2.2 Ubicar el dispositivo de sonido de la interfaz de radio
+
+```sh
+arecord -l   # lado de captura (RX)
+aplay -l     # lado de reproducción (TX)
+```
+
+Busca la interfaz de radio — un dispositivo combinado de tarjeta de sonido
+USB y PTT como el **R1 2023**, descrito en la sección
+["La interfaz de radio"](../README.es.md#la-interfaz-de-radio) del README
+principal. Anota su número de tarjeta; SvxLink lo referencia como
+`plughw:<tarjeta>,<dispositivo>`.
+
+### 2.3 Escribir un `svxlink.conf` mínimo
+
+Edita `/etc/svxlink/svxlink.conf` con un `[SimplexLogic]` desnudo — solo audio
+y PTT, **sin `COMMAND_PTY` todavía**:
+
+```ini
+[SimplexLogic]
+TYPE=Simplex
+RX=Rx1
+TX=Tx1
+CALLSIGN=NOCALL
+
+[Rx1]
+TYPE=Local
+AUDIO_DEV=alsa:plughw:1,0     # número de tarjeta de 2.2
+AUDIO_CHANNEL=0
+SQL_DET=VOX
+VOX_LIMIT=1000
+
+[Tx1]
+TYPE=Local
+AUDIO_DEV=alsa:plughw:1,0     # misma tarjeta que Rx1 en una interfaz combinada
+AUDIO_CHANNEL=0
+PTT_TYPE=GPIO
+PTT_PORT=/dev/hidraw0         # GPIO de PTT de un dongle USB tipo CM108
+PTT_PIN=GPIO3
+```
+
+`PTT_TYPE=GPIO` sobre los pines GPIO de un chip de sonido USB es el caso común
+para una interfaz combinada como el R1 2023; SvxLink también admite PTT por
+las líneas RTS/DTR de un puerto serie o por un comando CAT — ver la
+[documentación propia de SvxLink](https://github.com/sm0svx/svxlink) para
+esos casos, no se re-explican aquí.
+
+Este paso prueba que la cadena de audio/PTT funciona por sí sola — una lógica
+desnuda que puede activarse y reproducir su propia identificación de
+estación. `COMMAND_PTY` todavía no forma parte de esto: esa línea se añade a
+este mismo bloque en [4.1 Configuración de SvxLink](#41-configuración-de-svxlink),
+una vez confirmada esta base funcionando. Ese es el punto donde el mecanismo
+de eventos TCL de [1. Cómo funciona](#1-cómo-funciona) pasa de "cómo funciona"
+a "funcionando en esta máquina".
+
+### 2.4 Activar, arrancar y probar SvxLink
+
+```sh
+sudo systemctl enable --now svxlink
+journalctl -u svxlink -f
+```
+
+Confirma que la lógica carga sin errores y que la estación se identifica
+según su propio calendario. Este es el punto de control antes de tocar
+`svxlink-txqueue`.
+
+### 2.5 Confirmar Direwolf, y detenerse ahí
+
+Sin servicio, sin `direwolf.conf`, nada que activar:
+
+```sh
+which gen_packets
+gen_packets --help
+```
+
+`gen_packets` es invocado directamente por el propio `beacon/frame_audio.py`
+de radiobeacon, una vez por cada trama — ver "Dónde encaja un boletín
+digital (frame)" más arriba. Configuración relevante del lado de
+radiobeacon: `BEACON_GEN_PACKETS_BINARY` (el nombre/ruta del comando) y
+`BEACON_DIREWOLF_CONF_PATH` (en blanco por defecto — solo se usa si corres
+por separado una instancia completa de Direwolf para otra cosa en esta
+máquina), ambas bajo `/config` → **Beacon — Direwolf** — ver
+`beacon/README.md`.
+
+---
+
+## 3. Requisitos previos
 
 - SvxLink instalado y en ejecución con al menos una lógica que tenga un
-  **transmisor** (`TX=...`). Esta guía asume que la sección de lógica se llama
-  `[SimplexLogic]` — ajusta el nombre en todas partes si el tuyo difiere.
+  **transmisor** (`TX=...`) — ver
+  [2. Instalación de SvxLink y Direwolf](#2-instalación-de-svxlink-y-direwolf-debianubuntu)
+  si todavía no lo has hecho. Esta guía asume que la sección de lógica se
+  llama `[SimplexLogic]` — ajusta el nombre en todas partes si el tuyo
+  difiere.
 - El servicio SvxLink se ejecuta como un usuario dedicado (comúnmente `svxlink`).
   Averígualo:
   ```sh
-  systemctl show svxlink -p User --value        # o revisa /etc/default/svxlink
+  grep ^RUNASUSER= /etc/default/svxlink
   ```
-  Todo lo que sigue usa `svxlink` — sustituye por tu valor.
+  La unidad del paquete `svxlink-server` de Debian/Ubuntu no tiene un `User=`
+  de systemd — ejecuta `svxlink --runasuser=${RUNASUSER}` vía
+  `EnvironmentFile=/etc/default/svxlink`, así que `systemctl show svxlink -p
+  User --value` devuelve vacío en vez del usuario real; lee `RUNASUSER`
+  directamente en su lugar. Todo lo que sigue usa `svxlink` — sustituye por tu
+  valor.
 - `python3` ≥ 3.8.
 - Acceso de escritura para el usuario de SvxLink al directorio donde se crea el
   enlace simbólico `COMMAND_PTY` (por defecto `/dev/shm`, que es escribible por
@@ -73,23 +218,28 @@ forma idéntica.
 
 ---
 
-## 3. Instalación
+## 4. Instalación
 
-### 3.1 Configuración de SvxLink
+### 4.1 Configuración de SvxLink
 
-Edita `/etc/svxlink/svxlink.conf`, en la sección `[SimplexLogic]`, añade una línea:
+Esta es la única línea que convierte la lógica desnuda y funcionando de
+[2.3](#23-escribir-un-svxlinkconf-mínimo) en una que `svxlink-txqueue` puede
+manejar. Edita `/etc/svxlink/svxlink.conf`, en la sección `[SimplexLogic]` —
+el mismo bloque de 2.3, con `COMMAND_PTY` añadido y nada más tocado:
 
 ```ini
 [SimplexLogic]
 TYPE=Simplex
 RX=Rx1
 TX=Tx1
+CALLSIGN=NOCALL
 # PTY de control: svxlink-txqueue escribe aquí "EVENT ::playFile <abs-wav>" para
 # activar el transmisor y reproducir un clip pregrabado.
 COMMAND_PTY=/dev/shm/svxlink_simplex_ctrl
 ```
 
-Nada más en `svxlink.conf` cambia. Fíjate en el valor `TIMEOUT` de la lógica
+`[Rx1]`/`[Tx1]` quedan exactamente como se configuraron en 2.3 — nada más en
+`svxlink.conf` cambia. Fíjate en el valor `TIMEOUT` de la lógica
 (por defecto `300` segundos) — limita cuánto puede durar una sola transmisión,
 así que limita la duración del clip. El servicio rechaza clips más largos que
 `TIMEOUT − 5 s`.
@@ -107,7 +257,7 @@ systemctl restart svxlink
 ls -l /dev/shm/svxlink_simplex_ctrl        # -> enlace simbólico a /dev/pts/N, propiedad del usuario svxlink
 ```
 
-### 3.2 Directorios de spool
+### 4.2 Directorios de spool
 
 ```sh
 for d in incoming queue staging sent failed; do
@@ -123,7 +273,7 @@ usuario a ese grupo con:
 usermod -aG svxlink <username>
 ```
 
-### 3.3 El demonio
+### 4.3 El demonio
 
 Guárdalo como `/usr/local/bin/svxlink-txqueue`, luego hazle `chmod +x`. Script
 completo en el [Apéndice A](#apéndice-a--usrlocalbinsvxlink-txqueue).
@@ -133,7 +283,7 @@ install -m 0755 svxlink-txqueue /usr/local/bin/svxlink-txqueue
 python3 -c "import ast; ast.parse(open('/usr/local/bin/svxlink-txqueue').read())" && echo OK
 ```
 
-### 3.4 La unidad de systemd
+### 4.4 La unidad de systemd
 
 Guárdala como `/etc/systemd/system/svxlink-txqueue.service` (texto completo en
 el [Apéndice B](#apéndice-b--etcsystemdsystemsvxlink-txqueueservice)), luego:
@@ -146,7 +296,7 @@ systemctl status svxlink-txqueue.service
 
 ---
 
-## 4. Uso
+## 5. Uso
 
 Deposita un WAV en la carpeta vigilada:
 
@@ -199,7 +349,7 @@ systemctl daemon-reload && systemctl restart svxlink-txqueue
 
 ---
 
-## 5. Verificación
+## 6. Verificación
 
 > Los pasos 3–5 activan el transmisor real. Usa una carga fantasma o una
 > frecuencia simplex despejada, e identifícate según tu licencia.
@@ -226,10 +376,12 @@ systemctl daemon-reload && systemctl restart svxlink-txqueue
 
 ---
 
-## 6. Resolución de problemas
+## 7. Resolución de problemas
 
 | Síntoma | Causa / solución |
 |---|---|
+| `gen_packets: command not found`, o `which gen_packets` no imprime nada | Direwolf no está instalado o `gen_packets` no está en el `PATH` — `sudo apt install direwolf`; confírmalo con `dpkg -L direwolf \| grep bin`. Solo importa para `BEACON_TYPE=frame`. |
+| SvxLink y un Direwolf ejecutado por separado fallan ambos con `Device or resource busy` en la misma tarjeta de sonido | Dos procesos de audio no pueden abrir el mismo dispositivo ALSA a la vez. Este proyecto solo llama a `gen_packets` de Direwolf de forma puntual (sin demonio — ver [2.5](#25-confirmar-direwolf-y-detenerse-ahí)), así que por sí solo nunca compite con SvxLink por la tarjeta; esto solo ocurre si además ejecutas una instancia completa y separada de Direwolf en la misma máquina para otra cosa. Usa `dmix`/`dsnoop` de ALSA, o no ejecutes ambos contra el mismo dispositivo a la vez. |
 | Archivo encolado, `transmitter never keyed within Ns` → `failed/` | Discrepancia en el nombre de `COMMAND_PTY` entre `svxlink.conf` y el entorno del servicio; o SvxLink no está en ejecución; o `::playFile` recibió una ruta incorrecta — revisa `/var/log/svxlink` en busca de `*** ERROR`. |
 | `<pty> missing - svxlink not running` | SvxLink caído, o `COMMAND_PTY` no está definido en la sección de lógica, o está definido en la lógica equivocada. |
 | `write to <pty> failed: [Errno 5/6]` | Enlace simbólico obsoleto tras un fallo de SvxLink — `systemctl restart svxlink` lo recrea. |
@@ -319,7 +471,11 @@ transmisión — es un monitor "¿funciona? ¿suena bien?", no una grabación.
 
 ---
 
-## 7. Desinstalación
+## 8. Desinstalación
+
+O ejecuta `sudo ./documentation/svxlink-txqueue-install.sh --uninstall`
+(añade `--purge-packages` para eliminar también los paquetes de apt) — revierte
+los mismos pasos de abajo. Manualmente:
 
 ```sh
 systemctl disable --now svxlink-txqueue.service
@@ -330,11 +486,17 @@ rm /usr/local/bin/svxlink-txqueue
 # elimina 'COMMAND_PTY=...' de [SimplexLogic] en /etc/svxlink/svxlink.conf, luego:
 systemctl restart svxlink
 rm -r /var/spool/svxlink-tx                              # opcional: elimina el spool
+sudo apt remove svxlink-server direwolf                  # opcional: elimina los paquetes de 2.1
 ```
 
 ---
 
 ## Apéndice A — `/usr/local/bin/svxlink-txqueue`
+
+La copia canónica también vive en
+[`svxlink-txqueue/svxlink-txqueue`](svxlink-txqueue/svxlink-txqueue) —
+`svxlink-txqueue-install.sh` despliega ese archivo directamente. Se mantiene
+sincronizada a mano con el listado de abajo; si editas uno, edita ambos.
 
 ```python
 #!/usr/bin/python3
@@ -782,6 +944,13 @@ if __name__ == "__main__":
 ---
 
 ## Apéndice B — `/etc/systemd/system/svxlink-txqueue.service`
+
+La copia canónica también vive en
+[`svxlink-txqueue/svxlink-txqueue.service`](svxlink-txqueue/svxlink-txqueue.service)
+— `svxlink-txqueue-install.sh` despliega ese archivo directamente (ajustando
+`User=`/`Group=` si el usuario de SvxLink detectado no es `svxlink`). Se
+mantiene sincronizada a mano con el listado de abajo; si editas uno, edita
+ambos.
 
 ```ini
 [Unit]

@@ -1,0 +1,27 @@
+[Unit]
+Description=SvxLink WAV transmit queue (inject pre-recorded audio on the air)
+Documentation=file:/usr/local/bin/svxlink-txqueue
+After=svxlink.service
+Wants=svxlink.service
+BindsTo=svxlink.service
+
+[Service]
+Type=simple
+User=svxlink
+Group=svxlink
+ExecStart=/usr/bin/python3 /usr/local/bin/svxlink-txqueue
+Restart=on-failure
+RestartSec=5
+
+# hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/spool/svxlink-tx /dev/shm
+ReadOnlyPaths=/var/log/svxlink
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+
+[Install]
+WantedBy=multi-user.target

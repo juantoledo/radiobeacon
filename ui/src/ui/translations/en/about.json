@@ -1,6 +1,8 @@
 {
   "about.title": "About RadioBeacon",
 
+  "about.toc.heading": "On this page",
+
   "about.operator.heading": "Operator",
   "about.operator.body": "This station is operated by {operator}.",
 
@@ -61,7 +63,24 @@
   "about.underhood.p2": "An unfolding emergency usually appears as a series of updates rather than one edited notice. RadioBeacon treats each update as its own bulletin and never rewrites or merges them. Anything it has already seen is ignored, so the same report is not aired twice.",
   "about.underhood.p3": "RadioBeacon never keys the radio itself. That is the job of SvxLink, the established software that controls the station's transmitter and shares the frequency courteously with other operators. RadioBeacon builds a finished audio clip and places it in a queue; SvxLink plays clips one at a time, and only after the frequency has been silent for a few seconds. A clip that has waited too long is dropped rather than sent late.",
   "about.underhood.p4": "In digital mode a bulletin goes out as a short data packet instead of speech. RadioBeacon uses Direwolf, a widely used amateur-radio packet program, to turn the text into the tones a packet receiver decodes. These packets run on an experimental frequency and never touch the public APRS network.",
+  "about.underhood.source": "Source code is available on <a href=\"{url}\" target=\"_blank\" rel=\"noopener\">GitHub</a>.",
   "about.underhood.note": "Aside from fetching source updates — and the optional shortening step — everything runs on the operator's own machine with no internet connection: the speech, the packet tones, the queue, and this dashboard.",
+
+  "about.needs.heading": "What do I need?",
+  "about.needs.intro": "RadioBeacon only prepares the audio or packet — turning it into an actual radio signal takes a few pieces of hardware and software that live outside this project:",
+  "about.needs.item1": "A computer to run RadioBeacon and its components. Even modest, low-power hardware is enough — for example a Raspberry Pi or a ZimaBoard.",
+  "about.needs.item2": "SvxLink, installed and configured — the software that actually keys the radio. RadioBeacon only hands it a finished audio file.",
+  "about.needs.item3": "An amateur-radio license authorizing transmission on the chosen frequency; RadioBeacon is meant to be run by a licensed operator.",
+  "about.needs.item4": "An internet connection so RadioBeacon can fetch updates from its information sources — everything else it does runs on the local machine.",
+  "about.needs.setup_guide": "See the <a href=\"{url}\" target=\"_blank\" rel=\"noopener\">SvxLink and Direwolf setup guide</a> for installing and configuring both from a fresh Debian/Ubuntu box, apt install through on-air.",
+
+  "about.needs.interface_heading": "The radio interface",
+  "about.needs.interface_p1": "Between the computer and the radio sits an interface device — SvxLink talks to it, not to the radio directly. It does two jobs: it feeds the computer's audio output into the radio's microphone input so the prepared clip can be transmitted, and it carries the PTT (push-to-talk) signal that keys the radio for exactly as long as the clip plays, then releases it. Depending on the model, that PTT line rides on a USB sound chip's GPIO pins, a serial port's RTS/DTR lines, or a CAT command — SvxLink supports all of these.",
+  "about.needs.interface_p2": "A combined USB sound-card-and-PTT interface built for this purpose — something like the R1 2023 — is the simplest option: one USB cable to the computer, one audio-and-PTT cable to the radio's accessory port, with no separate sound card or serial adapter to wire up and configure by hand.",
+
+  "about.needs.radio_heading": "The radio itself",
+  "about.needs.radio_p1": "Any transmitter that can be keyed by an external PTT signal and held keyed for the length of a transmission works — RadioBeacon and SvxLink don't need anything more advanced than that. Commercial land-mobile transceivers are a common choice for a build like this because they're rugged, inexpensive secondhand, and designed for exactly this kind of unattended duty cycle; a Motorola PRO 5100 (or a similar model) is a reasonable example.",
+  "about.needs.radio_p2": "Whatever radio is used, it has to be programmed — with the manufacturer's programming software and cable — to transmit on the beacon's chosen amateur frequency, connected to an antenna and feedline suited to that band, and able to key up repeatedly, back to back, for as many repeats as the transmission schedule calls for.",
 
   "about.control.heading": "Safety and operator control",
   "about.control.item1": "Silent by default. A fresh install transmits nothing. The operator has to switch transmission on and fill in the station identity — callsign, location, frequency — before anything goes on the air.",

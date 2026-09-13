@@ -2400,8 +2400,37 @@ pre.contents {
 .about {
   max-width: var(--reading-max);
 }
+/* Jump-to-section links at the top of a long page. Plain text links on a
+   subtle chip, wrapping naturally at narrow widths. */
+.about-toc ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  list-style: none;
+}
+.about-toc a {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: var(--text-sm);
+  color: var(--fg);
+  text-decoration: none;
+}
+.about-toc a:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .about-section {
   margin-bottom: var(--space-6);
+  /* keeps an anchor jump clear of the sticky mobile top bar */
+  scroll-margin-top: var(--space-4);
+}
+.about-section h3 {
+  font-size: var(--text-lg);
+  margin: var(--space-4) 0 var(--space-2);
 }
 .about-section h2 {
   font-size: var(--text-xl);

@@ -7,18 +7,33 @@
 
 <div class="about">
 
-  <section class="about-section">
+  <nav class="about-toc" aria-label="{{ t('about.toc.heading') }}">
+    <ul>
+      <li><a href="#about-operator">{{ t('about.operator.heading') }}</a></li>
+      <li><a href="#about-intro">{{ t('about.intro.heading') }}</a></li>
+      <li><a href="#about-how">{{ t('about.how.heading') }}</a></li>
+      <li><a href="#about-radio">{{ t('about.radio.heading') }}</a></li>
+      <li><a href="#about-sources">{{ t('about.sources.heading') }}</a></li>
+      <li><a href="#about-ai">{{ t('about.ai.heading') }}</a></li>
+      <li><a href="#about-control">{{ t('about.control.heading') }}</a></li>
+      <li><a href="#about-underhood">{{ t('about.underhood.heading') }}</a></li>
+      <li><a href="#about-needs">{{ t('about.needs.heading') }}</a></li>
+      <li><a href="#about-notwhat">{{ t('about.notwhat.heading') }}</a></li>
+    </ul>
+  </nav>
+
+  <section class="about-section" id="about-operator">
     <h2>{{ icon('badge', 20) }}{{ t('about.operator.heading') }}</h2>
     <p>{{ t('about.operator.body', operator=opcredit.credit_inline()) | safe }}</p>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-intro">
     <h2>{{ icon('beacon', 20) }}{{ t('about.intro.heading') }}</h2>
     <p>{{ t('about.intro.p1') }}</p>
     <p>{{ t('about.intro.p2') }}</p>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-how">
     <h2>{{ icon('route', 20) }}{{ t('about.how.heading') }}</h2>
     <p>{{ t('about.how.p1') }}</p>
     <p>{{ t('about.how.flow_intro') }}</p>
@@ -40,13 +55,13 @@
     <p class="about-flow-foot">{{ t('about.flow.logged') }}</p>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-radio">
     <h2>{{ icon('radio', 20) }}{{ t('about.radio.heading') }}</h2>
     <p>{{ t('about.radio.p1') }}</p>
     <p class="about-note">{{ t('about.radio.note') }}</p>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-sources">
     <h2>{{ icon('rss', 20) }}{{ t('about.sources.heading') }}</h2>
     <p>{{ t('about.sources.p1') }}</p>
     <ul class="about-list">
@@ -57,14 +72,14 @@
     <p class="banner-warn">⚠ {{ t('about.sources.disclaimer') }}</p>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-ai">
     <h2>{{ icon('sparkles', 20) }}{{ t('about.ai.heading') }}</h2>
     <p>{{ t('about.ai.p1') }}</p>
     <p>{{ t('about.ai.p2') }}</p>
     <p>{{ t('about.ai.p3') }}</p>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-control">
     <h2>{{ icon('shield-check', 20) }}{{ t('about.control.heading') }}</h2>
     <ul class="about-list">
       {% for n in range(1, 6) %}
@@ -73,16 +88,38 @@
     </ul>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-underhood">
     <h2>{{ icon('tune', 20) }}{{ t('about.underhood.heading') }}</h2>
     <p>{{ t('about.underhood.p1') }}</p>
     <p>{{ t('about.underhood.p2') }}</p>
     <p>{{ t('about.underhood.p3') }}</p>
     <p>{{ t('about.underhood.p4') }}</p>
+    <p>{{ t('about.underhood.source', url=opcredit.GITHUB_URL) | safe }}</p>
     <p class="about-note">{{ t('about.underhood.note') }}</p>
   </section>
 
-  <section class="about-section">
+  <section class="about-section" id="about-needs">
+    <h2>{{ icon('check', 20) }}{{ t('about.needs.heading') }}</h2>
+    <p>{{ t('about.needs.intro') }}</p>
+    <ul class="about-list">
+      {% for n in range(1, 5) %}
+      <li>{{ t('about.needs.item' ~ n) }}</li>
+      {% endfor %}
+    </ul>
+
+    {% set setup_guide_url = opcredit.GITHUB_URL ~ '/blob/main/documentation/svxlink-txqueue-SETUP' ~ ('.es.md' if locale() == 'es' else '.md') %}
+    <p>{{ t('about.needs.setup_guide', url=setup_guide_url) | safe }}</p>
+
+    <h3>{{ t('about.needs.interface_heading') }}</h3>
+    <p>{{ t('about.needs.interface_p1') }}</p>
+    <p>{{ t('about.needs.interface_p2') }}</p>
+
+    <h3>{{ t('about.needs.radio_heading') }}</h3>
+    <p>{{ t('about.needs.radio_p1') }}</p>
+    <p>{{ t('about.needs.radio_p2') }}</p>
+  </section>
+
+  <section class="about-section" id="about-notwhat">
     <h2>{{ icon('slash-circle', 20) }}{{ t('about.notwhat.heading') }}</h2>
     <ul class="about-list">
       {% for n in range(1, 4) %}

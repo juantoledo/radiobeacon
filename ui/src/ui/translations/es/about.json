@@ -1,6 +1,8 @@
 {
   "about.title": "Acerca de RadioBeacon",
 
+  "about.toc.heading": "En esta página",
+
   "about.operator.heading": "Operador",
   "about.operator.body": "Esta estación es operada por {operator}.",
 
@@ -61,7 +63,24 @@
   "about.underhood.p2": "Una emergencia en desarrollo suele aparecer como una serie de actualizaciones, no como un único aviso editado. RadioBeacon trata cada actualización como un boletín propio y nunca las reescribe ni las combina. Todo lo que ya vio se ignora, así el mismo reporte no sale al aire dos veces.",
   "about.underhood.p3": "RadioBeacon nunca activa la radio por sí mismo. De eso se encarga SvxLink, el software consolidado que controla el transmisor de la estación y comparte la frecuencia de forma cortés con otros operadores. RadioBeacon arma un clip de audio terminado y lo deja en una cola; SvxLink reproduce los clips de a uno, y solo después de que la frecuencia haya estado en silencio unos segundos. Un clip que esperó demasiado se descarta en vez de salir tarde.",
   "about.underhood.p4": "En modo digital, un boletín sale como un paquete de datos corto en lugar de voz. RadioBeacon usa Direwolf, un programa de paquete de radioafición muy difundido, para convertir el texto en los tonos que decodifica un receptor de paquete. Esos paquetes usan una frecuencia experimental y nunca tocan la red pública APRS.",
+  "about.underhood.source": "El código fuente está disponible en <a href=\"{url}\" target=\"_blank\" rel=\"noopener\">GitHub</a>.",
   "about.underhood.note": "Salvo la descarga de actualizaciones de las fuentes —y el paso opcional de resumen— todo funciona en la máquina del operador sin conexión a internet: la voz, los tonos de paquete, la cola y este panel.",
+
+  "about.needs.heading": "¿Qué necesito?",
+  "about.needs.intro": "RadioBeacon solo prepara el audio o el paquete — convertirlo en una señal de radio real requiere algunas piezas de hardware y software que están fuera de este proyecto:",
+  "about.needs.item1": "Una computadora para ejecutar RadioBeacon y sus componentes. Basta con hardware modesto y de bajo consumo — por ejemplo, una Raspberry Pi o una ZimaBoard.",
+  "about.needs.item2": "SvxLink, instalado y configurado — el software que realmente activa la radio. RadioBeacon solo le entrega un archivo de audio terminado.",
+  "about.needs.item3": "Una licencia de radioaficionado que autorice transmitir en la frecuencia elegida; RadioBeacon está pensado para ser operado por un radioaficionado con licencia.",
+  "about.needs.item4": "Una conexión a internet para que RadioBeacon pueda descargar actualizaciones de sus fuentes de información — todo lo demás corre en la máquina local.",
+  "about.needs.setup_guide": "Consulta la <a href=\"{url}\" target=\"_blank\" rel=\"noopener\">guía de instalación de SvxLink y Direwolf</a> para instalar y configurar ambos desde una máquina Debian/Ubuntu recién instalada, desde el apt install hasta salir al aire.",
+
+  "about.needs.interface_heading": "La interfaz de radio",
+  "about.needs.interface_p1": "Entre la computadora y la radio va un dispositivo de interfaz — SvxLink habla con él, no directamente con la radio. Cumple dos funciones: entrega la salida de audio de la computadora a la entrada de micrófono de la radio para que el clip preparado pueda transmitirse, y lleva la señal de PTT (push-to-talk) que activa la radio durante exactamente el tiempo que dura el clip, y luego la libera. Según el modelo, esa línea de PTT puede ir por los pines GPIO de un chip de sonido USB, por las líneas RTS/DTR de un puerto serie, o por un comando CAT — SvxLink admite las tres formas.",
+  "about.needs.interface_p2": "Una interfaz combinada de tarjeta de sonido USB y PTT construida para este propósito — algo como el R1 2023 — es la opción más simple: un cable USB a la computadora, un cable de audio y PTT al puerto de accesorios de la radio, sin necesidad de cablear ni configurar por separado una tarjeta de sonido o un adaptador serie.",
+
+  "about.needs.radio_heading": "La radio en sí",
+  "about.needs.radio_p1": "Cualquier transmisor que pueda activarse con una señal de PTT externa y mantenerse activo durante la duración de una transmisión sirve — RadioBeacon y SvxLink no necesitan nada más avanzado que eso. Los transceptores comerciales de radio móvil terrestre son una opción común para un montaje como este porque son resistentes, económicos de segunda mano, y están diseñados justamente para este tipo de ciclo de trabajo sin supervisión; un Motorola PRO 5100 (o un modelo similar) es un ejemplo razonable.",
+  "about.needs.radio_p2": "Sea cual sea la radio usada, tiene que estar programada —con el software y el cable de programación del fabricante— para transmitir en la frecuencia de radioaficionado elegida para la baliza, conectada a una antena y una línea de transmisión adecuadas para esa banda, y en condiciones de activarse repetidamente, una tras otra, tantas veces como indique el calendario de transmisión.",
 
   "about.control.heading": "Seguridad y control del operador",
   "about.control.item1": "En silencio por defecto. Una instalación nueva no transmite nada. El operador debe activar la transmisión y completar la identidad de la estación — indicativo, ubicación, frecuencia — antes de que algo salga al aire.",
