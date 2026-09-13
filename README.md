@@ -1,5 +1,10 @@
 # radiobeacon
 
+[![Version](https://img.shields.io/badge/version-v0.4.1-blue)](CHANGELOG.md)
+[![Latest release](https://img.shields.io/github/v/release/juantoledo/radiobeacon)](https://github.com/juantoledo/radiobeacon/releases)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 *Versión en español: [README.es.md](README.es.md).*
 
 **RadioBeacon** is the software behind an experimental amateur-radio
@@ -11,6 +16,11 @@ short public-interest bulletins on the air — civil-protection early
 warnings and earthquake reports. Someone who hears the beacon gets two
 things at once: confirmation that the signal path works, and the bulletin
 itself.
+
+<p align="center">
+  <img src="documentation/images/dashboard.png" alt="RadioBeacon ops dashboard" width="49%">
+  <img src="documentation/images/about.png" alt="RadioBeacon About page" width="49%">
+</p>
 
 ---
 

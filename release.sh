@@ -66,6 +66,14 @@ for f in data-adapters/pyproject.toml dispatcher/pyproject.toml; do
   rm -f "$f.bak"
 done
 
+# Keeps the static version badge in both READMEs current — the badge URL
+# always has the form version-vX.Y.Z-blue, so this anchored substitution
+# can't touch any other badge on the same line.
+for f in README.md README.es.md; do
+  sed -i.bak -E "s/version-v[0-9]+\.[0-9]+\.[0-9]+-blue/version-${new_tag}-blue/" "$f"
+  rm -f "$f.bak"
+done
+
 previous_tag="$(git describe --tags --abbrev=0 2>/dev/null || true)"
 if [ -n "$previous_tag" ]; then
   log_range="${previous_tag}..HEAD"
@@ -97,7 +105,7 @@ insert_line="${insert_line:-$(($(wc -l < CHANGELOG.md) + 1))}"
 } > CHANGELOG.md.new
 mv CHANGELOG.md.new CHANGELOG.md
 
-git add VERSION CHANGELOG.md data-adapters/pyproject.toml dispatcher/pyproject.toml
+git add VERSION CHANGELOG.md data-adapters/pyproject.toml dispatcher/pyproject.toml README.md README.es.md
 git commit -m "chore(release): ${new_tag}"
 git tag -a "$new_tag" -m "$new_tag"
 
