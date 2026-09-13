@@ -122,6 +122,7 @@ def test_api_adapter_config_from_dict_minimal():
 
     assert cfg.url == "https://example.test/"
     assert cfg.method == "GET"
+    assert cfg.response_format == "json"
     assert cfg.headers == {}
     assert cfg.query_params == {}
     assert cfg.items_path == ""
@@ -133,6 +134,7 @@ def test_api_adapter_config_from_dict_full():
         {
             "url": "https://example.test/",
             "method": "POST",
+            "response_format": "xml",
             "headers": {"Accept": "application/json"},
             "query_params": {"key": "value"},
             "body": "{}",
@@ -145,6 +147,7 @@ def test_api_adapter_config_from_dict_full():
     )
 
     assert cfg.method == "POST"
+    assert cfg.response_format == "xml"
     assert cfg.headers == {"Accept": "application/json"}
     assert cfg.query_params == {"key": "value"}
     assert cfg.body == "{}"
@@ -152,6 +155,18 @@ def test_api_adapter_config_from_dict_full():
     assert cfg.mapping_for("id") == FieldMapping(template="{Id}")
     assert cfg.mapping_for("title") == FieldMapping(template="fixed")
     assert cfg.mapping_for("contents") == FieldMapping()  # unconfigured -> empty, not KeyError
+
+
+def test_api_adapter_config_response_format_defaults_to_json_when_absent():
+    cfg = ApiAdapterConfig.from_dict({"url": "https://example.test/"})
+
+    assert cfg.response_format == "json"
+
+
+def test_api_adapter_config_response_format_round_trips():
+    cfg = ApiAdapterConfig.from_dict({"url": "https://example.test/", "response_format": "xml"})
+
+    assert cfg.response_format == "xml"
 
 
 def test_field_mapping_template_supports_nested_dotted_path():

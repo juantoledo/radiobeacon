@@ -39,6 +39,8 @@
   "adapter_form.section.connection": "1. Conexión",
   "adapter_form.field.url_label": "URL",
   "adapter_form.field.method_label": "Método",
+  "adapter_form.field.response_format_label": "Formato de respuesta",
+  "adapter_form.help.response_format": "Cómo se analiza el cuerpo de la respuesta antes de aplicar items_path/mapping. En XML, un elemento repetido solo se convierte en lista cuando hay 2 o más en la respuesta; con uno solo, el mapeo lo trata como un único elemento.",
   "adapter_form.field.items_path_label": "Ruta de elementos",
   "adapter_form.field.items_path_placeholder": "vacío = la raíz de la respuesta es la lista, p. ej. result.items",
   "adapter_form.field.body_label": "Cuerpo",

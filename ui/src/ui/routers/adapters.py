@@ -246,6 +246,7 @@ def _config_to_fields(adapter_type: str, config: dict) -> dict:
     return {
         "url": config.get("url") or "",
         "method": config.get("method") or "GET",
+        "response_format": config.get("response_format") or "json",
         "items_path": config.get("items_path") or "",
         "body": config.get("body") or "",
         "headers": [{"key": k, "value": v} for k, v in (config.get("headers") or {}).items()],
@@ -289,6 +290,7 @@ def _form_to_fields(adapter_type: str, form: FormData) -> dict:
     return {
         "url": form.get("url") or "",
         "method": form.get("method") or "GET",
+        "response_format": form.get("response_format") or "json",
         "items_path": form.get("items_path") or "",
         "body": form.get("body") or "",
         "headers": headers,
@@ -338,6 +340,7 @@ def _form_to_config(adapter_type: str, form: FormData) -> dict:
     config: dict = {
         "url": fields["url"].strip(),
         "method": fields["method"],
+        "response_format": fields["response_format"],
         "headers": {row["key"]: row["value"] for row in fields["headers"] if row["key"].strip()},
         "query_params": {
             row["key"]: row["value"] for row in fields["query_params"] if row["key"].strip()

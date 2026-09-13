@@ -39,6 +39,8 @@
   "adapter_form.section.connection": "1. Connection",
   "adapter_form.field.url_label": "URL",
   "adapter_form.field.method_label": "Method",
+  "adapter_form.field.response_format_label": "Response format",
+  "adapter_form.help.response_format": "How the response body is parsed before items_path/mapping run. For XML, a single repeated element only becomes a list once there are 2+ of them in the response — with just one, mapping treats it as one item.",
   "adapter_form.field.items_path_label": "Items path",
   "adapter_form.field.items_path_placeholder": "blank = response root is the list, e.g. result.items",
   "adapter_form.field.body_label": "Body",

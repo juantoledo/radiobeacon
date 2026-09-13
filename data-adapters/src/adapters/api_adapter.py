@@ -6,10 +6,13 @@ import socket
 import urllib.error
 import urllib.request
 import uuid
+import xml.parsers.expat
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode, urlsplit
+
+import xmltodict
 
 from .base import AdapterItem, DataSourceAdapter, SourceReading
 from .storage import DEFAULT_DB_PATH, get_connection, get_setting, get_source_fields
@@ -63,7 +66,7 @@ def _assert_public_host(host: str) -> None:
 
 
 def _assert_scheme_allowed(url: str) -> None:
-    """Cheap, no I/O — the up-front check in _fetch_json for a clear error."""
+    """Cheap, no I/O — the up-front check in _fetch_response for a clear error."""
     scheme = urlsplit(url).scheme.lower()
     if scheme not in _ALLOWED_SCHEMES:
         raise BlockedRequestError(
@@ -287,6 +290,7 @@ class ApiAdapterConfig:
 
     url: str
     method: str = "GET"
+    response_format: str = "json"  # "json" | "xml" — how the response body is parsed
     headers: dict[str, str] = field(default_factory=dict)
     query_params: dict[str, str] = field(default_factory=dict)
     body: str | None = None
@@ -305,6 +309,7 @@ class ApiAdapterConfig:
         return cls(
             url=config["url"],
             method=config.get("method") or "GET",
+            response_format=config.get("response_format") or "json",
             headers=config.get("headers") or {},
             query_params=config.get("query_params") or {},
             body=config.get("body"),
@@ -375,7 +380,7 @@ def _map_item(
     )
 
 
-def _fetch_json(cfg: ApiAdapterConfig, *, allow_private: bool = False) -> Any:
+def _fetch_response(cfg: ApiAdapterConfig, *, allow_private: bool = False) -> Any:
     url = cfg.url
     if cfg.query_params:
         url = f"{url}?{urlencode(cfg.query_params)}"
@@ -395,7 +400,13 @@ def _fetch_json(cfg: ApiAdapterConfig, *, allow_private: bool = False) -> Any:
         raise BlockedRequestError(
             f"response exceeds {_MAX_RESPONSE_BYTES} bytes; refusing to buffer it"
         )
-    return json.loads(raw.decode("utf-8"))
+    text = raw.decode("utf-8")
+    if cfg.response_format == "xml":
+        try:
+            return xmltodict.parse(text)
+        except xml.parsers.expat.ExpatError as exc:
+            raise ValueError(f"invalid XML response: {exc}") from exc
+    return json.loads(text)
 
 
 def _find_array_paths(
@@ -435,14 +446,14 @@ def preview_response(
     right one?" is answered directly instead of the operator guessing a
     dotted path blind and finding out only via a failed/empty fetch.
 
-    Raises the same way _fetch_json does (network/HTTP errors); the
+    Raises the same way _fetch_response does (network/HTTP errors); the
     caller (ui.routers.adapters) turns that into a user-facing error. A
     bad `items_path` (KeyError/TypeError from _lookup_path) is NOT
     raised — it's reported via `items_path_resolved=False` instead, since
     an operator mid-way through finding the right path is the expected
     case here, not a fatal error."""
     cfg = ApiAdapterConfig.from_dict(config)
-    raw_response = _fetch_json(cfg, allow_private=allow_private)
+    raw_response = _fetch_response(cfg, allow_private=allow_private)
 
     candidates = [
         {
@@ -562,7 +573,7 @@ class ApiAdapter(DataSourceAdapter):
         now = utc_now()
         try:
             cfg = ApiAdapterConfig.from_dict(self.config)
-            raw_response = _fetch_json(cfg, allow_private=self._allow_private_fetch())
+            raw_response = _fetch_response(cfg, allow_private=self._allow_private_fetch())
             raw_items = _lookup_path(raw_response, cfg.items_path)
             if isinstance(raw_items, dict):
                 # items_path resolved to a single object rather than a

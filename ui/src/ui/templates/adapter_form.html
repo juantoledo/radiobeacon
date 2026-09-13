@@ -95,6 +95,17 @@
                     </td>
                   </tr>
                   <tr>
+                    <th><label for="response_format">{{ t('adapter_form.field.response_format_label') }}</label></th>
+                    <td>
+                      <select id="response_format" name="response_format">
+                        {% for f in ("json", "xml") %}
+                        <option value="{{ f }}" {% if api_fields.response_format == f %}selected{% endif %}>{{ f | upper }}</option>
+                        {% endfor %}
+                      </select>
+                      <div class="meta-line">{{ t('adapter_form.help.response_format') }}</div>
+                    </td>
+                  </tr>
+                  <tr>
                     <th><label for="items_path">{{ t('adapter_form.field.items_path_label') }}</label></th>
                     <td>
                       <input id="items_path" name="items_path" type="text" value="{{ api_fields.items_path }}"

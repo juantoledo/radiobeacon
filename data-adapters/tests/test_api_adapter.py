@@ -446,3 +446,76 @@ def test_fetch_rejects_oversize_response():
         reading = ApiAdapter("x", CSN_CONFIG).fetch()
     assert not reading.ok
     assert "bytes" in reading.error
+
+
+# --------------------------------- response_format: xml ---------------------------------
+
+
+class _FakeXmlResponse:
+    def __init__(self, xml_str: str):
+        self._body = xml_str.encode("utf-8")
+
+    def read(self, amt=None):
+        return self._body if amt is None else self._body[:amt]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+XML_CONFIG = {
+    "url": "https://api.example.com/quakes.xml",
+    "method": "GET",
+    "response_format": "xml",
+    "items_path": "quakes.quake",
+    "mapping": {
+        "id": {"template": "{@id}"},
+        "title": {"template": "M{magnitude} - {location.name}"},
+        "contents": {"template": "M{magnitude} at {location.name}"},
+    },
+}
+
+XML_RESPONSE = """<?xml version="1.0"?>
+<quakes>
+  <quake id="q1">
+    <magnitude>5.0</magnitude>
+    <location><name>Test Zone</name></location>
+  </quake>
+  <quake id="q2">
+    <magnitude>3.0</magnitude>
+    <location><name>Other Zone</name></location>
+  </quake>
+</quakes>
+"""
+
+
+def test_fetch_parses_xml_response_with_attribute_and_nested_element_mapping():
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeXmlResponse(XML_RESPONSE)):
+        reading = ApiAdapter("quakes", XML_CONFIG).fetch()
+
+    assert reading.ok
+    assert len(reading.data) == 2
+    ids = {item.id for item in reading.data}
+    assert ids == {"q1", "q2"}
+    titles = {item.title for item in reading.data}
+    assert titles == {"M5.0 - Test Zone", "M3.0 - Other Zone"}
+
+
+def test_fetch_reports_malformed_xml_as_a_failed_reading():
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeXmlResponse("<not-closed>")):
+        reading = ApiAdapter("quakes", XML_CONFIG).fetch()
+
+    assert not reading.ok
+    assert reading.error
+
+
+def test_fetch_defaults_to_json_when_response_format_absent():
+    config = {**CSN_CONFIG}
+    config.pop("response_format", None)
+    with patch("adapters.api_adapter._OPENER.open", return_value=_FakeResponse(CSN_RESPONSE)):
+        reading = ApiAdapter("csn", config).fetch()
+
+    assert reading.ok
+    assert len(reading.data) == 2

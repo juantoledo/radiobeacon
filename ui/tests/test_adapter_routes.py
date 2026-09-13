@@ -166,6 +166,7 @@ def test_adapter_create_persists_structured_api_config(client, conn):
     assert row["policy"] == "urgent"
     config = json.loads(row["config"])
     assert config["url"] == "https://example.test/api"
+    assert config["response_format"] == "json"  # left unset in the post -> defaults
     assert config["headers"] == {"Accept": "application/json"}
     assert config["mapping"]["id"] == {"template": "{Id}"}
     assert config["mapping"]["title"] == {"template": "{Name}"}
@@ -173,6 +174,49 @@ def test_adapter_create_persists_structured_api_config(client, conn):
     assert get_source_fields(conn, "new-source") == {
         "source_name": "New Source", "source_url": "https://example.test/",
     }
+
+
+def test_adapter_create_persists_xml_response_format(client, conn):
+    response = client.post(
+        "/config/adapters",
+        data={
+            "mode": "create",
+            "source": "xml-source",
+            "adapter_type": "api",
+            "url": "https://example.test/feed.xml",
+            "method": "GET",
+            "response_format": "xml",
+            "items_path": "items.item",
+            "map_id_template": "{@id}",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    row = get_adapter_instance(conn, "xml-source")
+    config = json.loads(row["config"])
+    assert config["response_format"] == "xml"
+
+
+def test_adapter_new_page_offers_response_format_select(client):
+    response = client.get("/config/adapters/new")
+
+    assert response.status_code == 200
+    assert 'id="response_format"' in response.text
+    assert 'value="json" selected' in response.text
+    assert 'value="xml"' in response.text
+
+
+def test_adapter_edit_page_prefills_saved_response_format(client, conn):
+    set_adapter_instance(
+        conn, "xml-edit", "api",
+        {"url": "https://x", "response_format": "xml", "items_path": "items.item"},
+    )
+
+    response = client.get("/config/adapters/xml-edit/edit")
+
+    assert response.status_code == 200
+    assert 'value="xml" selected' in response.text
 
 
 def test_adapter_create_custom_type_config_is_only_code(client, conn):

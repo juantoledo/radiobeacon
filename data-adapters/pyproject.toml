@@ -19,6 +19,7 @@ dependencies = [
     "anthropic",     # adapters.llm provider SDKs (also used by actions.ai)
     "openai",
     "ollama",
+    "xmltodict",     # api adapter: parse XML responses into the same dict/list shape as JSON
 ]
 
 [tool.setuptools.packages.find]
