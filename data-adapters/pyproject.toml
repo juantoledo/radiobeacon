@@ -9,7 +9,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "radiobeacon-adapters"
-version = "0.4.2"
+version = "0.5.0"
 description = "Shared data layer, settings, timeutil and LLM helpers for radiobeacon"
 requires-python = ">=3.10"
 dependencies = [

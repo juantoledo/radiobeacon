@@ -1,6 +1,6 @@
 # radiobeacon
 
-[![Version](https://img.shields.io/badge/version-v0.4.2-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-v0.5.0-blue)](CHANGELOG.md)
 [![Latest release](https://img.shields.io/github/v/release/juantoledo/radiobeacon)](https://github.com/juantoledo/radiobeacon/releases)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)

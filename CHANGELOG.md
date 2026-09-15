@@ -5,6 +5,15 @@ unified version covers the whole project (`data-adapters`, `dispatcher`,
 `actions`, `beacon`, `ui`), not a version per package. Entries are added by
 `./release.sh`.
 
+## v0.5.0 — 2026-09-15
+
+- Add presentation video link to Spanish README
+- Added import / export adapter capabilities
+- Add XML response support to the API adapter
+- Speed up startup and stop the UI event loop blocking on adapter tests
+- Steady-state performance pass and AJAX partial updates for the dashboard
+- Redesign the dashboard as a fixed-viewport mission-control layout
+
 ## v0.4.2 — 2026-09-13
 
 - Remove dockerized UI deployment option
