@@ -656,6 +656,30 @@ main {
   .sidebar { transition: none; }
 }
 
+/* ---- dashboard-page: fixed single-viewport layout, no page scroll ----
+   The dashboard is read at a glance, not scrolled through — everything
+   above the activity/side-panel row sizes to its own content, and that
+   last row absorbs whatever height is left and is the only thing that
+   can ever grow an internal scrollbar (see .activity-panel/.stat-grid
+   below). Scoped to this one page via body.dashboard-page (set by
+   dashboard.html's body_class block) so no other page's normal, fully
+   scrolling layout is affected. */
+body.dashboard-page { height: 100dvh; overflow: hidden; }
+body.dashboard-page .app-main { overflow: hidden; min-height: 0; }
+body.dashboard-page main {
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--space-4);
+}
+body.dashboard-page .app-footer { display: none; } /* no room for it in a no-scroll layout */
+@media (max-width: 960px) {
+  body.dashboard-page { display: flex; flex-direction: column; }
+  body.dashboard-page .mobile-bar { flex: none; }
+  body.dashboard-page .app-main { flex: 1; }
+}
+
 /* ============================ Page header =============================== */
 
 .page-header {
@@ -668,6 +692,16 @@ main {
 }
 .page-header h1 { margin: 0; }
 .page-header h2, .page-header h3 { margin: 0; }
+body.dashboard-page .page-header {
+  flex: none;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(6px);
+}
 
 /* A lighter section-level counterpart to .page-header, which was designed
    as a one-per-page title bar — for a mid-page subsection's own title +
@@ -838,8 +872,7 @@ details.config-section > summary {
    their own layout deltas (padding, margin, flex/grid). */
 .surface,
 .panel,
-.status-tile,
-.kpi,
+.tile,
 a.tool-card,
 .table-wrap,
 form.filters,
@@ -893,6 +926,10 @@ form.action,
 
 /* ---- quick-controls -------------------------------------------------- */
 
+/* A left accent bar sets this panel apart from the read-only status/KPI
+   tiles around it — these are the controls an operator actually acts on,
+   not just glances at. */
+.quick-controls { border-left: 4px solid var(--accent); }
 .quick-controls .panel-head { margin-bottom: var(--space-3); }
 .toggle-grid {
   display: grid;
@@ -1127,27 +1164,48 @@ form.action,
 .mtx-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-2); }
 #manual-tx-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* ---- system status strip ------------------------------------------- */
-
-.status-strip {
+/* ---- bento metrics mosaic -------------------------------------------
+   Replaces the old status-strip + kpi-row (two separate flat rows of
+   equal-weight boxes) with one grid: a large Beacon/on-air hero tile
+   anchors a mosaic of the other 8 metrics around it, instead of stacking
+   the same visual weight twice. Tiles link into /config/* (admin-only) —
+   the href is simply omitted for a 'user'-role visitor, leaving a plain,
+   non-navigable element that reads the same but isn't a link (no
+   tabindex, no href to follow) rather than a route they'd get a 403
+   from. */
+.bento {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  grid-template-columns: repeat(4, 1fr);
+  grid-template-areas:
+    "hero hero ingest queue"
+    "hero hero ai    clock"
+    "items audit policies failed";
   gap: var(--space-2);
   margin-bottom: var(--space-5);
 }
-.status-tile {
+@media (max-width: 860px) {
+  .bento { grid-template-columns: repeat(2, 1fr); grid-template-areas: none; }
+  .bento > * { grid-area: auto !important; }
+}
+.tile {
+  grid-area: var(--tile-area);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 0.3rem;
   padding: 0.8rem 0.9rem;
   color: var(--fg);
+  border-top: 3px solid var(--tile-accent, var(--border));
+  transition: transform var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
 }
-.status-tile:hover {
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+.tile:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
   text-decoration: none;
   color: var(--fg);
 }
-.status-tile-top {
+@media (prefers-reduced-motion: reduce) { .tile { transition: none; } .tile:hover { transform: none; } }
+.tile-top {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -1157,7 +1215,7 @@ form.action,
   letter-spacing: 0.04em;
   color: var(--fg-muted);
 }
-.status-tile-value {
+.tile-value {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -1165,11 +1223,30 @@ form.action,
   font-weight: var(--weight-bold);
   letter-spacing: -0.02em;
 }
-.status-tile-sub {
+.tile-sub {
   font-size: var(--text-xs);
   color: var(--fg-muted);
   overflow-wrap: anywhere;
 }
+.tile-hero {
+  --tile-area: hero;
+  --tile-accent: var(--on-air);
+  padding: var(--space-4);
+  justify-content: space-between;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--on-air) 7%, var(--bg-raised)), var(--bg-raised) 60%);
+}
+.tile-hero .hero-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.tile-hero .hero-state { font-family: var(--font-display); font-size: var(--text-2xl); line-height: 1.1; letter-spacing: 0.01em; }
+.tile-hero .hero-meta { display: flex; flex-wrap: wrap; gap: var(--space-3); font-size: var(--text-xs); color: var(--fg-muted); margin-top: 0.2rem; }
+.tile-hero .hero-meta strong { color: var(--fg); font-weight: var(--weight-semibold); }
+.tile-ingest { --tile-area: ingest; }
+.tile-queue { --tile-area: queue; }
+.tile-ai { --tile-area: ai; }
+.tile-clock { --tile-area: clock; }
+.tile-items { --tile-area: items; }
+.tile-audit { --tile-area: audit; }
+.tile-policies { --tile-area: policies; }
+.tile-failed { --tile-area: failed; }
 .state-dot {
   width: 0.6rem;
   height: 0.6rem;
@@ -1198,53 +1275,64 @@ form.action,
 }
 .dash-col-main, .dash-col-side { min-width: 0; container-type: inline-size; }
 
+/* ---- dashboard-page: the flex chain that fills the viewport, with only
+   the activity feed / beacon stat panel scrolling internally — see the
+   shell rules above (body.dashboard-page). #dashboard-content is the live
+   fragment's own outer div (_dashboard_live.html), already the thing
+   dashboard-refresh.js patches, so no extra wrapper is needed. */
+body.dashboard-page .panel { margin-bottom: 0; } /* spacing comes from flex gap below instead */
+body.dashboard-page #dashboard-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow: hidden;
+}
+body.dashboard-page .dash-pipe,
+body.dashboard-page .quick-controls,
+body.dashboard-page .bento,
+body.dashboard-page .banner-warn { flex: none; }
+body.dashboard-page .dash-grid {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+body.dashboard-page .dash-col-main,
+body.dashboard-page .dash-col-side {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow: hidden;
+}
+body.dashboard-page .activity-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.dashboard-page .activity-panel .feed { flex: 1; min-height: 0; overflow-y: auto; }
+body.dashboard-page .dash-col-side > .panel:last-child {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.dashboard-page .dash-col-side > .panel:last-child .stat-grid { flex: 1; min-height: 0; overflow-y: auto; }
+
 /* A column's own pre.contents/table no longer needs to fit a full-page
    reading width — the column itself already bounds it, and re-applying
    --reading-max on top just wastes the rest of the column as blank
    gutter next to the side rail. */
 .dash-col-main pre.contents { max-width: 100%; }
 
-/* ---- KPI row ------------------------------------------------------ */
-
-.kpi-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
-}
-@media (max-width: 640px) { .kpi-row { grid-template-columns: 1fr 1fr; } }
-.kpi {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.9rem 1rem;
-}
-.kpi-wide { grid-column: span 2; }
-@media (max-width: 560px) { .kpi-wide { grid-column: span 1; } }
-.kpi-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--fg-muted);
-}
-.kpi-value { font-size: var(--text-2xl); font-weight: var(--weight-bold); letter-spacing: -0.03em; line-height: 1.1; }
-.kpi-foot { font-size: var(--text-xs); color: var(--fg-muted); }
 .kpi-spark { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.15rem; }
 
-.src-list { list-style: none; margin: var(--space-3) 0 0; padding: 0; }
-.src-list li {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0;
-  border-top: 1px solid var(--border);
-  font-size: var(--text-sm);
-}
-.src-list .src-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .spark {
   width: 100%;
   height: 2.4rem;
@@ -1321,8 +1409,44 @@ a.feed-main:hover .feed-title { color: var(--accent); }
   white-space: nowrap;
 }
 .feed-meta { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; font-size: var(--text-xs); }
-.feed-time { flex-shrink: 0; font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; }
+.feed-time { flex-shrink: 0; font-size: var(--text-xs); color: var(--fg-muted); white-space: nowrap; margin-left: auto; }
 .feed-empty { color: var(--fg-muted); padding: var(--space-5) 0; text-align: center; }
+
+/* Dashboard-only timeline treatment: a connecting line + a leading icon
+   bubble per row. Scoped to .activity-panel (dashboard-exclusive) rather
+   than the bare .feed/li rules above, which item_detail.html's own
+   "Transmissions" feed also reuses unchanged. */
+.activity-panel .feed { position: relative; }
+.activity-panel .feed > li {
+  align-items: flex-start;
+  padding: 0 0 var(--space-4);
+  border-bottom: none;
+}
+.activity-panel .feed > li:last-child { padding-bottom: 0; }
+.activity-panel .feed::before {
+  content: "";
+  position: absolute;
+  left: 0.85rem;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  width: 1px;
+  background: var(--border);
+}
+.feed-icon {
+  flex: none;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+  position: relative;
+  z-index: 1;
+}
+.feed-icon.urgent { background: color-mix(in srgb, var(--danger) 15%, var(--bg-raised)); color: var(--danger); border-color: color-mix(in srgb, var(--danger) 30%, var(--border)); }
 
 /* Per-item play button (Activity feed) — compact icon button, not the
    default filled button. */
@@ -1375,7 +1499,7 @@ a.feed-main:hover .feed-title { color: var(--accent); }
 /* Per-item page "Transmissions" table */
 .tx-list td.actions-cell { text-align: right; }
 
-/* ---- beacon side panel ---------------------------------------- */
+/* ---- item detail page: source_date_time/fetched_at/captured_at ---- */
 
 .stat-list { margin: 0; display: flex; flex-direction: column; }
 .stat-list > div {
@@ -1389,6 +1513,26 @@ a.feed-main:hover .feed-title { color: var(--accent); }
 .stat-list > div:last-child { border-bottom: none; }
 .stat-list dt { color: var(--fg-muted); }
 .stat-list dd { margin: 0; text-align: right; font-weight: var(--weight-medium); }
+
+/* ---- beacon side panel ---------------------------------------- */
+
+.stat-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+}
+.stat-chip {
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.stat-chip dt { color: var(--fg-muted); font-size: var(--text-xs); order: 1; }
+.stat-chip dd { margin: 0; font-weight: var(--weight-semibold); font-size: var(--text-sm); order: 0; }
+.stat-chip.wide { grid-column: 1 / -1; }
 
 /* ============================ Tables ================================== */
 
@@ -3067,8 +3211,13 @@ pre.contents {
  * mirror the .state-ok/.state-warn dots used elsewhere on the dashboard;
  * siren red (--on-air) is reserved for the real transmitter alone, so a
  * merely-busy stage never reads as "on air". */
-.dash-pipe { margin: var(--space-4) 0 var(--space-5); }
-.dash-pipe .pipe--wide { max-width: none; }
+.dash-pipe { margin: 0; }
+.dash-pipe .pipe--wide { max-width: 40rem; margin: 0 auto; }
+/* The dashboard page no longer scrolls (see body.dashboard-page above), so
+   .pipe's scroll-driven entrance (animation-timeline: view(), in the base
+   .pipe rule) has no scroll distance to key off — skip it and render lit
+   at rest, same as that rule's own prefers-reduced-motion fallback. */
+body.dashboard-page .pipe { animation: none; opacity: 1; transform: none; }
 
 /* Baseline: suppress everything that implies a bulletin is mid-flight —
    each node's own data-state supplies its "lit" look instead. */

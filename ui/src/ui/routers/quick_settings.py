@@ -27,7 +27,6 @@ _BOOL_TOGGLES: dict[str, str] = {
     "BEACON_ENABLED": "Beacon transmit",
     "BEACON_WATERMARK_ENABLED": "Periodic watermark",
     "ACTIONS_AI_ENABLED": "AI summarization",
-    "UI_DEV_TOOLS_ENABLED": "Developer tools",
 }
 
 # Small fixed-choice switches (not booleans).

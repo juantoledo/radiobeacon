@@ -1,8 +1,14 @@
 {% extends "base.html" %}
 {% block title %}{{ t('dashboard.title') }}{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>{{ t('dashboard.title') }}</h1>
+  {# The sidebar's own "Dashboard" nav item is already active/highlighted
+     here, so a second visible title just repeats it — kept for a11y
+     landmark structure (one h1 per page) but visually hidden, freeing
+     the whole strip's height for the status/audio controls that don't
+     appear anywhere else on the page. #}
+  <h1 class="sr-only">{{ t('dashboard.title') }}</h1>
   {% if refresh_seconds %}
   <span class="live-badge">
     <span class="pulse-dot" aria-hidden="true"></span>

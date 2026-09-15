@@ -57,6 +57,68 @@ def test_dashboard_banner_hides_after_ack_and_reappears_for_new_failures(client,
     assert "check the audit log" in client.get("/").text
 
 
+def test_dashboard_failed_events_kpi_is_not_cleared_by_ack(client, conn):
+    # Unlike the banner above, this KPI is deliberately not ack-aware — it
+    # tracks the true rolling 24h count, not "unacknowledged since when."
+    record_audit_event(conn, event_type="item.dispatch_failed", actor="test")
+    client.get("/audit", params={"status": "failed", "since": "24h"})  # acks the banner
+
+    response = client.get("/")
+
+    assert 'data-cell="kpi_failed"' in response.text
+    assert '<span class="tile-value tabular" data-cell="kpi_failed" style="color:var(--danger)">1</span>' in response.text
+    assert "view failed events" in response.text
+
+
+def test_dashboard_quick_controls_has_no_dev_tools_toggle(client):
+    response = client.get("/")
+
+    assert "BEACON_ENABLED" in response.text
+    assert "UI_DEV_TOOLS_ENABLED" not in response.text
+    assert "Developer tools" not in response.text
+
+
+def test_dashboard_toggle_rejects_dev_tools_key(client, conn):
+    response = client.post(
+        "/dashboard/toggle", data={"key": "UI_DEV_TOOLS_ENABLED", "value": "false"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 303
+    assert "not+toggleable+here" in response.headers["location"]
+
+
+def test_dashboard_ingest_panel_shows_summary_not_per_source_list(client, conn):
+    record_audit_event(
+        conn, event_type="adapter.fetch", actor="csn", source="csn",
+        details={"ok": True},
+    )
+    record_audit_event(
+        conn, event_type="adapter.fetch", actor="senapred", source="senapred",
+        details={"ok": False},
+    )
+
+    response = client.get("/")
+
+    assert "src-list" not in response.text
+    assert "2 sources" in response.text
+    assert "senapred failing" in response.text
+
+
+def test_dashboard_beacon_panel_shows_single_active_mode_queue_row(client, conn):
+    from adapters.storage import set_beacon_status
+
+    set_beacon_status(conn, "voice_queue_depth", "3")
+    set_beacon_status(conn, "frame_queue_depth", "7")
+
+    response = client.get("/")
+
+    assert 'data-cell="bp_queue"' in response.text
+    assert '<dd data-cell="bp_queue">3</dd>' in response.text
+    assert 'data-cell="bp_vq"' not in response.text
+    assert 'data-cell="bp_fq"' not in response.text
+
+
 def test_dashboard_includes_auto_refresh_script_when_enabled(client, conn):
     set_setting(conn, "UI_DASHBOARD_REFRESH_SECONDS", "5")
 
@@ -459,3 +521,13 @@ def test_audit_log_q_searches_details(client, conn):
 
     assert response.status_code == 200
     assert "beacon.voice.transmit_failed" in response.text
+
+
+def test_dashboard_page_gets_no_scroll_body_class_other_pages_dont(client):
+    # style.css's no-page-scroll shell rules (fixed-viewport bento layout,
+    # internal-only scrolling on the activity feed) are all gated on
+    # body.dashboard-page — set via dashboard.html's body_class block. Any
+    # other page must render a plain, unscoped <body> so those rules never
+    # apply outside this one page.
+    assert '<body class="dashboard-page">' in client.get("/").text
+    assert '<body class="">' in client.get("/items").text

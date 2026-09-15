@@ -31,7 +31,6 @@
   ('BEACON_ENABLED', beacon_enabled, 'radio', t('dashboard.toggle_beacon_label'), t('dashboard.toggle_beacon_hint')),
   ('ACTIONS_AI_ENABLED', ai_enabled, 'sparkles', t('dashboard.toggle_ai_label'), t('dashboard.toggle_ai_hint')),
   ('BEACON_WATERMARK_ENABLED', watermark_enabled, 'clock', t('dashboard.toggle_watermark_label'), t('dashboard.toggle_watermark_hint')),
-  ('UI_DEV_TOOLS_ENABLED', dev_tools_enabled_now, 'developers', t('dashboard.toggle_dev_tools_label'), t('dashboard.toggle_dev_tools_hint')),
 ] %}
 <section class="panel quick-controls">
   <div class="panel-head">
@@ -84,73 +83,116 @@
 </section>
 {% endif %}
 
-{# Status tiles link into /config/* (admin-only) — the href is simply
-   omitted for a 'user'-role visitor, leaving a plain, non-navigable
-   <a> that reads the same but isn't a link (no tabindex, no href to
-   follow) rather than a route they'd get a 403 from. #}
-<section class="status-strip">
-  {# --- Beacon --- #}
+{# Bento metrics mosaic: a large Beacon/on-air hero tile anchors a mosaic
+   of the other 8 metrics, replacing the old two-flat-rows layout (a
+   status-tile strip, then a separate KPI row) with one grid that gives
+   the single most important glance-metric real visual weight instead of
+   stacking the same weight twice. Tiles link into /config/* (admin-only)
+   — the href is simply omitted for a 'user'-role visitor, leaving a
+   plain, non-navigable element that reads the same but isn't a link (no
+   tabindex, no href to follow) rather than a route they'd get a 403
+   from. #}
+<section class="bento">
+  {# --- Beacon (hero) --- #}
   {% set beacon_state = 'ok' if (running and beacon_enabled) else 'warn' if beacon_enabled else 'idle' %}
-  <a class="status-tile" {% if is_admin() %}href="/config/beacon-transmission"{% endif %}>
-    <span class="status-tile-top">{{ icon('radio', 16) }}{{ t('dashboard.tile_beacon') }}</span>
-    <span class="status-tile-value" data-cell="st_beacon">
-      <span class="state-dot state-{{ beacon_state }}"></span>
-      {{ t('dashboard.status_on_air') if (running and beacon_enabled) else t('dashboard.status_idle') if beacon_enabled else t('dashboard.status_off') }}
-    </span>
-    <span class="status-tile-sub" data-cell="st_beacon_sub">
-      {{ t('dashboard.status_transmit_enabled') if beacon_enabled else t('dashboard.status_transmit_disabled') }} · {{ t('dashboard.status_process_running') if running else t('dashboard.status_process_not_running') }}
-    </span>
-  </a>
+  <div class="surface tile tile-hero">
+    <div class="hero-top">
+      <span class="tile-top">{{ icon('radio', 15) }}{{ t('dashboard.tile_beacon') }}</span>
+      <span class="badge {{ 'badge-success' if running else 'badge-warn' }}" data-cell="bp_proc">{{ t('dashboard.badge_running') if running else t('dashboard.badge_not_running') }}</span>
+    </div>
+    <div>
+      <div class="hero-state" data-cell="st_beacon">
+        <span class="state-dot state-{{ beacon_state }}"></span>
+        {{ t('dashboard.status_on_air') if (running and beacon_enabled) else t('dashboard.status_idle') if beacon_enabled else t('dashboard.status_off') }}
+      </div>
+      <div class="tile-sub" data-cell="st_beacon_sub">
+        {{ t('dashboard.status_transmit_enabled') if beacon_enabled else t('dashboard.status_transmit_disabled') }} · {{ t('dashboard.status_process_running') if running else t('dashboard.status_process_not_running') }}
+      </div>
+    </div>
+    <div class="hero-meta">
+      <span>{{ t('dashboard.stat_callsign') }} <strong class="mono">{{ beacon_callsign or '—' }}</strong></span>
+      {% if beacon_frequency %}<span>{{ t('dashboard.stat_frequency') }} <strong class="tabular">{{ beacon_frequency }}</strong></span>{% endif %}
+      <span>{{ t('dashboard.stat_uptime') }} <strong data-cell="hero_uptime">{% if beacon_started_at %}<time datetime="{{ beacon_started_at | iso_utc }}" data-ago>{{ beacon_started_at | time_ago }}</time>{% else %}—{% endif %}</strong></span>
+    </div>
+  </div>
 
   {# --- Ingest --- #}
   {% set ing = ingest %}
-  <a class="status-tile" {% if is_admin() %}href="/config/adapters"{% endif %}>
-    <span class="status-tile-top">{{ icon('rss', 16) }}{{ t('dashboard.tile_ingest') }}</span>
-    <span class="status-tile-value" data-cell="st_ingest">
+  <a class="tile tile-ingest" {% if is_admin() %}href="/config/adapters"{% endif %}>
+    <span class="tile-top">{{ icon('rss', 14) }}{{ t('dashboard.tile_ingest') }}</span>
+    <span class="tile-value" data-cell="st_ingest">
       <span class="state-dot state-{{ 'ok' if ing.state == 'ok' else 'warn' if ing.state == 'error' else 'idle' }}"></span>
       {{ t('dashboard.status_healthy') if ing.state == 'ok' else t('dashboard.status_errors') if ing.state == 'error' else t('dashboard.status_no_fetches') }}
     </span>
-    <span class="status-tile-sub" data-cell="st_ingest_sub">
+    <span class="tile-sub" data-cell="st_ingest_sub">
       {% if ing.failing %}{{ t('dashboard.sources_failing', list=(ing.failing | join(', '))) }}{% elif ing.last_at %}{{ t('dashboard.source_count_one', n=ing.sources) if ing.sources == 1 else t('dashboard.source_count_other', n=ing.sources) }} · <time datetime="{{ ing.last_at | iso_utc }}" data-ago>{{ ing.last_at | time_ago }}</time>{% else %}—{% endif %}
     </span>
   </a>
 
   {# --- Transmit queue --- #}
-  <a class="status-tile" {% if is_admin() %}href="/config/beacon-queue"{% endif %}>
-    <span class="status-tile-top">{{ icon('activity', 16) }}{{ t('dashboard.tile_queue') }}</span>
-    <span class="status-tile-value" data-cell="st_queue">
+  <a class="tile tile-queue" {% if is_admin() %}href="/config/beacon-queue"{% endif %}>
+    <span class="tile-top">{{ icon('activity', 14) }}{{ t('dashboard.tile_queue') }}</span>
+    <span class="tile-value" data-cell="st_queue">
       {{ queue_depth }} <span class="muted">/ {{ queue_max_size }}</span>
     </span>
-    <span class="status-tile-sub" data-cell="st_queue_sub">
+    <span class="tile-sub" data-cell="st_queue_sub">
       {{ t('dashboard.pending_mode', mode=t('dashboard.mode_' ~ beacon_type)) }} · {{ t('dashboard.pct_full', pct=queue_bar.pct) }}
       <span class="queue-bar"><span class="queue-bar-fill {{ queue_bar.fill_class }}" style="width: {{ queue_bar.pct }}%;"></span></span>
     </span>
   </a>
 
   {# --- AI --- #}
-  <a class="status-tile" {% if is_admin() %}href="/config/actions-ai"{% endif %}>
-    <span class="status-tile-top">{{ icon('sparkles', 16) }}{{ t('dashboard.tile_ai') }}</span>
-    <span class="status-tile-value" data-cell="st_ai">
+  <a class="tile tile-ai" {% if is_admin() %}href="/config/actions-ai"{% endif %}>
+    <span class="tile-top">{{ icon('sparkles', 14) }}{{ t('dashboard.tile_ai') }}</span>
+    <span class="tile-value" data-cell="st_ai">
       <span class="state-dot state-{{ 'ok' if ai_enabled else 'idle' }}"></span>
       {{ t('dashboard.status_enabled') if ai_enabled else t('dashboard.status_disabled') }}
     </span>
-    <span class="status-tile-sub" data-cell="st_ai_sub">
+    <span class="tile-sub" data-cell="st_ai_sub">
       {% if ai_last_run_at %}{{ t('dashboard.last_run_label') }} <time datetime="{{ ai_last_run_at | iso_utc }}" data-ago>{{ ai_last_run_at | time_ago }}</time>{% else %}{{ t('dashboard.never_run') }}{% endif %}
     </span>
   </a>
 
   {# --- Clock / NTP --- #}
   {% set ntp_state = 'idle' if ntp_offset is none else 'warn' if (ntp_offset | abs) > ntp_warn else 'ok' %}
-  <a class="status-tile" {% if is_admin() %}href="/config/beacon"{% endif %}>
-    <span class="status-tile-top">{{ icon('clock', 16) }}{{ t('dashboard.tile_clock') }}</span>
-    <span class="status-tile-value" data-cell="st_ntp">
+  <a class="tile tile-clock" {% if is_admin() %}href="/config/beacon"{% endif %}>
+    <span class="tile-top">{{ icon('clock', 14) }}{{ t('dashboard.tile_clock') }}</span>
+    <span class="tile-value" data-cell="st_ntp">
       <span class="state-dot state-{{ ntp_state }}"></span>
       {% if ntp_offset is none %}{{ t('dashboard.status_unchecked') }}{% else %}{{ '%+.2f'|format(ntp_offset) }}s{% endif %}
     </span>
-    <span class="status-tile-sub" data-cell="st_ntp_sub">
+    <span class="tile-sub" data-cell="st_ntp_sub">
       {% if ntp_checked_at %}NTP · <time datetime="{{ ntp_checked_at | iso_utc }}" data-ago>{{ ntp_checked_at | time_ago }}</time>{% else %}{{ t('dashboard.ntp_offset_not_measured') }}{% endif %}
     </span>
   </a>
+
+  {# --- Items --- #}
+  <div class="tile tile-items">
+    <span class="tile-top">{{ icon('items', 14) }}{{ t('dashboard.kpi_items_label') }}</span>
+    <span class="tile-value tabular" data-cell="kpi_items">{{ counts.total_items }}</span>
+    <span class="tile-sub" data-cell="kpi_items_foot">{{ t('dashboard.in_24h', n=counts.items_last_24h) }}</span>
+  </div>
+
+  {# --- Audit events --- #}
+  <div class="tile tile-audit">
+    <span class="tile-top">{{ icon('audit', 14) }}{{ t('dashboard.kpi_audit_events_label') }}</span>
+    <span class="tile-value tabular" data-cell="kpi_events">{{ counts.total_audit_events }}</span>
+    <span class="tile-sub" data-cell="kpi_events_foot">{{ t('dashboard.in_24h', n=counts.events_last_24h) }}</span>
+  </div>
+
+  {# --- Policies --- #}
+  <div class="tile tile-policies">
+    <span class="tile-top">{{ icon('policies', 14) }}{{ t('dashboard.kpi_policies_label') }}</span>
+    <span class="tile-value tabular" data-cell="kpi_policies">{{ counts.total_policies }}</span>
+    {% if is_admin() %}<span class="tile-sub"><a href="/config/policies">{{ t('dashboard.manage_link') }}</a></span>{% endif %}
+  </div>
+
+  {# --- Failed events --- #}
+  <div class="tile tile-failed">
+    <span class="tile-top">{{ icon('alert', 14) }}{{ t('dashboard.kpi_failed_label') }}</span>
+    <span class="tile-value tabular" data-cell="kpi_failed" style="{% if failed_events_24h %}color:var(--danger){% endif %}">{{ failed_events_24h }}</span>
+    {% if is_admin() %}<span class="tile-sub"><a href="/audit?status=failed&since=24h">{{ t('dashboard.view_failed_events_link') }}</a></span>{% endif %}
+  </div>
 </section>
 
 {% if failed_24h %}
@@ -160,29 +202,6 @@
 
 <div class="dash-grid">
 <div class="dash-col-main">
-
-  <section class="kpi-row">
-    <div class="kpi">
-      <span class="kpi-label">{{ icon('items', 15) }}{{ t('dashboard.kpi_items_label') }}</span>
-      <span class="kpi-value" data-cell="kpi_items">{{ counts.total_items }}</span>
-      <span class="kpi-foot" data-cell="kpi_items_foot">{{ t('dashboard.in_24h', n=counts.items_last_24h) }}</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi-label">{{ icon('audit', 15) }}{{ t('dashboard.kpi_audit_events_label') }}</span>
-      <span class="kpi-value" data-cell="kpi_events">{{ counts.total_audit_events }}</span>
-      <span class="kpi-foot" data-cell="kpi_events_foot">{{ t('dashboard.in_24h', n=counts.events_last_24h) }}</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi-label">{{ icon('beacon', 15) }}{{ t('dashboard.kpi_inflight_label') }}</span>
-      <span class="kpi-value" data-cell="kpi_inflight">{{ counts.in_flight_dispatches }}</span>
-      <span class="kpi-foot">{{ t('dashboard.dispatch_rows') }}</span>
-    </div>
-    <div class="kpi">
-      <span class="kpi-label">{{ icon('policies', 15) }}{{ t('dashboard.kpi_policies_label') }}</span>
-      <span class="kpi-value" data-cell="kpi_policies">{{ counts.total_policies }}</span>
-      {% if is_admin() %}<span class="kpi-foot"><a href="/config/policies">{{ t('dashboard.manage_link') }}</a></span>{% endif %}
-    </div>
-  </section>
 
   {# Activity feed tabs are CSS-only (radio + :checked ~ sibling) so they
      work with no JS at all — the auto-refresh script is optional and
@@ -204,10 +223,12 @@
       {% for item in recent_items %}
       <li>
         {% if item.kind == "watermark" %}
+        <span class="feed-icon">{{ icon('clock', 16) }}</span>
         <span class="feed-main">
           <span class="feed-title">{{ t('dashboard.watermark_transmission_title') }}</span>
         </span>
         {% elif item.kind == "manual" %}
+        <span class="feed-icon">{{ icon('radio', 16) }}</span>
         <span class="feed-main">
           <span class="feed-title">{{ t('dashboard.manual_transmission_title') }}</span>
         </span>
@@ -220,7 +241,7 @@
         </span>
         {% endif %}
         {% else %}
-        {% if item.type %}<span class="category-watermark category-watermark-row">{{ icon(category_icon(item.type, item.subtype), 36) }}</span>{% endif %}
+        <span class="feed-icon">{{ icon(category_icon(item.type, item.subtype) if item.type else 'items', 16) }}</span>
         <a class="feed-main" href="/items/{{ item.source }}/{{ item.item_id }}">
           <span class="feed-title">{{ item.extracted_title or item.item_id }}</span>
           <span class="feed-meta">
@@ -265,6 +286,7 @@
     <ul class="feed feed--audit" data-cell="feed_audit">
       {% for event in recent_audit_events %}
       <li>
+        <span class="feed-icon"></span>
         <span class="feed-main">
           <span class="feed-title">
             <span class="{{ event.event_type | event_badge }}">{{ event.event_type }}</span>
@@ -305,15 +327,15 @@
     <div class="panel-head"><h2>{{ icon('activity', 16) }}{{ t('dashboard.ingest_14_days_title') }}</h2></div>
     <span class="kpi-spark" data-cell="kpi_spark">{% include "_sparkline.html" %}</span>
     {% if ingest.detail %}
-    <ul class="src-list">
-      {% for s in ingest.detail %}
-      <li>
-        <span class="state-dot state-{{ 'ok' if s.ok else 'warn' }}"></span>
-        <span class="src-name mono">{{ s.source }}</span>
-        <time class="feed-time" datetime="{{ s.at | iso_utc }}" data-ago>{{ s.at | time_ago }}</time>
-      </li>
-      {% endfor %}
-    </ul>
+    {# Compact summary rather than a per-source list — the full
+       breakdown already lives at /config/adapters; repeating it here in
+       miniature only duplicated that page and grew unbounded as sources
+       are added. #}
+    <p class="muted">
+      {{ t('dashboard.source_count_one', n=ingest.sources) if ingest.sources == 1 else t('dashboard.source_count_other', n=ingest.sources) }}
+      {% if ingest.failing %}· {{ t('dashboard.sources_failing', list=(ingest.failing | join(', '))) }}{% endif %}
+      {% if is_admin() %}· <a href="/config/adapters">{{ t('dashboard.manage_link') }}</a>{% endif %}
+    </p>
     {% endif %}
   </section>
 
@@ -325,15 +347,19 @@
         <span class="badge {{ 'badge-success' if running else 'badge-warn' }}" data-cell="bp_proc">{{ t('dashboard.badge_running') if running else t('dashboard.badge_not_running') }}</span>
       </div>
     </div>
-    <dl class="stat-list">
-      <div><dt>{{ t('dashboard.stat_callsign') }}</dt><dd class="mono">{{ beacon_callsign or '—' }}</dd></div>
-      <div><dt>{{ t('dashboard.stat_mode') }}</dt><dd data-cell="bp_type">{{ t('dashboard.mode_' ~ beacon_type) }}</dd></div>
-      <div><dt>{{ t('dashboard.stat_uptime') }}</dt><dd data-cell="bp_uptime">{% if beacon_started_at %}{{ t('dashboard.since_label') }} <time datetime="{{ beacon_started_at | iso_utc }}" data-ago>{{ beacon_started_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
-      <div><dt>{{ t('dashboard.stat_voice_queue') }}</dt><dd data-cell="bp_vq">{{ voice_queue_depth }}</dd></div>
-      <div><dt>{{ t('dashboard.stat_frame_queue') }}</dt><dd data-cell="bp_fq">{{ frame_queue_depth }}</dd></div>
-      <div><dt>{{ t('dashboard.stat_last_voice_tx') }}</dt><dd data-cell="bp_lv">{% if last_voice_transmit_at %}<time datetime="{{ last_voice_transmit_at | iso_utc }}" data-ago>{{ last_voice_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
-      <div><dt>{{ t('dashboard.stat_last_frame_tx') }}</dt><dd data-cell="bp_lf">{% if last_frame_transmit_at %}<time datetime="{{ last_frame_transmit_at | iso_utc }}" data-ago>{{ last_frame_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
-      <div><dt>{{ t('dashboard.stat_watermark') }}</dt><dd data-cell="bp_wm">{% if watermark_enabled %}{% if watermark_last_at %}<time datetime="{{ watermark_last_at | iso_utc }}" data-ago>{{ watermark_last_at | time_ago }}</time>{% else %}{{ t('dashboard.watermark_pending') }}{% endif %}{% else %}{{ t('dashboard.watermark_off') }}{% endif %}</dd></div>
+    <dl class="stat-grid">
+      <div class="stat-chip"><dt>{{ t('dashboard.stat_callsign') }}</dt><dd class="mono">{{ beacon_callsign or '—' }}</dd></div>
+      <div class="stat-chip"><dt>{{ t('dashboard.stat_frequency') }}</dt><dd class="tabular">{{ beacon_frequency or '—' }}</dd></div>
+      <div class="stat-chip"><dt>{{ t('dashboard.stat_mode') }}</dt><dd data-cell="bp_type">{{ t('dashboard.mode_' ~ beacon_type) }}</dd></div>
+      <div class="stat-chip"><dt>{{ t('dashboard.stat_uptime') }}</dt><dd data-cell="bp_uptime">{% if beacon_started_at %}<time datetime="{{ beacon_started_at | iso_utc }}" data-ago>{{ beacon_started_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
+      {# One row for whichever mode is actually active, reusing the exact
+         same queue_depth the Transmit-queue status tile shows above —
+         showing both modes' depth unconditionally was redundant noise,
+         since only the active mode's queue is ever non-zero in practice. #}
+      <div class="stat-chip"><dt>{{ t('dashboard.stat_queue', mode=t('dashboard.mode_' ~ beacon_type)) }}</dt><dd data-cell="bp_queue">{{ queue_depth }}</dd></div>
+      <div class="stat-chip"><dt>{{ t('dashboard.stat_last_voice_tx') }}</dt><dd data-cell="bp_lv">{% if last_voice_transmit_at %}<time datetime="{{ last_voice_transmit_at | iso_utc }}" data-ago>{{ last_voice_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
+      <div class="stat-chip"><dt>{{ t('dashboard.stat_last_frame_tx') }}</dt><dd data-cell="bp_lf">{% if last_frame_transmit_at %}<time datetime="{{ last_frame_transmit_at | iso_utc }}" data-ago>{{ last_frame_transmit_at | time_ago }}</time>{% else %}—{% endif %}</dd></div>
+      <div class="stat-chip wide"><dt>{{ t('dashboard.stat_watermark') }}</dt><dd data-cell="bp_wm">{% if watermark_enabled %}{% if watermark_last_at %}<time datetime="{{ watermark_last_at | iso_utc }}" data-ago>{{ watermark_last_at | time_ago }}</time>{% else %}{{ t('dashboard.watermark_pending') }}{% endif %}{% else %}{{ t('dashboard.watermark_off') }}{% endif %}</dd></div>
     </dl>
     {% if not is_beacon_configured() and is_admin() %}
     <a class="btn secondary" href="/config/beacon-identity">{{ t('dashboard.configure_identity_link') }}</a>

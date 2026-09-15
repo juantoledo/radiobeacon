@@ -111,11 +111,6 @@ def _dashboard_context(conn: sqlite3.Connection, request: Request) -> dict:
     watermark_enabled = (
         get_setting("BEACON_WATERMARK_ENABLED", "false", conn=conn).lower() == "true"
     )
-    dev_tools_enabled = get_setting("UI_DEV_TOOLS_ENABLED", "true", conn=conn).lower() not in (
-        "false",
-        "0",
-        "",
-    )
 
     try:
         ntp_warn = abs(float(get_setting("BEACON_NTP_MAX_OFFSET_SECONDS", _NTP_WARN_DEFAULT, conn=conn)))
@@ -156,6 +151,10 @@ def _dashboard_context(conn: sqlite3.Connection, request: Request) -> dict:
         "counts": queries.dashboard_counts(conn),
         "sparkline": queries.items_sparkline(conn, days=14),
         "failed_24h": queries.failed_events_last_24h(conn, since_id=resolve_ack_id(request)),
+        # Deliberately NOT ack-aware, unlike failed_24h above (which drops
+        # to 0 once the admin dismisses the banner) — this is the KPI row's
+        # persistent "how many, period" number, not a dismissible alert.
+        "failed_events_24h": queries.failed_events_last_24h(conn),
         "recent_items": items_feed,
         "item_tx_counts": tx_counts,
         "item_transmissions": item_transmissions,
@@ -170,28 +169,17 @@ def _dashboard_context(conn: sqlite3.Connection, request: Request) -> dict:
         "ai_last_run_at": queries.latest_event_at(conn, "action.ai.executed"),
         "watermark_enabled": watermark_enabled,
         "watermark_last_at": status.get("last_watermark_transmit_at"),
-        "dev_tools_enabled_now": dev_tools_enabled,
         "dashboard_tx_stream_configured": bool(_tx_stream_url(conn)),
         "beacon_callsign": get_setting("BEACON_CALLSIGN", "", conn=conn),
+        "beacon_frequency": get_setting("BEACON_FREQUENCY", "", conn=conn),
         "beacon_started_at": status.get("process_started_at"),
         "last_voice_transmit_at": status.get("last_voice_transmit_at"),
         "last_frame_transmit_at": status.get("last_frame_transmit_at"),
-        "voice_queue_depth": status_ctx["queue_depth"] if status_ctx["beacon_type"] != "frame"
-        else _safe_int(status.get("voice_queue_depth")),
-        "frame_queue_depth": status_ctx["queue_depth"] if status_ctx["beacon_type"] == "frame"
-        else _safe_int(status.get("frame_queue_depth")),
         "ntp_offset": ntp_offset,
         "ntp_warn": ntp_warn,
         "ntp_checked_at": status.get("last_ntp_checked_at"),
         **status_ctx,
     }
-
-
-def _safe_int(value: object) -> int:
-    try:
-        return int(value)  # type: ignore[arg-type]
-    except (TypeError, ValueError):
-        return 0
 
 
 @router.get("/")
