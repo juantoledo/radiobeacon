@@ -3,6 +3,7 @@ import inspect
 import logging
 import pkgutil
 import signal
+import sqlite3
 import threading
 
 from adapters.logsetup import configure_logging, refresh_level
@@ -138,53 +139,83 @@ def _make_on_message(action_class: type[Action], output_topic: str | None, outpu
     thread permanently, with no next iteration to recover on (unlike
     _run_adapter_loop's per-iteration try/except). So everything here —
     parse, DB lookup, run(), publish, audit — is wrapped in one
-    unconditional try/except, never allowed to propagate."""
+    unconditional try/except, never allowed to propagate.
+
+    Reuses one SQLite connection per action instead of opening/closing one
+    on every single message: paho invokes on_message for this action on
+    its OWN background network thread (spun up internally by
+    loop_start()), and only ever that one thread for this action's whole
+    lifetime — so a threading.local() created here in the closure, one
+    per action, is exactly "one connection per action, reused across every
+    message that action's thread ever handles" (different actions each
+    get their own tls and never share a connection). A liveness check
+    (SELECT 1) guards against a connection gone stale/closed out from
+    under us; on failure it's dropped and reopened. Any handler exception
+    may leave an aborted transaction on the reused connection (unlike the
+    old per-message connection, which just got closed and discarded on
+    any error), so the except clause below rolls it back — or drops the
+    connection entirely if rollback itself fails — so the next message
+    starts clean."""
     name = _env_name(action_class).lower()
     log = logging.getLogger(f"actions.{name}")
+    tls = threading.local()
+
+    def _conn():
+        conn = getattr(tls, "conn", None)
+        if conn is not None:
+            try:
+                conn.execute("SELECT 1")
+                return conn
+            except sqlite3.Error:
+                log.warning("sqlite connection unusable, reopening", exc_info=True)
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                tls.conn = None
+        tls.conn = get_connection(DEFAULT_DB_PATH)
+        return tls.conn
 
     def _handler(client, userdata, message) -> None:
         try:
             event = mq.parse_cloud_event(message.payload)
-            conn = get_connection(DEFAULT_DB_PATH)
+            conn = _conn()
+            refresh_level(conn=conn)
+            data = event.get("data") or {}
+            event_id = event.get("id")
+            if _already_processed(conn, name, event_id):
+                log.info(
+                    "already processed, skipping event_id=%s source=%s item_id=%s",
+                    event_id,
+                    data.get("source"),
+                    data.get("item_id"),
+                )
+                return
+            outputs = action_class().run(event, conn=conn)
+            audit_details = {
+                "input_type": event.get("type"),
+                "output_count": len(outputs),
+                "event_id": event_id,
+            }
+            # A single-output action may attach diagnostic detail
+            # (ai's skip `reason`, the `provider`/`model` used, the
+            # rendered `prompt`) — surface it on /audit rather than
+            # leaving it only in logs. See _AUDIT_DETAIL_KEYS.
+            if len(outputs) == 1:
+                for key in _AUDIT_DETAIL_KEYS:
+                    if outputs[0].get(key) is not None:
+                        audit_details[key] = outputs[0][key]
             try:
-                refresh_level(conn=conn)
-                data = event.get("data") or {}
-                event_id = event.get("id")
-                if _already_processed(conn, name, event_id):
-                    log.info(
-                        "already processed, skipping event_id=%s source=%s item_id=%s",
-                        event_id,
-                        data.get("source"),
-                        data.get("item_id"),
-                    )
-                    return
-                outputs = action_class().run(event, conn=conn)
-                audit_details = {
-                    "input_type": event.get("type"),
-                    "output_count": len(outputs),
-                    "event_id": event_id,
-                }
-                # A single-output action may attach diagnostic detail
-                # (ai's skip `reason`, the `provider`/`model` used, the
-                # rendered `prompt`) — surface it on /audit rather than
-                # leaving it only in logs. See _AUDIT_DETAIL_KEYS.
-                if len(outputs) == 1:
-                    for key in _AUDIT_DETAIL_KEYS:
-                        if outputs[0].get(key) is not None:
-                            audit_details[key] = outputs[0][key]
-                try:
-                    record_audit_event(
-                        conn,
-                        event_type=f"action.{name}.executed",
-                        actor=f"actions.{name}",
-                        source=data.get("source"),
-                        item_id=data.get("item_id"),
-                        details=audit_details,
-                    )
-                except Exception:
-                    log.error("failed to record action.executed audit event", exc_info=True)
-            finally:
-                conn.close()
+                record_audit_event(
+                    conn,
+                    event_type=f"action.{name}.executed",
+                    actor=f"actions.{name}",
+                    source=data.get("source"),
+                    item_id=data.get("item_id"),
+                    details=audit_details,
+                )
+            except Exception:
+                log.error("failed to record action.executed audit event", exc_info=True)
 
             if outputs and output_topic:
                 for output in outputs:
@@ -201,6 +232,15 @@ def _make_on_message(action_class: type[Action], output_topic: str | None, outpu
                 )
         except Exception:
             log.error("failed handling message topic=%s", message.topic, exc_info=True)
+            conn = getattr(tls, "conn", None)
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    try:
+                        conn.close()
+                    finally:
+                        tls.conn = None
 
     return _handler
 
@@ -326,10 +366,26 @@ def _run_content_ready_loop(stop_event: threading.Event) -> None:
         return
 
     client.loop_start()
+    # One SQLite connection reused across every tick of this loop, instead
+    # of opening/closing one every poll_interval seconds forever — this
+    # loop runs on a single dedicated thread for its whole lifetime (unlike
+    # _make_on_message's per-action tls), so a plain hoisted local is
+    # enough. A liveness check (SELECT 1) guards against a connection gone
+    # stale/closed out from under us; on failure it's dropped and reopened
+    # on the next tick.
+    conn = get_connection(DEFAULT_DB_PATH)
     try:
         while not stop_event.is_set():
-            conn = get_connection(DEFAULT_DB_PATH)
             try:
+                try:
+                    conn.execute("SELECT 1")
+                except sqlite3.Error:
+                    log.warning("sqlite connection unusable, reopening", exc_info=True)
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    conn = get_connection(DEFAULT_DB_PATH)
                 refresh_level(conn=conn)
                 published = content_ready.check_and_publish(
                     conn, client, output_topic=output_topic, actor=actor, qos=ACTIONS_MQ_QOS
@@ -338,10 +394,16 @@ def _run_content_ready_loop(stop_event: threading.Event) -> None:
                     log.info("published count=%d", published)
             except Exception:
                 log.error("poll tick failed", exc_info=True)
-            finally:
-                conn.close()
+                try:
+                    conn.rollback()
+                except Exception:
+                    try:
+                        conn.close()
+                    finally:
+                        conn = get_connection(DEFAULT_DB_PATH)
             stop_event.wait(poll_interval)
     finally:
+        conn.close()
         client.loop_stop()
         client.disconnect()
         log.info("stopped")

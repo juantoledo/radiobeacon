@@ -34,9 +34,11 @@ from starlette.datastructures import FormData
 from starlette.responses import RedirectResponse, Response
 
 from .. import queries
+from ..ajax import ajax_ok, is_ajax
 from ..config_catalog import specs_for_group
 from ..current_user import require_role
 from ..db import get_db
+from ..fragments import render_fragment
 from ..templating import templates
 
 router = APIRouter(dependencies=[Depends(require_role("admin"))])
@@ -477,8 +479,11 @@ def _general_settings_fields(conn: sqlite3.Connection) -> list[dict]:
     return fields
 
 
-@router.get("/config/adapters")
-def adapters_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
+def _adapters_list_context(conn: sqlite3.Connection) -> dict:
+    """The /config/adapters listing's template context — shared by the GET
+    page and the toggle/delete AJAX branches below, which re-render just
+    this same list into a fragment rather than duplicating how `rows` and
+    `general_fields` are built."""
     instances = list_adapter_instances(conn)
     last_events = queries.last_adapter_fetch_events(conn)
     rows = []
@@ -489,11 +494,18 @@ def adapters_list_page(request: Request, conn: sqlite3.Connection = Depends(get_
             details = json.loads(event["details"]) if event["details"] else {}
             last_fetch = {"recorded_at": event["recorded_at"], "ok": details.get("ok")}
         rows.append({**row, "last_fetch": last_fetch})
+    return {"rows": rows, "general_fields": _general_settings_fields(conn)}
+
+
+@router.get("/config/adapters")
+def adapters_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return templates.TemplateResponse(
-        request,
-        "adapters_list.html",
-        {"rows": rows, "general_fields": _general_settings_fields(conn)},
+        request, "adapters_list.html", _adapters_list_context(conn)
     )
+
+
+def _render_adapters_list(request: Request, conn: sqlite3.Connection) -> str:
+    return render_fragment(request, "adapters_list.html", _adapters_list_context(conn))
 
 
 def _default_prompt_placeholder(conn: sqlite3.Connection | None) -> str:
@@ -843,20 +855,24 @@ def _supersede_guard_rail(conn, adapter_type: str, policy_name: str, config: dic
 
 
 @router.post("/config/adapters/{source}/delete")
-def adapter_delete_action(source: str, conn: sqlite3.Connection = Depends(get_db)):
+def adapter_delete_action(request: Request, source: str, conn: sqlite3.Connection = Depends(get_db)):
     deleted = delete_adapter_instance(conn, source)
     msg = f"adapter '{source}' deleted" if deleted else f"adapter '{source}' not found"
+    if is_ajax(request):
+        return ajax_ok(msg, fragment=_render_adapters_list(request, conn))
     return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)
 
 
 @router.post("/config/adapters/{source}/toggle")
-def adapter_toggle_action(source: str, conn: sqlite3.Connection = Depends(get_db)):
+def adapter_toggle_action(request: Request, source: str, conn: sqlite3.Connection = Depends(get_db)):
     row = get_adapter_instance(conn, source)
     if row is None:
         raise HTTPException(status_code=404, detail="adapter instance not found")
     enabled = not bool(row["enabled"])
     set_adapter_instance_enabled(conn, source, enabled)
     msg = f"adapter '{source}' {'enabled' if enabled else 'disabled'}"
+    if is_ajax(request):
+        return ajax_ok(msg, fragment=_render_adapters_list(request, conn))
     return RedirectResponse(url=f"/config/adapters?{urlencode({'msg': msg})}", status_code=303)
 
 

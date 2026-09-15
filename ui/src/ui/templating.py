@@ -8,7 +8,7 @@ from pathlib import Path
 from adapters import __version__ as ADAPTERS_VERSION
 from adapters.categories import get_category, get_subtype
 from adapters.storage import DEFAULT_DB_PATH, get_connection, get_setting
-from adapters.timeutil import to_display_tz, to_utc
+from adapters.timeutil import resolve_display_tz, to_utc
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 from markupsafe import Markup
@@ -54,6 +54,46 @@ templates.env.globals["icon"] = _icon_global
 templates.env.globals["app_version"] = lambda: ADAPTERS_VERSION
 
 
+def _request_setting(request, key: str, default: str | None, *, env_fallback: bool = True):
+    """Reads one setting at most once per request — a template render can
+    call this dozens of times (once per timestamp, plus once each for
+    locale/theme/dev-tools-enabled) for values that cannot change mid-
+    request.
+
+    INVARIANT: a route that WRITES one of these settings and then renders
+    a fragment in the SAME request must call invalidate_request_settings(
+    request) after writing, or this cache will serve the pre-write value
+    into that render. Every setting-writing route today either redirects
+    (a fresh request follows) or writes before its first render, so this
+    is currently unreachable — but it's one refactor away from being
+    wrong, hence this being written down explicitly."""
+    cache = getattr(request.state, "settings_cache", None)
+    if cache is None:
+        cache = {}
+        request.state.settings_cache = cache
+    if key in cache:
+        return cache[key]
+    conn = getattr(request.state, "db_conn", None)
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        value = get_setting(key, default, conn=conn, env_fallback=env_fallback)
+    finally:
+        if owns_conn:
+            conn.close()
+    cache[key] = value
+    return value
+
+
+def invalidate_request_settings(request) -> None:
+    """Drop this request's settings cache. Call after writing a setting
+    when the same request will go on to render something that reads it
+    (a route another agent is adding — the config-group per-key reset
+    action, converted to return an AJAX fragment instead of redirecting)."""
+    request.state.settings_cache = {}
+
+
 @pass_context
 def _csrf_field(context) -> Markup:
     """`{{ csrf_field() }}` inside every state-changing <form> — the hidden
@@ -72,23 +112,15 @@ def _locale_global(context) -> str:
     i18n.LocaleMiddleware already resolved the cookie/Accept-Language half
     onto request.state.locale (or left it None); when neither named a
     supported locale, falls back to the DB-backed UI_DEFAULT_LOCALE setting
-    using the same per-request db_conn-reuse idiom as
-    _beacon_configured_global/_dev_tools_enabled_global above — middleware
-    runs before get_db, so it can't reuse request.state.db_conn itself,
-    which is why this DB fallback lives here instead."""
+    via _request_setting (same per-request cache as
+    _dev_tools_enabled_global/_theme_global) — middleware runs before
+    get_db, so it can't reuse request.state.db_conn itself, which is why
+    this DB fallback lives here instead."""
     request = context["request"]
     explicit = getattr(request.state, "locale", None)
     if explicit in SUPPORTED_LOCALES:
         return explicit
-    conn = getattr(request.state, "db_conn", None)
-    owns_conn = conn is None
-    if owns_conn:
-        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
-    try:
-        default_locale = get_setting("UI_DEFAULT_LOCALE", DEFAULT_LOCALE, conn=conn)
-    finally:
-        if owns_conn:
-            conn.close()
+    default_locale = _request_setting(request, "UI_DEFAULT_LOCALE", DEFAULT_LOCALE)
     return default_locale if default_locale in SUPPORTED_LOCALES else DEFAULT_LOCALE
 
 
@@ -100,21 +132,13 @@ def _theme_global(context) -> str:
     """`{{ theme() }}` — the active request's resolved theme
     ("system"/"light"/"dark"). ui.theme.ThemeMiddleware already resolved the
     cookie half onto request.state.theme (or left it None); when that's
-    None, falls back to the DB-backed UI_DEFAULT_THEME setting using the
-    same per-request db_conn-reuse idiom as _locale_global above."""
+    None, falls back to the DB-backed UI_DEFAULT_THEME setting via
+    _request_setting (same per-request cache as _locale_global above)."""
     request = context["request"]
     explicit = getattr(request.state, "theme", None)
     if explicit in SUPPORTED_THEMES:
         return explicit
-    conn = getattr(request.state, "db_conn", None)
-    owns_conn = conn is None
-    if owns_conn:
-        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
-    try:
-        default_theme = get_setting("UI_DEFAULT_THEME", DEFAULT_THEME, conn=conn)
-    finally:
-        if owns_conn:
-            conn.close()
+    default_theme = _request_setting(request, "UI_DEFAULT_THEME", DEFAULT_THEME)
     return default_theme if default_theme in SUPPORTED_THEMES else DEFAULT_THEME
 
 
@@ -239,25 +263,16 @@ templates.env.globals["config_nav_tabs"] = _config_nav_tabs_global
 def _dev_tools_enabled_global(context) -> bool:
     """Jinja global so base.html/item_detail.html can hide dev-only UI
     without every router passing this into its own template context.
-    Same per-request db_conn-reuse idiom as _beacon_configured_global
-    below — reads UI_DEV_TOOLS_ENABLED fresh on every render (DB row ->
-    env var -> default), matching dev.router's own per-request check in
-    _require_dev_tools_enabled, so a /config edit is reflected with no
-    restart."""
+    Reads UI_DEV_TOOLS_ENABLED via _request_setting (DB row -> env var ->
+    default, cached for the rest of this request), matching dev.router's
+    own per-request check in _require_dev_tools_enabled, so a /config edit
+    is reflected with no restart."""
     request = context["request"]
-    conn = getattr(request.state, "db_conn", None)
-    owns_conn = conn is None
-    if owns_conn:
-        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
-    try:
-        return get_setting("UI_DEV_TOOLS_ENABLED", "true", conn=conn).lower() not in (
-            "false",
-            "0",
-            "",
-        )
-    finally:
-        if owns_conn:
-            conn.close()
+    return _request_setting(request, "UI_DEV_TOOLS_ENABLED", "true").lower() not in (
+        "false",
+        "0",
+        "",
+    )
 
 
 templates.env.globals["dev_tools_enabled"] = _dev_tools_enabled_global
@@ -347,10 +362,15 @@ def _display_dt(context, value: str | None) -> str:
     and times: always UTC" note on that documented format difference.
 
     @pass_context so DISPLAY_TIMEZONE resolves live (DB row -> env var ->
-    default) via the same per-request db_conn-reuse idiom as
-    _dev_tools_enabled_global/_beacon_configured_global, honoring a
-    UI_DB_PATH override rather than get_setting's own fallback (which
-    always targets adapters.storage.DEFAULT_DB_PATH)."""
+    default) via the same per-request settings cache as
+    _dev_tools_enabled_global/_locale_global/_theme_global (see
+    _request_setting), honoring a UI_DB_PATH override rather than
+    get_setting's own fallback (which always targets
+    adapters.storage.DEFAULT_DB_PATH). A single render can call this once
+    per timestamp shown (recent items, audit events, status fields — 20+
+    on a dashboard render), so the resolved ZoneInfo is cached under the
+    reserved "__display_tz" key rather than re-resolved via
+    adapters.timeutil.to_display_tz on every call."""
     if not value:
         return ""
     try:
@@ -360,15 +380,23 @@ def _display_dt(context, value: str | None) -> str:
     if dt.tzinfo is None:
         dt = to_utc(dt, assume_tz="UTC")
     request = context["request"]
-    conn = getattr(request.state, "db_conn", None)
-    owns_conn = conn is None
-    if owns_conn:
-        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
-    try:
-        return to_display_tz(dt, conn=conn).strftime("%Y-%m-%d %H:%M:%S %Z")
-    finally:
+    cache = getattr(request.state, "settings_cache", None)
+    if cache is None:
+        cache = {}
+        request.state.settings_cache = cache
+    tz = cache.get("__display_tz")
+    if tz is None:
+        conn = getattr(request.state, "db_conn", None)
+        owns_conn = conn is None
         if owns_conn:
-            conn.close()
+            conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+        try:
+            tz = resolve_display_tz(conn=conn)
+        finally:
+            if owns_conn:
+                conn.close()
+        cache["__display_tz"] = tz
+    return dt.astimezone(tz).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
 templates.env.filters["display_dt"] = _display_dt

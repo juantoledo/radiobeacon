@@ -3,6 +3,8 @@ import sqlite3
 from adapters.storage import set_setting
 from fastapi.testclient import TestClient
 
+from ui.ajax import AJAX_HEADER, AJAX_HEADER_VALUE
+
 
 def test_default_theme_no_cookie_is_system_no_data_theme_attr(client: TestClient):
     response = client.get("/")
@@ -43,6 +45,30 @@ def test_set_theme_endpoint_sets_cookie_and_redirects(client: TestClient):
 def test_set_theme_endpoint_rejects_unsupported_theme(client: TestClient):
     response = client.post("/theme", data={"theme": "solarized", "next": "/"}, follow_redirects=False)
     assert response.status_code == 400
+    assert response.cookies.get("theme") is None
+
+
+def test_set_theme_endpoint_ajax_sets_cookie_and_returns_ok_json(client: TestClient):
+    response = client.post(
+        "/theme",
+        data={"theme": "dark", "next": "/items"},
+        headers={AJAX_HEADER: AJAX_HEADER_VALUE},
+        follow_redirects=False,
+    )
+    assert response.status_code == 200
+    assert response.json() == {"ok": True, "message": ""}
+    assert response.cookies.get("theme") == "dark"
+
+
+def test_set_theme_endpoint_ajax_rejects_unsupported_theme(client: TestClient):
+    response = client.post(
+        "/theme",
+        data={"theme": "solarized", "next": "/"},
+        headers={AJAX_HEADER: AJAX_HEADER_VALUE},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
     assert response.cookies.get("theme") is None
 
 

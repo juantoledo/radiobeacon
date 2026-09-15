@@ -185,6 +185,26 @@ def test_config_setting_reset_404s_for_key_not_in_group(client):
     assert response.status_code == 404
 
 
+def test_config_setting_reset_ajax_returns_targeted_fragment(client, conn):
+    set_setting(conn, "DISPATCHER_INTERVAL_SECONDS", "15")
+
+    response = client.post(
+        "/config/dispatcher/DISPATCHER_INTERVAL_SECONDS/reset",
+        headers={"X-Requested-With": "fetch"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["target"] == "#config-group-body"
+    assert 'id="config-group-body"' in body["fragment"]
+    # The per-field "reset to env/default" sub-form only renders while the
+    # field is overridden — gone from the re-rendered fragment confirms the
+    # write (and the fragment, not just the DB) reflects the reset.
+    assert 'id="reset-DISPATCHER_INTERVAL_SECONDS"' not in body["fragment"]
+    assert get_setting("DISPATCHER_INTERVAL_SECONDS", conn=conn) is None
+
+
 def test_nav_shows_config_link(client):
     response = client.get("/")
 

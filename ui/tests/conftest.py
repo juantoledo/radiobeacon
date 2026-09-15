@@ -35,6 +35,24 @@ _ensure_tables(_default_db_conn)
 _default_db_conn.close()
 
 
+@pytest.fixture(autouse=True)
+def _reset_schema_bootstrap_cache():
+    """get_connection()/the various _ensure_*_table helpers (and
+    dispatcher.watcher._ensure_tables) now bootstrap a real database
+    file's schema at most once per process (see
+    adapters.storage._ensure_bootstrapped) — this clears that cache before
+    every test so inode reuse across different tests' temp dirs within
+    this one pytest process can't produce a false cache hit. In
+    particular, the `conn` fixture below repeatedly opens a fresh
+    ":memory:" database, which is never cached in the first place, but
+    other tests here (e.g. the DEFAULT_DB_PATH file above) do go through
+    real files."""
+    from adapters.storage import reset_schema_bootstrap_cache
+
+    reset_schema_bootstrap_cache()
+    yield
+
+
 @pytest.fixture
 def conn():
     """A real, fully-migrated in-memory schema — adapters.storage.get_connection

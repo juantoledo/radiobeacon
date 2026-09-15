@@ -13,8 +13,10 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import RedirectResponse
 
 from .. import queries
+from ..ajax import ajax_ok, is_ajax
 from ..current_user import require_role
 from ..db import get_db
+from ..fragments import render_fragment
 from ..templating import templates
 
 router = APIRouter(dependencies=[Depends(require_role("admin"))])
@@ -54,15 +56,25 @@ def policies_legacy_redirect():
     return RedirectResponse(url="/config/policies", status_code=307)
 
 
-@router.get("/config/policies")
-def policies_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
+def _policies_list_context(conn: sqlite3.Connection) -> dict:
+    """The /config/policies listing's template context — shared by the GET
+    page and the delete route's AJAX branch below."""
     rows = list_policies(conn)
     policies = [
         {"row": r, "summary": describe_policy(resolve_policy(conn, r.name))} for r in rows
     ]
+    return {"policies": policies}
+
+
+@router.get("/config/policies")
+def policies_list_page(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     return templates.TemplateResponse(
-        request, "policies_list.html", {"policies": policies}
+        request, "policies_list.html", _policies_list_context(conn)
     )
+
+
+def _render_policies_list(request: Request, conn: sqlite3.Connection) -> str:
+    return render_fragment(request, "policies_list.html", _policies_list_context(conn))
 
 
 @router.get("/config/policies/new")
@@ -120,7 +132,7 @@ def policy_create_action(
 
 
 @router.post("/config/policies/{name}/delete")
-def policy_delete_action(name: str, conn: sqlite3.Connection = Depends(get_db)):
+def policy_delete_action(request: Request, name: str, conn: sqlite3.Connection = Depends(get_db)):
     refs = policy_reference_count(conn, name)
     deleted = delete_policy(conn, name)
     if not deleted:
@@ -132,4 +144,6 @@ def policy_delete_action(name: str, conn: sqlite3.Connection = Depends(get_db)):
         )
     else:
         msg = f"policy '{name}' deleted"
+    if is_ajax(request):
+        return ajax_ok(msg, fragment=_render_policies_list(request, conn))
     return RedirectResponse(url=f"/config/policies?{urlencode({'msg': msg})}", status_code=303)

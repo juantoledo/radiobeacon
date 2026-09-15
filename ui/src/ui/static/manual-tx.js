@@ -1,8 +1,10 @@
 // "Transmit now" modal on the dashboard. Opens the <dialog>, keeps a live
 // length counter (characters for voice, UTF-8 bytes for frame — matching
 // what the server enforces), and blocks submit while the message is empty
-// or over the limit. The form itself posts normally (full navigation +
-// redirect toast); this is only the compose-time affordances.
+// or over the limit. The form posts via ajax-forms.js (see
+// ui/routers/manual_tx.py's is_ajax branch) rather than navigating, so
+// this file also closes the dialog itself on a successful rb:ajax-response
+// — nothing else would, since the page is never replaced/reloaded.
 (function () {
   "use strict";
 
@@ -108,5 +110,17 @@
   textarea.addEventListener("input", update);
   kindInputs.forEach(function (input) {
     input.addEventListener("change", update);
+  });
+
+  // Dispatched by ajax-forms.js after this form's fetch resolves (see
+  // rb:ajax-response there). On success, close the dialog and clear the
+  // message so the next open starts fresh — on failure (e.g. validation),
+  // leave everything as-is so the operator can fix and resubmit without
+  // retyping.
+  form.addEventListener("rb:ajax-response", function (e) {
+    if (!e.detail || !e.detail.ok) return;
+    close();
+    textarea.value = "";
+    update();
   });
 })();

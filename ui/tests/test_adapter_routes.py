@@ -303,6 +303,35 @@ def test_adapter_delete_unknown_source_still_redirects(client):
     assert response.status_code == 303
 
 
+def test_adapter_delete_ajax_returns_fragment_without_deleted_row(client, conn):
+    response = client.post(
+        "/config/adapters/csn/delete", headers={"X-Requested-With": "fetch"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "fragment" in body
+    assert 'data-cell="adapters-rows"' in body["fragment"]
+    assert ">csn<" not in body["fragment"]
+    assert get_adapter_instance(conn, "csn") is None
+
+
+def test_adapter_toggle_ajax_returns_fragment(client, conn):
+    row = get_adapter_instance(conn, "csn")
+    was_enabled = bool(row["enabled"])
+
+    response = client.post(
+        "/config/adapters/csn/toggle", headers={"X-Requested-With": "fetch"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert 'data-cell="adapters-rows"' in body["fragment"]
+    assert bool(get_adapter_instance(conn, "csn")["enabled"]) is not was_enabled
+
+
 def test_adapter_test_action_runs_fetch_and_shows_result(client):
     response = client.post(
         "/config/adapters/test",

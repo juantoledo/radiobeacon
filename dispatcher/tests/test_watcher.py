@@ -362,6 +362,88 @@ def test_sync_policy_changes_records_audit_event_on_drift():
     assert '"new_policy": "urgent"' in row[3]
 
 
+def test_sync_policy_changes_is_null_safe_both_directions():
+    """The drift query uses SQL's `IS NOT` (not `<>`), which is NULL-safe --
+    a policy going from a real value to NULL, or from NULL to a real value,
+    must still be detected as drift, just as Python's `!=` on None always
+    was. `<>` would silently drop both of these comparisons."""
+    conn = _make_conn()
+    discover_new_items(conn, "log")
+
+    _insert_item(conn, "csn", "null-to-value", policy=None)
+    _insert_item(conn, "csn", "value-to-null", policy="informational")
+    discover_new_items(conn, "log")  # baseline both
+
+    conn.execute(
+        "UPDATE items SET policy = 'urgent' WHERE source = 'csn' AND item_id = 'null-to-value'"
+    )
+    conn.execute(
+        "UPDATE items SET policy = NULL WHERE source = 'csn' AND item_id = 'value-to-null'"
+    )
+    conn.commit()
+
+    assert watcher_module.sync_policy_changes(conn, "log") == 2
+    assert _armed(conn, "log", "csn", "null-to-value")
+    assert _armed(conn, "log", "csn", "value-to-null")
+
+    new_policy = dict(
+        conn.execute(
+            "SELECT item_id, policy FROM item_policy_state WHERE consumer = 'log' AND source = 'csn'"
+        )
+    )
+    assert new_policy["null-to-value"] == "urgent"
+    assert new_policy["value-to-null"] is None
+
+
+def test_sync_policy_changes_does_not_rearm_when_null_policy_is_unchanged():
+    """A NULL policy that stays NULL is not drift -- IS NOT (like Python's
+    `!=` on two Nones) treats NULL == NULL as "no change", so a delivered
+    item stays retired rather than being rearmed."""
+    conn = _make_conn()
+    consumer = "log"
+    discover_new_items(conn, consumer)
+    _insert_item(conn, "csn", "1", policy=None)
+
+    delivered = []
+    assert check_for_new_items(conn, consumer, [delivered.append]) == 1
+    assert len(delivered) == 1
+    assert not _armed(conn, consumer, "csn", "1")  # retired after delivery
+
+    assert watcher_module.sync_policy_changes(conn, consumer) == 0
+    assert not _armed(conn, consumer, "csn", "1")
+
+
+def test_sync_policy_changes_baselines_new_item_in_one_batch():
+    """Never-seen items are baselined via one executemany + one commit, not
+    individually -- and, per the "silently" contract, without an audit
+    event or arming."""
+    conn = _make_conn()
+    discover_new_items(conn, "log")
+    _insert_item(conn, "csn", "seed", policy="informational")
+    discover_new_items(conn, "log")  # baseline "seed"; also creates audit_log
+
+    _insert_item(conn, "csn", "a", policy="informational")
+    _insert_item(conn, "csn", "b", policy=None)
+
+    assert watcher_module.sync_policy_changes(conn, "log") == 0
+    assert not _armed(conn, "log", "csn", "a")
+    assert not _armed(conn, "log", "csn", "b")
+
+    baseline = dict(
+        conn.execute(
+            "SELECT item_id, policy FROM item_policy_state WHERE consumer = 'log' AND source = 'csn'"
+        )
+    )
+    assert baseline["a"] == "informational"
+    assert baseline["b"] is None
+    assert (
+        conn.execute(
+            "SELECT 1 FROM audit_log WHERE event_type = 'item.policy_drifted'"
+        ).fetchone()
+        is None
+    )
+
+
 def test_dispatch_due_items_records_audit_event_on_success():
     conn = _make_conn()
     consumer = "log"

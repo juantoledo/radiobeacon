@@ -94,6 +94,7 @@ from adapters.storage import (
     due_tx_schedule_rows,
     get_connection,
     get_setting,
+    get_settings,
     pending_manual_tx,
     record_audit_event,
     record_tx_schedule_sent,
@@ -120,6 +121,44 @@ BEACON_MQ_QOS = int(get_setting("BEACON_MQ_QOS", "1"))
 BEACON_MQ_RECONNECT_BACKOFF_SECONDS = int(get_setting("BEACON_MQ_RECONNECT_BACKOFF_SECONDS", "5"))
 
 VALID_BEACON_TYPES = ("voice", "frame")
+
+# Every key _run_transmit_loop's ctx dict pulls each tick, keyed to its
+# existing default -- one get_settings() bulk read instead of ~19
+# individual get_setting() queries per tick. BEACON_CALLSIGN is deliberately
+# NOT here: it's DB-only (env_fallback=False, see _run_transmit_loop) and
+# stays a standalone get_setting call so it doesn't get the uniform
+# env-fallback this bulk read applies to every other key.
+_TRANSMIT_SETTINGS_DEFAULTS = {
+    "BEACON_VOICE_TEMPLATE": BEACON_VOICE_TEMPLATE_DEFAULT,
+    "BEACON_VOICE_MAX_CHARS": BEACON_VOICE_MAX_CHARS_DEFAULT,
+    "BEACON_DATE_FORMAT": "%d-%m-%Y %H:%M",
+    "BEACON_FRAME_DESTINATION": "NFO",
+    "BEACON_FRAME_PREFIX": "",
+    "BEACON_FRAME_SUFFIX": "",
+    "BEACON_VOICE_PREFIX": BEACON_VOICE_PREFIX_DEFAULT,
+    "BEACON_VOICE_SUFFIX": BEACON_VOICE_SUFFIX_DEFAULT,
+    "BEACON_VOICE_ATTENTION_TONE": BEACON_VOICE_ATTENTION_TONE_DEFAULT,
+    "BEACON_TTS_WAV_DIR": "storage/beacon_tts",
+    "BEACON_TTS_VOICE": "es",
+    "BEACON_TTS_ENGINE": "piper",
+    "BEACON_TTS_PIPER_MODEL": "storage/piper_voices/es_MX-claude-high.onnx",
+    "BEACON_TTS_PIPER_BINARY": "piper",
+    "BEACON_GEN_PACKETS_BINARY": "gen_packets",
+    "BEACON_FRAME_LEAD_SILENCE_MS": "250",
+    "BEACON_WATERMARK_VOICE_TEMPLATE": BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT,
+    "BEACON_WATERMARK_FRAME_TEMPLATE": BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT,
+    "BEACON_MANUAL_VOICE_TEMPLATE": BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT,
+}
+
+# _run_housekeeping_loop's per-tick settings (excluding BEACON_TTS_RETENTION_DAYS,
+# which is only read ~hourly inside its own conditional, not every tick).
+_HOUSEKEEPING_SETTINGS_DEFAULTS = {
+    "BEACON_TICK_SECONDS": "2",
+    "BEACON_NTP_CHECK_INTERVAL_SECONDS": "3600",
+    "BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS": "30",
+    "BEACON_MAX_QUEUED_AGE_SECONDS": BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT,
+    "BEACON_TTS_WAV_DIR": "storage/beacon_tts",
+}
 
 
 def _resolve_wav_dir(raw: str) -> str:
@@ -984,19 +1023,14 @@ def _run_housekeeping_loop(stop_event: threading.Event, wake_event: threading.Ev
             refresh_level(conn=conn)
             now = time.time()
             now_dt = utc_now()
-            tick_seconds = int(get_setting("BEACON_TICK_SECONDS", "2", conn=conn))
+            settings = get_settings(_HOUSEKEEPING_SETTINGS_DEFAULTS, conn=conn)
+            tick_seconds = int(settings["BEACON_TICK_SECONDS"])
             beacon_type = _resolve_beacon_type(conn)
 
-            ntp_interval = int(get_setting("BEACON_NTP_CHECK_INTERVAL_SECONDS", "3600", conn=conn))
-            reconcile_interval = int(
-                get_setting("BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS", "30", conn=conn)
-            )
-            max_queued_age = int(
-                get_setting(
-                    "BEACON_MAX_QUEUED_AGE_SECONDS", BEACON_MAX_QUEUED_AGE_SECONDS_DEFAULT, conn=conn
-                )
-            )
-            wav_dir = _resolve_wav_dir(get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn))
+            ntp_interval = int(settings["BEACON_NTP_CHECK_INTERVAL_SECONDS"])
+            reconcile_interval = int(settings["BEACON_CONTENT_READY_RECONCILE_INTERVAL_SECONDS"])
+            max_queued_age = int(settings["BEACON_MAX_QUEUED_AGE_SECONDS"])
+            wav_dir = _resolve_wav_dir(settings["BEACON_TTS_WAV_DIR"])
 
             if now - last_ntp_check_at >= ntp_interval:
                 _run_ntp_check(conn)
@@ -1073,39 +1107,33 @@ def _run_transmit_loop(stop_event: threading.Event, wake_event: threading.Event)
                     "BEACON_WATERMARK_INTERVAL_SECONDS", BEACON_WATERMARK_INTERVAL_SECONDS_DEFAULT, conn=conn
                 )
             )
+            tx_settings = get_settings(_TRANSMIT_SETTINGS_DEFAULTS, conn=conn)
             ctx = {
+                # BEACON_CALLSIGN is deliberately DB-only (env_fallback=False)
+                # -- a same-named env var must never satisfy it, since it's
+                # edited only through the UI -- so it's left out of the bulk
+                # fetch above (which applies uniform env-fallback to every
+                # key) and kept as its own standalone call.
                 "callsign": get_setting("BEACON_CALLSIGN", conn=conn, env_fallback=False),
-                "voice_template": get_setting("BEACON_VOICE_TEMPLATE", BEACON_VOICE_TEMPLATE_DEFAULT, conn=conn),
-                "voice_max_chars": int(get_setting("BEACON_VOICE_MAX_CHARS", BEACON_VOICE_MAX_CHARS_DEFAULT, conn=conn)),
-                "date_format": get_setting("BEACON_DATE_FORMAT", "%d-%m-%Y %H:%M", conn=conn),
-                "destination": get_setting("BEACON_FRAME_DESTINATION", "NFO", conn=conn),
-                "frame_prefix": get_setting("BEACON_FRAME_PREFIX", "", conn=conn) or "",
-                "frame_suffix": get_setting("BEACON_FRAME_SUFFIX", "", conn=conn) or "",
-                "voice_prefix": get_setting("BEACON_VOICE_PREFIX", BEACON_VOICE_PREFIX_DEFAULT, conn=conn) or "",
-                "voice_suffix": get_setting("BEACON_VOICE_SUFFIX", BEACON_VOICE_SUFFIX_DEFAULT, conn=conn) or "",
-                "voice_attention_tone": get_setting(
-                    "BEACON_VOICE_ATTENTION_TONE", BEACON_VOICE_ATTENTION_TONE_DEFAULT, conn=conn
-                ) or "",
-                "wav_dir": _resolve_wav_dir(
-                    get_setting("BEACON_TTS_WAV_DIR", "storage/beacon_tts", conn=conn)
-                ),
-                "tts_voice": get_setting("BEACON_TTS_VOICE", "es", conn=conn),
-                "tts_engine": get_setting("BEACON_TTS_ENGINE", "piper", conn=conn),
-                "tts_piper_model": get_setting(
-                    "BEACON_TTS_PIPER_MODEL", "storage/piper_voices/es_MX-claude-high.onnx", conn=conn
-                ),
-                "tts_piper_binary": get_setting("BEACON_TTS_PIPER_BINARY", "piper", conn=conn),
-                "gen_packets_binary": get_setting("BEACON_GEN_PACKETS_BINARY", "gen_packets", conn=conn),
-                "frame_lead_silence_ms": int(get_setting("BEACON_FRAME_LEAD_SILENCE_MS", "250", conn=conn)),
-                "watermark_voice_template": get_setting(
-                    "BEACON_WATERMARK_VOICE_TEMPLATE", BEACON_WATERMARK_VOICE_TEMPLATE_DEFAULT, conn=conn
-                ),
-                "watermark_frame_template": get_setting(
-                    "BEACON_WATERMARK_FRAME_TEMPLATE", BEACON_WATERMARK_FRAME_TEMPLATE_DEFAULT, conn=conn
-                ),
-                "manual_voice_template": get_setting(
-                    "BEACON_MANUAL_VOICE_TEMPLATE", BEACON_MANUAL_VOICE_TEMPLATE_DEFAULT, conn=conn
-                ),
+                "voice_template": tx_settings["BEACON_VOICE_TEMPLATE"],
+                "voice_max_chars": int(tx_settings["BEACON_VOICE_MAX_CHARS"]),
+                "date_format": tx_settings["BEACON_DATE_FORMAT"],
+                "destination": tx_settings["BEACON_FRAME_DESTINATION"],
+                "frame_prefix": tx_settings["BEACON_FRAME_PREFIX"] or "",
+                "frame_suffix": tx_settings["BEACON_FRAME_SUFFIX"] or "",
+                "voice_prefix": tx_settings["BEACON_VOICE_PREFIX"] or "",
+                "voice_suffix": tx_settings["BEACON_VOICE_SUFFIX"] or "",
+                "voice_attention_tone": tx_settings["BEACON_VOICE_ATTENTION_TONE"] or "",
+                "wav_dir": _resolve_wav_dir(tx_settings["BEACON_TTS_WAV_DIR"]),
+                "tts_voice": tx_settings["BEACON_TTS_VOICE"],
+                "tts_engine": tx_settings["BEACON_TTS_ENGINE"],
+                "tts_piper_model": tx_settings["BEACON_TTS_PIPER_MODEL"],
+                "tts_piper_binary": tx_settings["BEACON_TTS_PIPER_BINARY"],
+                "gen_packets_binary": tx_settings["BEACON_GEN_PACKETS_BINARY"],
+                "frame_lead_silence_ms": int(tx_settings["BEACON_FRAME_LEAD_SILENCE_MS"]),
+                "watermark_voice_template": tx_settings["BEACON_WATERMARK_VOICE_TEMPLATE"],
+                "watermark_frame_template": tx_settings["BEACON_WATERMARK_FRAME_TEMPLATE"],
+                "manual_voice_template": tx_settings["BEACON_MANUAL_VOICE_TEMPLATE"],
                 "wav_transmitter": _build_wav_transmitter(conn),
             }
 

@@ -97,6 +97,37 @@ def test_dashboard_shows_queued_count(client, conn):
     assert "1 queued" in body
 
 
+# --- AJAX (X-Requested-With: fetch) branch — see ui.ajax ---
+
+
+def test_transmit_ajax_success_returns_fragment(client, conn):
+    _configure_beacon(conn)
+    resp = client.post(
+        "/dashboard/transmit",
+        data={"kind": "voice", "text": "hola"},
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert "fragment" in body
+    assert 'data-cell="manual_tx_bar"' in body["fragment"]
+    assert pending_manual_tx(conn, "voice")[0]["text"] == "hola"
+
+
+def test_transmit_ajax_validation_error_has_no_fragment(client, conn):
+    resp = client.post(
+        "/dashboard/transmit",
+        data={"kind": "voice", "text": "hola"},
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["ok"] is False
+    assert "fragment" not in body
+    assert count_manual_tx_by_kind(conn) == {}
+
+
 # --- playback of rendered manual clips ---
 
 

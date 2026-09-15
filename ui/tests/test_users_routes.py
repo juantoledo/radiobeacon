@@ -121,3 +121,80 @@ def test_user_role_cannot_reach_admin_only_routes(user_client):
 
 def test_user_role_can_reach_dashboard(user_client):
     assert user_client.get("/").status_code == 200
+
+
+# --- AJAX (X-Requested-With: fetch) branch — see ui.ajax ---
+
+
+def test_change_role_ajax_returns_fragment(client, conn):
+    from adapters.auth import create_user
+
+    user = create_user(conn, "operator", "correct-horse", "user", actor="test")
+    response = client.post(
+        f"/users/{user.id}/role",
+        data={"role": "admin"},
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert 'data-cell="users-rows"' in body["fragment"]
+    assert get_user_by_username(conn, "operator").role == "admin"
+
+
+def test_reset_password_ajax_returns_fragment(client, conn):
+    from adapters.auth import create_user, verify_password
+
+    user = create_user(conn, "operator", "old-password", "user", actor="test")
+    response = client.post(
+        f"/users/{user.id}/reset-password",
+        data={"password": "new-password-123", "confirm_password": "new-password-123"},
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "fragment" in body
+    row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user.id,)).fetchone()
+    assert verify_password("new-password-123", row[0])
+
+
+def test_reset_password_ajax_mismatch_has_no_fragment(client, conn):
+    from adapters.auth import create_user
+
+    user = create_user(conn, "operator", "old-password", "user", actor="test")
+    response = client.post(
+        f"/users/{user.id}/reset-password",
+        data={"password": "new-password-123", "confirm_password": "nope"},
+        headers={"X-Requested-With": "fetch"},
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert "fragment" not in body
+
+
+def test_delete_user_ajax_returns_fragment_without_deleted_row(client, conn):
+    from adapters.auth import create_user
+
+    user = create_user(conn, "operator", "correct-horse", "user", actor="test")
+    response = client.post(
+        f"/users/{user.id}/delete", headers={"X-Requested-With": "fetch"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert 'data-cell="users-rows"' in body["fragment"]
+    assert ">operator<" not in body["fragment"]
+    assert get_user_by_username(conn, "operator") is None
+
+
+def test_cannot_delete_the_last_remaining_admin_ajax_has_no_fragment(client, conn, admin_user):
+    response = client.post(
+        f"/users/{admin_user.id}/delete", headers={"X-Requested-With": "fetch"}
+    )
+    assert response.status_code == 400
+    body = response.json()
+    assert body["ok"] is False
+    assert "fragment" not in body
+    assert get_user_by_username(conn, "admin") is not None

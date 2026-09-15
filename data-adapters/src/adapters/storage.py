@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sqlite3
+import threading
 from datetime import datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -17,6 +18,61 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DB_PATH = REPO_ROOT / "storage" / "radiobeacon.db"
 
 _audit_event_hooks: list[Callable[..., None]] = []
+
+_BOOTSTRAP_LOCK = threading.Lock()
+_BOOTSTRAPPED: set[tuple] = set()   # {(kind, st_dev, st_ino)}
+
+
+def _db_identity(conn: sqlite3.Connection) -> tuple[int, int] | None:
+    """Stable identity of the real database file behind `conn`, or None
+    when there isn't one to identify (":memory:"/temp DBs report an empty
+    filename via PRAGMA database_list — never cache those; two connections
+    opened with the identical ":memory:" path string are two genuinely
+    separate, independently-empty databases). Keyed on (st_dev, st_ino)
+    rather than the path string so a file deleted and recreated under the
+    same path (a different database) still re-bootstraps."""
+    try:
+        filename = next(
+            (r[2] for r in conn.execute("PRAGMA database_list") if r[1] == "main"), ""
+        )
+    except sqlite3.Error:
+        return None
+    if not filename:
+        return None
+    try:
+        st = os.stat(filename)
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino)
+
+
+def _ensure_bootstrapped(conn: sqlite3.Connection, kind: str, bootstrap: Callable[[sqlite3.Connection], None]) -> None:
+    """Runs bootstrap(conn) at most once per process per real database
+    file. The lock guards only the set membership, never the SQL itself —
+    two threads racing the very first bootstrap of a fresh file both run
+    it, which is today's existing behavior and already self-healing
+    (idempotent CREATE TABLE/INDEX IF NOT EXISTS); holding a lock across
+    ~20 statements would serialize every thread's first connection open
+    for no correctness gain."""
+    identity = _db_identity(conn)
+    if identity is None:
+        bootstrap(conn)   # :memory:/temp: never cached, always fresh
+        return
+    key = (kind, *identity)
+    with _BOOTSTRAP_LOCK:
+        if key in _BOOTSTRAPPED:
+            return
+    bootstrap(conn)
+    with _BOOTSTRAP_LOCK:
+        _BOOTSTRAPPED.add(key)
+
+
+def reset_schema_bootstrap_cache() -> None:
+    """Test hook — call from an autouse fixture so inode reuse across
+    different tests' temp dirs within one pytest process can't produce a
+    false cache hit."""
+    with _BOOTSTRAP_LOCK:
+        _BOOTSTRAPPED.clear()
 
 
 def register_audit_event_hook(hook: Callable[..., None]) -> None:
@@ -51,6 +107,13 @@ CREATE TABLE IF NOT EXISTS items (
 );
 """
 
+_CREATE_ITEMS_CAPTURED_AT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_items_captured_at ON items (captured_at);"
+)
+_CREATE_ITEMS_SOURCE_DATE_TIME_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_items_source_date_time ON items (source_date_time DESC);"
+)
+
 # audit_log is the one durable, queryable record of pipeline events —
 # unlike stdlib logging (stdout only, not persisted). Every package writes
 # to it exclusively through record_audit_event() below, never directly, so
@@ -73,6 +136,9 @@ _CREATE_AUDIT_LOG_SOURCE_ITEM_INDEX = (
 )
 _CREATE_AUDIT_LOG_EVENT_TYPE_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_audit_log_event_type ON audit_log (event_type);"
+)
+_CREATE_AUDIT_LOG_RECORDED_AT_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_recorded_at ON audit_log (recorded_at);"
 )
 
 # chunks is a durable, ordered record of every chunk a "chunk"-family
@@ -782,6 +848,19 @@ def _migrate_items_table(conn: sqlite3.Connection) -> None:
             columns.discard(column)
 
 
+def _ensure_items_indexes(conn: sqlite3.Connection) -> None:
+    """Call only after _migrate_items_table — source_date_time is added by
+    that migration, and captured_at is not in _NEW_TEXT_COLUMNS at all, so
+    a pre-captured_at legacy database genuinely lacks that column. A
+    missing column must stay a harmless no-op, never a hard failure that
+    stops get_connection from returning."""
+    for statement in (_CREATE_ITEMS_CAPTURED_AT_INDEX, _CREATE_ITEMS_SOURCE_DATE_TIME_INDEX):
+        try:
+            conn.execute(statement)
+        except sqlite3.OperationalError:
+            logger.debug("skipped items index (column not present yet): %s", statement)
+
+
 def _ensure_policies_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — same pattern as
     _ensure_sources_table."""
@@ -811,16 +890,22 @@ def _ensure_policies_seeded(conn: sqlite3.Connection) -> None:
 def _ensure_beacon_tx_schedule_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — the beacon TX
     helpers below call this themselves, same pattern as
-    _ensure_audit_log_table."""
-    conn.execute(_CREATE_BEACON_TX_SCHEDULE)
-    conn.execute(_CREATE_BEACON_TX_SCHEDULE_KIND_INDEX)
+    _ensure_audit_log_table. Routes through the process-wide bootstrap
+    cache (kind="beacon_tx_schedule") since these helpers are called on
+    every beacon TX loop tick, independent of get_connection."""
+    def _create(c: sqlite3.Connection) -> None:
+        c.execute(_CREATE_BEACON_TX_SCHEDULE)
+        c.execute(_CREATE_BEACON_TX_SCHEDULE_KIND_INDEX)
+
+    _ensure_bootstrapped(conn, "beacon_tx_schedule", _create)
 
 
 def _ensure_beacon_manual_tx_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — the manual-tx
     helpers below call this themselves, same pattern as
-    _ensure_beacon_tx_schedule_table."""
-    conn.execute(_CREATE_BEACON_MANUAL_TX)
+    _ensure_beacon_tx_schedule_table. Routes through the process-wide
+    bootstrap cache (kind="beacon_manual_tx")."""
+    _ensure_bootstrapped(conn, "beacon_manual_tx", lambda c: c.execute(_CREATE_BEACON_MANUAL_TX))
 
 
 def _backfill_senapred_ai_on_failure(conn: sqlite3.Connection) -> None:
@@ -894,24 +979,21 @@ def get_connection(
     conn = sqlite3.connect(path, timeout=30, check_same_thread=check_same_thread)
     try:
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.executescript(SCHEMA)
-        _migrate_items_table(conn)
-        _ensure_audit_log_table(conn)
-        _ensure_chunks_table(conn)
-        _ensure_settings_table(conn)
-        _ensure_users_table(conn)
-        _ensure_sessions_table(conn)
-        _ensure_beacon_status_table(conn)
-        _ensure_item_readiness_table(conn)
-        _ensure_sources_table(conn)
+        _ensure_bootstrapped(conn, "schema", _bootstrap_schema)
+        # The three _ensure_*_seeded calls stay outside the cached
+        # bootstrap and run on every single get_connection call, unlike
+        # everything above — each is just one cheap `SELECT COUNT(*)`
+        # (its own table's already-cached _ensure_*_table call makes even
+        # that redundant CREATE TABLE a no-op), and "insert seed rows only
+        # when the table is empty" must keep working even after this
+        # process's very first bootstrap of this database file: e.g. an
+        # operator (or a test) that deletes every adapter_instances row
+        # expects the very next get_connection() to reseed it, not to wait
+        # for a process restart. Skipping these along with the rest of
+        # _bootstrap_schema would silently break that.
         _ensure_sources_seeded(conn)
-        _ensure_policies_table(conn)
         _ensure_policies_seeded(conn)
-        _ensure_adapter_instances_table(conn)
         _ensure_adapter_instances_seeded(conn)
-        _ensure_beacon_tx_schedule_table(conn)
-        _ensure_beacon_manual_tx_table(conn)
-        _backfill_senapred_ai_on_failure(conn)
         conn.commit()
     except Exception:
         conn.close()
@@ -920,14 +1002,64 @@ def get_connection(
     return conn
 
 
+def _bootstrap_schema(conn: sqlite3.Connection) -> None:
+    """The one-time-per-database-file bootstrap sequence get_connection
+    used to re-run in full on every call — schema creation, migrations,
+    every _ensure_*_table, and the senapred backfill. Extracted so it can
+    be run through _ensure_bootstrapped and cached on the real database
+    file's identity (see _db_identity/_ensure_bootstrapped above).
+
+    Deliberately excludes _ensure_sources_seeded/_ensure_policies_seeded/
+    _ensure_adapter_instances_seeded — see get_connection's comment for
+    why those three stay uncached and run on every call instead."""
+    conn.executescript(SCHEMA)
+    _migrate_items_table(conn)
+    _ensure_items_indexes(conn)
+    _ensure_audit_log_table(conn)
+    _ensure_chunks_table(conn)
+    _ensure_settings_table(conn)
+    _ensure_users_table(conn)
+    _ensure_sessions_table(conn)
+    _ensure_beacon_status_table(conn)
+    _ensure_item_readiness_table(conn)
+    _ensure_sources_table(conn)
+    _ensure_policies_table(conn)
+    _ensure_adapter_instances_table(conn)
+    _ensure_beacon_tx_schedule_table(conn)
+    _ensure_beacon_manual_tx_table(conn)
+    _backfill_senapred_ai_on_failure(conn)
+
+
 def _ensure_audit_log_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection (not just ones from
     get_connection) — record_audit_event calls this itself, so a caller
     that hand-rolls a bare sqlite3 connection (e.g. a test) doesn't need to
-    separately know about this table."""
-    conn.execute(_CREATE_AUDIT_LOG)
-    conn.execute(_CREATE_AUDIT_LOG_SOURCE_ITEM_INDEX)
-    conn.execute(_CREATE_AUDIT_LOG_EVENT_TYPE_INDEX)
+    separately know about this table. Routes through the process-wide
+    bootstrap cache (kind="audit_log") since record_audit_event is on the
+    hottest path in the repo (every MQTT message, ~110 call sites)."""
+    def _create(c: sqlite3.Connection) -> None:
+        c.execute(_CREATE_AUDIT_LOG)
+        c.execute(_CREATE_AUDIT_LOG_SOURCE_ITEM_INDEX)
+        c.execute(_CREATE_AUDIT_LOG_EVENT_TYPE_INDEX)
+        c.execute(_CREATE_AUDIT_LOG_RECORDED_AT_INDEX)
+
+    _ensure_bootstrapped(conn, "audit_log", _create)
+
+
+def dispatch_audit_event_hooks(*payloads: dict) -> None:
+    """Fires every registered audit-event hook for each payload, in order.
+    Each payload is the same keyword-argument shape record_audit_event
+    passes to a hook (event_type, actor, source, item_id, details). A hook
+    that raises is logged and swallowed, exactly like record_audit_event's
+    own inline dispatch — used both by record_audit_event(commit=True)
+    itself and by a caller (e.g. store_reading) batching several rows
+    under one commit and firing all of their hooks afterward."""
+    for payload in payloads:
+        for hook in _audit_event_hooks:
+            try:
+                hook(**payload)
+            except Exception:
+                logger.error("audit event hook failed hook=%r", hook, exc_info=True)
 
 
 def record_audit_event(
@@ -938,15 +1070,27 @@ def record_audit_event(
     source: str | None = None,
     item_id: str | None = None,
     details: dict[str, Any] | None = None,
-) -> None:
+    commit: bool = True,
+) -> dict[str, Any] | None:
     """The one contract every package writes audit rows through — same
     function, same column set, regardless of which package or which event
     produced it. `actor` identifies what wrote the row (e.g.
     "adapters.CustomAdapter", "dispatcher.watcher"). `details` is optional free-form JSON (reuses
     _json_default for datetime/dataclass/Enum values, same as rawdata).
-    After the row commits, every hook registered via
-    register_audit_event_hook() is invoked with these same arguments —
-    see that function for the contract (best-effort, never raises)."""
+
+    commit=True (the default, unchanged behavior for every existing call
+    site): commits immediately and fires every hook registered via
+    register_audit_event_hook() immediately after — see that function for
+    the contract (best-effort, never raises). Returns None.
+
+    commit=False: writes the INSERT into the caller's already-open
+    transaction and returns the hook payload dict instead of firing hooks
+    — the row is NOT committed and hooks are NOT fired. For a caller
+    batching several audit rows under one transaction (e.g. store_reading)
+    that wants exactly one commit for the whole batch, then to fire every
+    collected payload's hooks afterward via dispatch_audit_event_hooks —
+    so a hook publishing to MQTT still never fires for an uncommitted
+    row."""
     _ensure_audit_log_table(conn)
     conn.execute(
         "INSERT INTO audit_log (event_type, actor, source, item_id, details) "
@@ -959,25 +1103,26 @@ def record_audit_event(
             json.dumps(details, default=_json_default) if details is not None else None,
         ),
     )
-    conn.commit()
+    payload = {
+        "event_type": event_type,
+        "actor": actor,
+        "source": source,
+        "item_id": item_id,
+        "details": details,
+    }
+    if not commit:
+        return payload
 
-    for hook in _audit_event_hooks:
-        try:
-            hook(
-                event_type=event_type,
-                actor=actor,
-                source=source,
-                item_id=item_id,
-                details=details,
-            )
-        except Exception:
-            logger.error("audit event hook failed hook=%r", hook, exc_info=True)
+    conn.commit()
+    dispatch_audit_event_hooks(payload)
+    return None
 
 
 def _ensure_chunks_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — store_chunks calls
-    this itself, same pattern as _ensure_audit_log_table."""
-    conn.execute(_CREATE_CHUNKS)
+    this itself, same pattern as _ensure_audit_log_table. Routes through
+    the process-wide bootstrap cache (kind="chunks")."""
+    _ensure_bootstrapped(conn, "chunks", lambda c: c.execute(_CREATE_CHUNKS))
 
 
 def store_chunks(conn: sqlite3.Connection, chunks: list[dict[str, Any]]) -> int:
@@ -1054,24 +1199,33 @@ def item_exists(conn: sqlite3.Connection, source: str, item_id: str) -> bool:
 def _ensure_settings_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — get_setting/
     set_setting/list_settings/delete_setting all call this themselves, same
-    pattern as _ensure_audit_log_table/_ensure_chunks_table."""
-    conn.execute(_CREATE_SETTINGS)
+    pattern as _ensure_audit_log_table/_ensure_chunks_table. Routes through
+    the process-wide bootstrap cache (kind="settings") — get_setting is
+    called on very hot paths (once per HTTP request, once per MQTT
+    message) and used to independently re-check this table every time."""
+    _ensure_bootstrapped(conn, "settings", lambda c: c.execute(_CREATE_SETTINGS))
 
 
 def _ensure_users_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — adapters.auth's
     user functions all call this themselves, same pattern as
-    _ensure_settings_table."""
-    conn.execute(_CREATE_USERS)
+    _ensure_settings_table. Routes through the process-wide bootstrap cache
+    (kind="users")."""
+    _ensure_bootstrapped(conn, "users", lambda c: c.execute(_CREATE_USERS))
 
 
 def _ensure_sessions_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — adapters.auth's
     session functions all call this themselves, same pattern as
-    _ensure_settings_table."""
-    conn.execute(_CREATE_SESSIONS)
-    conn.execute(_CREATE_SESSIONS_USER_ID_INDEX)
-    conn.execute(_CREATE_SESSIONS_EXPIRES_AT_INDEX)
+    _ensure_settings_table. Routes through the process-wide bootstrap cache
+    (kind="sessions") — session validation runs on every authenticated UI
+    request."""
+    def _create(c: sqlite3.Connection) -> None:
+        c.execute(_CREATE_SESSIONS)
+        c.execute(_CREATE_SESSIONS_USER_ID_INDEX)
+        c.execute(_CREATE_SESSIONS_EXPIRES_AT_INDEX)
+
+    _ensure_bootstrapped(conn, "sessions", _create)
 
 
 def get_setting(
@@ -1124,6 +1278,27 @@ def get_setting(
     if not env_fallback:
         return default
     return os.environ.get(key, default)
+
+
+def get_settings(keys, *, conn: sqlite3.Connection, env_fallback: bool = True) -> dict:
+    """Bulk get_setting: one SELECT instead of one query per key. `keys` is
+    a mapping of key -> default. Applies the identical DB row -> env var ->
+    default resolution per key that get_setting uses."""
+    _ensure_settings_table(conn)
+    placeholders = ",".join("?" for _ in keys)
+    rows = dict(
+        conn.execute(f"SELECT key, value FROM settings WHERE key IN ({placeholders})", tuple(keys))
+    )
+    out = {}
+    for key, default in keys.items():
+        value = rows.get(key)
+        if value is not None:
+            out[key] = value
+        elif env_fallback:
+            out[key] = os.environ.get(key, default)
+        else:
+            out[key] = default
+    return out
 
 
 def set_setting(
@@ -1180,8 +1355,10 @@ def list_settings(conn: sqlite3.Connection) -> list[sqlite3.Row]:
 def _ensure_beacon_status_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — set_beacon_status/
     get_beacon_status/list_beacon_status all call this themselves, same
-    pattern as _ensure_settings_table."""
-    conn.execute(_CREATE_BEACON_STATUS)
+    pattern as _ensure_settings_table. Routes through the process-wide
+    bootstrap cache (kind="beacon_status") — telemetry is written every
+    beacon loop tick."""
+    _ensure_bootstrapped(conn, "beacon_status", lambda c: c.execute(_CREATE_BEACON_STATUS))
 
 
 def set_beacon_status(conn: sqlite3.Connection, key: str, value: str | None) -> None:
@@ -1216,8 +1393,9 @@ def list_beacon_status(conn: sqlite3.Connection) -> dict[str, str]:
 def _ensure_item_readiness_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — mark_item_ready_published/
     get_item_ready_published_at call this themselves, same pattern as
-    _ensure_settings_table."""
-    conn.execute(_CREATE_ITEM_READINESS)
+    _ensure_settings_table. Routes through the process-wide bootstrap cache
+    (kind="item_readiness")."""
+    _ensure_bootstrapped(conn, "item_readiness", lambda c: c.execute(_CREATE_ITEM_READINESS))
 
 
 def mark_item_ready_published(conn: sqlite3.Connection, source: str, item_id: str) -> None:
@@ -1526,8 +1704,10 @@ def count_manual_tx_by_kind(conn: sqlite3.Connection) -> dict[str, int]:
 
 def _ensure_sources_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — same pattern as
-    _ensure_settings_table/_ensure_item_readiness_table."""
-    conn.execute(_CREATE_SOURCES)
+    _ensure_settings_table/_ensure_item_readiness_table. Routes through
+    the process-wide bootstrap cache (kind="sources") — get_source_fields
+    calls this on every item render."""
+    _ensure_bootstrapped(conn, "sources", lambda c: c.execute(_CREATE_SOURCES))
 
 
 def _ensure_sources_seeded(conn: sqlite3.Connection) -> None:
@@ -1613,8 +1793,10 @@ def delete_source(conn: sqlite3.Connection, source: str) -> bool:
 
 def _ensure_adapter_instances_table(conn: sqlite3.Connection) -> None:
     """Idempotent, and safe to call on any connection — same pattern as
-    _ensure_sources_table."""
-    conn.execute(_CREATE_ADAPTER_INSTANCES)
+    _ensure_sources_table. Routes through the process-wide bootstrap cache
+    (kind="adapter_instances") — get_adapter_instance is on the item
+    rendering hot path (beacon.content, actions)."""
+    _ensure_bootstrapped(conn, "adapter_instances", lambda c: c.execute(_CREATE_ADAPTER_INSTANCES))
 
 
 def _ensure_adapter_instances_seeded(conn: sqlite3.Connection) -> None:
@@ -1834,6 +2016,7 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
     stored = 0
     skipped_no_id = 0
     failed = 0
+    audit_payloads = []
     items = reading.data if isinstance(reading.data, list) else []
     instance_policy = conn.execute(
         "SELECT policy FROM adapter_instances WHERE source = ?", (reading.source,)
@@ -1868,13 +2051,15 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
                 ),
             )
             if cursor.rowcount:
-                record_audit_event(
+                payload = record_audit_event(
                     conn,
                     event_type="item.stored",
                     actor="adapters.storage",
                     source=reading.source,
                     item_id=item_id,
+                    commit=False,
                 )
+                audit_payloads.append(payload)
             stored += cursor.rowcount
         except Exception:
             # One malformed/unexpected item must never discard every item
@@ -1890,6 +2075,7 @@ def store_reading(conn: sqlite3.Connection, reading: Any) -> int:
             )
 
     conn.commit()
+    dispatch_audit_event_hooks(*audit_payloads)
     already_known = len(items) - stored - skipped_no_id - failed
     logger.info(
         "store done source=%s new=%d already_known=%d skipped_no_id=%d failed=%d",

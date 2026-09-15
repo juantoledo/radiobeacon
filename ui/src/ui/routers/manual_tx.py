@@ -14,13 +14,15 @@ from urllib.parse import urlencode
 from adapters.ax25 import max_frame_content_bytes
 from adapters.beacon_defaults import BEACON_TYPE_DEFAULT, BEACON_VOICE_MAX_CHARS_DEFAULT
 from adapters.storage import enqueue_manual_tx, get_setting
-from fastapi import APIRouter, Depends, Form, HTTPException
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from starlette.responses import FileResponse, RedirectResponse
 
 from .. import beacon_audio
+from ..ajax import ajax_error, ajax_ok, is_ajax
 from ..beacon import is_beacon_configured
 from ..current_user import require_role
 from ..db import get_db
+from ..fragments import render_dashboard_live
 
 router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
@@ -50,33 +52,42 @@ def _redirect(key: str, message: str) -> RedirectResponse:
 
 @router.post("/dashboard/transmit")
 def dashboard_transmit(
+    request: Request,
     kind: str = Form(...),
     text: str = Form(...),
     conn: sqlite3.Connection = Depends(get_db),
 ):
+    def _error(message: str):
+        if is_ajax(request):
+            return ajax_error(message)
+        return _redirect("error", message)
+
     if not is_beacon_configured(conn):
-        return _redirect("error", "beacon identity not configured — set it up before transmitting")
+        return _error("beacon identity not configured — set it up before transmitting")
 
     kind = (kind or "").strip().lower()
     if kind not in _KINDS:
-        return _redirect("error", "pick voice or frame")
+        return _error("pick voice or frame")
 
     text = (text or "").strip()
     if not text:
-        return _redirect("error", "nothing to transmit — the message is empty")
+        return _error("nothing to transmit — the message is empty")
 
     if kind == "voice":
         limit = voice_max_chars(conn)
         if len(text) > limit:
-            return _redirect("error", f"message is {len(text)} chars — the voice limit is {limit}")
+            return _error(f"message is {len(text)} chars — the voice limit is {limit}")
     else:
         limit = frame_max_bytes(conn)
         size = len(text.encode("utf-8"))
         if size > limit:
-            return _redirect("error", f"message is {size} bytes — the frame limit is {limit}")
+            return _error(f"message is {size} bytes — the frame limit is {limit}")
 
     enqueue_manual_tx(conn, kind=kind, text=text, actor="ui.dashboard")
-    return _redirect("msg", f"{kind} message queued — the beacon sends it on its next tick")
+    msg = f"{kind} message queued — the beacon sends it on its next tick"
+    if is_ajax(request):
+        return ajax_ok(msg, fragment=render_dashboard_live(request, conn))
+    return _redirect("msg", msg)
 
 
 @router.get("/dashboard/manual-audio/{name}")

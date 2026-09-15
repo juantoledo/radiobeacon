@@ -53,6 +53,21 @@ def to_utc(dt: datetime, *, assume_tz: str | None = None) -> datetime:
     return dt.replace(tzinfo=ZoneInfo(assume_tz)).astimezone(timezone.utc)
 
 
+def resolve_display_tz(*, conn: sqlite3.Connection | None = None) -> ZoneInfo:
+    """The configured DISPLAY_TIMEZONE (DB row -> env var -> "America/Santiago",
+    see adapters.storage.get_setting) as a ZoneInfo. Split out of
+    to_display_tz so a caller rendering many timestamps in one request (e.g.
+    ui.templating._display_dt, once per timestamp on a page) can resolve it
+    once instead of re-querying get_setting on every call.
+
+    Pass conn to reuse an already-open connection instead of opening a
+    new short-lived one via get_setting's own owns_conn fallback (which
+    targets adapters.storage.DEFAULT_DB_PATH — wrong for a caller whose
+    DB path is overridden, e.g. ui's UI_DB_PATH)."""
+    tz_name = get_setting(DISPLAY_TIMEZONE_ENV_VAR, DEFAULT_DISPLAY_TIMEZONE, conn=conn)
+    return ZoneInfo(tz_name)
+
+
 def to_display_tz(dt: datetime, *, conn: sqlite3.Connection | None = None) -> datetime:
     """Converts a UTC (or any tz-aware) datetime to this repo's
     configured DISPLAY_TIMEZONE (DB row -> env var -> "America/Santiago",
@@ -77,5 +92,4 @@ def to_display_tz(dt: datetime, *, conn: sqlite3.Connection | None = None) -> da
             "with to_utc() first, there's no defined instant to display "
             "otherwise"
         )
-    tz_name = get_setting(DISPLAY_TIMEZONE_ENV_VAR, DEFAULT_DISPLAY_TIMEZONE, conn=conn)
-    return dt.astimezone(ZoneInfo(tz_name))
+    return dt.astimezone(resolve_display_tz(conn=conn))

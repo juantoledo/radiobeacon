@@ -3,7 +3,7 @@ import sqlite3
 from datetime import datetime
 from typing import Callable
 
-from adapters.storage import record_audit_event
+from adapters.storage import _ensure_bootstrapped, record_audit_event
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +88,19 @@ def _migrate_trigger_dispatches_table(conn: sqlite3.Connection) -> None:
 
 
 def _ensure_tables(conn: sqlite3.Connection) -> None:
-    _migrate_trigger_state_table(conn)
-    _migrate_trigger_dispatches_table(conn)
-    conn.execute(_CREATE_DISPATCHER_STATE)
-    conn.execute(_CREATE_TRIGGER_DISPATCHES)
-    conn.execute(_CREATE_ITEM_POLICY_STATE)
-    conn.commit()
+    """Routes through adapters.storage's process-wide bootstrap cache
+    (kind="dispatcher") — this is called on every UI HTTP request via
+    ui.db.get_db, and used to independently re-run these migrations and
+    CREATE TABLE statements every single call."""
+    def _create(c: sqlite3.Connection) -> None:
+        _migrate_trigger_state_table(c)
+        _migrate_trigger_dispatches_table(c)
+        c.execute(_CREATE_DISPATCHER_STATE)
+        c.execute(_CREATE_TRIGGER_DISPATCHES)
+        c.execute(_CREATE_ITEM_POLICY_STATE)
+        c.commit()
+
+    _ensure_bootstrapped(conn, "dispatcher", _create)
 
 
 def _last_seen_rowid(conn: sqlite3.Connection, consumer: str) -> int:
@@ -224,56 +231,75 @@ def sync_policy_changes(conn: sqlite3.Connection, consumer: str) -> int:
     just has its current value baselined, silently, the first time it's
     seen here — matching the same "don't flood on first run" principle
     as discover_new_items' watermark skip. Only a *change relative to
-    that baseline* arms an item. Returns the number of items armed."""
+    that baseline* arms an item. Returns the number of items armed.
+
+    Rather than pulling all of `items` and all of `item_policy_state` into
+    Python and diffing dict-by-dict (an O(all rows) scan every tick,
+    regardless of how few actually need action), two targeted queries ask
+    SQLite for exactly the rows that matter:
+    - a LEFT JOIN for "no item_policy_state row at all yet" (the baseline
+      case — s.source IS NULL is only possible via a LEFT JOIN miss);
+    - an INNER JOIN with `IS NOT` for "recorded, and different now" — SQL's
+      NULL-safe comparison operator, matching Python's `!=` on None (unlike
+      `<>`/`!=` in SQL, which is NOT NULL-safe and would silently drop a
+      comparison where either side is NULL)."""
     _ensure_tables(conn)
     conn.row_factory = sqlite3.Row
 
-    # A dict lookup (vs. a LEFT JOIN) cleanly distinguishes "no snapshot
-    # recorded yet" from "recorded, and it happens to be NULL" — an item
-    # whose policy is itself genuinely unset.
-    known = {
-        (row["source"], row["item_id"]): row["policy"]
-        for row in conn.execute(
-            "SELECT source, item_id, policy FROM item_policy_state "
-            "WHERE consumer = ?",
-            (consumer,),
-        )
-    }
+    never_seen = conn.execute(
+        """
+        SELECT i.source, i.item_id, i.policy
+        FROM items i
+        LEFT JOIN item_policy_state s
+               ON s.consumer = ? AND s.source = i.source AND s.item_id = i.item_id
+        WHERE s.source IS NULL
+        """,
+        (consumer,),
+    ).fetchall()
 
-    items = conn.execute("SELECT source, item_id, policy FROM items").fetchall()
+    # Never seen by this consumer before — baseline silently, no audit
+    # event. Batched into one executemany + one commit since none of these
+    # are individually significant (unlike an armed drift below).
+    if never_seen:
+        conn.executemany(
+            "INSERT INTO item_policy_state "
+            "(consumer, source, item_id, policy) VALUES (?, ?, ?, ?)",
+            [(consumer, row["source"], row["item_id"], row["policy"]) for row in never_seen],
+        )
+        conn.commit()
+
+    drifted = conn.execute(
+        """
+        SELECT i.source, i.item_id, i.policy AS new_policy, s.policy AS old_policy
+        FROM items i
+        JOIN item_policy_state s
+             ON s.consumer = ? AND s.source = i.source AND s.item_id = i.item_id
+        WHERE i.policy IS NOT s.policy
+        """,
+        (consumer,),
+    ).fetchall()
 
     changed = 0
-    for row in items:
-        key = (row["source"], row["item_id"])
-        current = row["policy"]
+    for row in drifted:
+        source, item_id = row["source"], row["item_id"]
+        current, old_policy = row["new_policy"], row["old_policy"]
 
-        if key not in known:
-            # Never seen by this consumer before — baseline silently.
-            conn.execute(
-                "INSERT INTO item_policy_state "
-                "(consumer, source, item_id, policy) VALUES (?, ?, ?, ?)",
-                (consumer, row["source"], row["item_id"], current),
-            )
-            conn.commit()
-            continue
-
-        if known[key] != current:
-            _arm(conn, consumer, row["source"], row["item_id"])
-            conn.execute(
-                "UPDATE item_policy_state SET policy = ? "
-                "WHERE consumer = ? AND source = ? AND item_id = ?",
-                (current, consumer, row["source"], row["item_id"]),
-            )
-            conn.commit()
-            record_audit_event(
-                conn,
-                event_type="item.policy_drifted",
-                actor="dispatcher.watcher",
-                source=row["source"],
-                item_id=row["item_id"],
-                details={"consumer": consumer, "old_policy": known[key], "new_policy": current},
-            )
-            changed += 1
+        _arm(conn, consumer, source, item_id)
+        conn.execute(
+            "UPDATE item_policy_state SET policy = ? "
+            "WHERE consumer = ? AND source = ? AND item_id = ?",
+            (current, consumer, source, item_id),
+        )
+        conn.commit()
+        record_audit_event(
+            conn,
+            event_type="item.policy_drifted",
+            actor="dispatcher.watcher",
+            source=source,
+            item_id=item_id,
+            details={"consumer": consumer, "old_policy": old_policy, "new_policy": current},
+        )
+        changed += 1
 
     return changed
 

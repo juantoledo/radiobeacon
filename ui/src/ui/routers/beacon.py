@@ -3,11 +3,13 @@ from datetime import datetime, timezone
 
 from adapters.beacon_defaults import BEACON_QUEUE_MAX_SIZE_DEFAULT, BEACON_TYPE_DEFAULT
 from adapters.storage import get_setting, list_beacon_status, set_setting
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from starlette.responses import RedirectResponse
 
+from ..ajax import ajax_ok, is_ajax
 from ..current_user import require_role
 from ..db import get_db
+from ..fragments import render_dashboard_live
 from ..setup import require_setup_complete
 
 router = APIRouter(
@@ -114,12 +116,16 @@ def _status_context(conn: sqlite3.Connection) -> dict:
 
 
 @router.post("/beacon/enable")
-def beacon_enable_action(conn: sqlite3.Connection = Depends(get_db)):
+def beacon_enable_action(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     set_setting(conn, "BEACON_ENABLED", "true", actor="ui.beacon")
+    if is_ajax(request):
+        return ajax_ok("beacon enabled", fragment=render_dashboard_live(request, conn))
     return RedirectResponse(url="/?msg=beacon+enabled", status_code=303)
 
 
 @router.post("/beacon/disable")
-def beacon_disable_action(conn: sqlite3.Connection = Depends(get_db)):
+def beacon_disable_action(request: Request, conn: sqlite3.Connection = Depends(get_db)):
     set_setting(conn, "BEACON_ENABLED", "false", actor="ui.beacon")
+    if is_ajax(request):
+        return ajax_ok("beacon disabled", fragment=render_dashboard_live(request, conn))
     return RedirectResponse(url="/?msg=beacon+disabled", status_code=303)

@@ -102,6 +102,44 @@ def test_check_and_publish_does_not_republish_same_settlement(tmp_path):
     assert len(client.published) == 1
 
 
+def test_check_and_publish_excludes_when_published_at_exactly_equals_settled_at(tmp_path):
+    """Boundary case for the LEFT JOIN's `settled_at > published_at`
+    filter: when the two are EXACTLY equal (not just close), the item
+    must stay excluded — this is the previous per-row `settled_at <=
+    published_at` skip-if-already-published behavior. A careless `>` vs
+    `>=` inversion in the join's HAVING clause would silently republish
+    here instead."""
+    conn = _make_conn(tmp_path)
+    _store_item(conn, summary="a short summary")
+    _record_executed(conn, "chunk", "senapred", "1", recorded_at="2021-01-01 00:00:00")
+    _record_executed(conn, "ai", "senapred", "1", recorded_at="2021-01-01 00:00:00")
+
+    client = FakeClient()
+    first = content_ready.check_and_publish(
+        conn, client, output_topic="radiobeacon/events/item.content_ready",
+        actor="actions.content_ready", qos=1,
+    )
+    assert first == 1
+
+    # Force published_at to be EXACTLY equal to settled_at (rather than
+    # merely close, which real "now" timestamps would only coincidentally
+    # be) so the test pins down the exact boundary, not just same-second
+    # granularity.
+    conn.execute(
+        "UPDATE item_readiness SET published_at = '2021-01-01 00:00:00' "
+        "WHERE source = 'senapred' AND item_id = '1'"
+    )
+    conn.commit()
+
+    second = content_ready.check_and_publish(
+        conn, client, output_topic="radiobeacon/events/item.content_ready",
+        actor="actions.content_ready", qos=1,
+    )
+
+    assert second == 0
+    assert len(client.published) == 1
+
+
 def test_check_and_publish_republishes_after_rearm(tmp_path):
     """A rearm doesn't delete prior audit rows, it produces new ones — a
     fresh action.chunk.executed/action.ai.executed pair after an earlier

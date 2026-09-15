@@ -7,7 +7,7 @@
 <div class="table-wrap cards">
 <table>
   <thead><tr><th>{{ t('policies_list.name_column') }}</th><th class="wrap">{{ t('policies_list.rhythm_column') }}</th><th class="wrap">{{ t('policies_list.description_column') }}</th><th></th></tr></thead>
-  <tbody>
+  <tbody data-cell="policies-rows">
     {% for p in policies %}
     {% set row = p.row %}
     <tr>

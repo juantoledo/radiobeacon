@@ -129,6 +129,11 @@ window.RB = window.RB || {};
           } else if (!body.ok) {
             focusFirstInvalid(body.target);
           }
+          // Bubbling CustomEvent, same rb: convention as on-air.js's
+          // rb:tx-state — lets a form living inside e.g. a <dialog> react
+          // to its own submit outcome (close on success) without this file
+          // needing to know that dialogs exist.
+          form.dispatchEvent(new CustomEvent("rb:ajax-response", { detail: body, bubbles: true }));
         });
       })
       .catch(function () {

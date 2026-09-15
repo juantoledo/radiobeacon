@@ -6,6 +6,7 @@ from adapters.storage import delete_setting, get_setting, list_settings, set_set
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import PlainTextResponse, RedirectResponse, Response
 
+from ..ajax import ajax_ok, is_ajax
 from ..config_catalog import (
     category_for_group,
     category_for_slug,
@@ -17,8 +18,10 @@ from ..config_catalog import (
     sections_for_category,
     specs_for_group,
 )
+from .. import templating
 from ..current_user import require_role
 from ..db import get_db
+from ..fragments import render_fragment
 from ..templating import templates
 
 router = APIRouter(dependencies=[Depends(require_role("admin"))])
@@ -255,13 +258,27 @@ async def config_group_save_action(
 
 @router.post("/config/{group}/{key}/reset")
 def config_setting_reset_action(
-    group: str, key: str, conn: sqlite3.Connection = Depends(get_db)
+    request: Request, group: str, key: str, conn: sqlite3.Connection = Depends(get_db)
 ):
     specs = specs_for_group(group)
     if not any(spec.key == key for spec in specs):
         raise HTTPException(status_code=404, detail="setting not found in group")
     deleted = delete_setting(conn, key)
     msg = f"'{key}' reset to env/default" if deleted else f"'{key}' had no override"
+
+    if is_ajax(request):
+        # This request's per-request settings cache (see templating.py's
+        # _request_setting) may already hold the pre-reset value if
+        # anything read it earlier in this same request — drop it before
+        # re-rendering the form body so the fragment reflects the reset,
+        # not a stale cached read.
+        invalidate = getattr(templating, "invalidate_request_settings", None)
+        if invalidate is not None:
+            invalidate(request)
+        ctx = build_group_form_context(conn, group)
+        fragment = render_fragment(request, "_config_group_form_body.html", ctx)
+        return ajax_ok(msg, fragment=fragment, target="#config-group-body")
+
     return RedirectResponse(
         url=f"/config/{group}?{urlencode({'msg': msg})}", status_code=303
     )

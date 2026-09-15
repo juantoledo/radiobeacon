@@ -40,7 +40,7 @@ import sqlite3
 from typing import Any
 
 from adapters.storage import (
-    get_item_ready_published_at,
+    _ensure_item_readiness_table,
     mark_item_ready_published,
     record_audit_event,
 )
@@ -61,16 +61,32 @@ def _find_settled_items(conn: sqlite3.Connection) -> list[tuple[str, str, str]]:
     """Items with at least one action.<name>.executed row for every action
     in _REQUIRED_ACTIONS, along with the latest recorded_at across all of
     them ("settled_at") — the timestamp of whichever action most recently
-    finished deciding what to do with this item."""
+    finished deciding what to do with this item.
+
+    Also filters out items already published for their current settled_at,
+    via a LEFT JOIN against item_readiness (primary-keyed on (source,
+    item_id), so this join is strictly 1:1 per settled item — it can't
+    duplicate or drop a row). This used to be a separate
+    get_item_ready_published_at call per row in check_and_publish — an
+    N+1 query repeated every poll tick, forever, over an ever-growing set
+    of settled items. Folding it into this aggregate query keeps it to one
+    query per tick. Kept as `>` (not `>=`): a row with published_at equal
+    to settled_at has already been published for that exact completion
+    and must stay excluded; only a *newer* settled_at (a rearm's fresh
+    completions) should re-trigger a publish."""
+    _ensure_item_readiness_table(conn)
     placeholders = ",".join("?" for _ in _EVENT_TYPES)
     return conn.execute(
         f"""
-        SELECT source, item_id, MAX(recorded_at) AS settled_at
-        FROM audit_log
-        WHERE event_type IN ({placeholders})
-          AND source IS NOT NULL AND item_id IS NOT NULL
-        GROUP BY source, item_id
-        HAVING COUNT(DISTINCT event_type) = ?
+        SELECT a.source, a.item_id, MAX(a.recorded_at) AS settled_at
+        FROM audit_log a
+        LEFT JOIN item_readiness r
+               ON r.source = a.source AND r.item_id = a.item_id
+        WHERE a.event_type IN ({placeholders})
+          AND a.source IS NOT NULL AND a.item_id IS NOT NULL
+        GROUP BY a.source, a.item_id
+        HAVING COUNT(DISTINCT a.event_type) = ?
+           AND (MAX(r.published_at) IS NULL OR MAX(a.recorded_at) > MAX(r.published_at))
         """,
         (*_EVENT_TYPES, len(_EVENT_TYPES)),
     ).fetchall()
@@ -90,10 +106,6 @@ def check_and_publish(
     tests)."""
     published = 0
     for source, item_id, settled_at in _find_settled_items(conn):
-        published_at = get_item_ready_published_at(conn, source, item_id)
-        if published_at is not None and settled_at <= published_at:
-            continue
-
         payload = mq.build_cloud_event_payload(
             event_type=OUTPUT_EVENT_TYPE,
             actor=actor,

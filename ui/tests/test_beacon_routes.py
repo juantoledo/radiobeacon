@@ -252,6 +252,33 @@ def test_beacon_disable_action_sets_flag_and_redirects(client, conn):
     assert get_setting("BEACON_ENABLED", conn=conn) == "false"
 
 
+def test_beacon_enable_action_ajax_returns_fragment(client, conn):
+    response = client.post(
+        "/beacon/enable", headers={"X-Requested-With": "fetch"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "fragment" in body
+    assert 'data-cell="quick_controls"' in body["fragment"]
+    assert get_setting("BEACON_ENABLED", conn=conn) == "true"
+
+
+def test_beacon_disable_action_ajax_returns_fragment(client, conn):
+    set_setting(conn, "BEACON_ENABLED", "true")
+
+    response = client.post(
+        "/beacon/disable", headers={"X-Requested-With": "fetch"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "fragment" in body
+    assert get_setting("BEACON_ENABLED", conn=conn) == "false"
+
+
 def test_dashboard_reflects_beacon_enabled_state(client, conn):
     set_setting(conn, "BEACON_ENABLED", "true")
 

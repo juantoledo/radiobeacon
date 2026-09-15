@@ -34,7 +34,7 @@
 <div class="table-wrap cards">
 <table>
   <thead><tr><th>{{ t('adapters_list.source_column') }}</th><th>{{ t('adapters_list.type_column') }}</th><th>{{ t('adapters_list.enabled_column') }}</th><th>{{ t('adapters_list.policy_column') }}</th><th>{{ t('adapters_list.last_fetch_column') }}</th><th></th></tr></thead>
-  <tbody>
+  <tbody data-cell="adapters-rows">
     {% for row in rows %}
     <tr>
       <td data-label="{{ t('adapters_list.source_column') }}"><strong>{{ row.source }}</strong></td>

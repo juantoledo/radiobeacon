@@ -376,6 +376,23 @@ def test_policy_delete_redirects(client, conn):
     assert row is None
 
 
+def test_policy_delete_ajax_returns_fragment_without_deleted_row(client, conn):
+    set_policy(conn, "temp")
+
+    response = client.post(
+        "/config/policies/temp/delete", headers={"X-Requested-With": "fetch"}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert "fragment" in body
+    assert 'data-cell="policies-rows"' in body["fragment"]
+    assert ">temp<" not in body["fragment"]
+    row = conn.execute("SELECT 1 FROM policies WHERE name='temp'").fetchone()
+    assert row is None
+
+
 def test_audit_log_returns_200(client):
     response = client.get("/audit")
     assert response.status_code == 200

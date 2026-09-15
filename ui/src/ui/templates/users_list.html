@@ -10,7 +10,7 @@
 <div class="table-wrap cards">
 <table>
   <thead><tr><th>{{ t('users.username_label') }}</th><th>{{ t('users.role_label') }}</th><th></th></tr></thead>
-  <tbody>
+  <tbody data-cell="users-rows">
     {% for u in users %}
     <tr>
       <td data-label="{{ t('users.username_label') }}">{{ u.username }}{% if u.disabled %} <span class="badge badge-neutral">{{ t('users.disabled_label') }}</span>{% endif %}</td>

@@ -14,6 +14,7 @@ comes from iterating the directory itself.
 import json
 import re
 import sqlite3
+from functools import lru_cache
 from pathlib import Path
 
 from adapters.storage import get_setting
@@ -94,6 +95,15 @@ _CLIP_EVENT_KIND = {
 # A clip name that legitimately belongs to (source, item_id): the beacon
 # builds it as `{source}-{item_id}-{ts}.wav` (voice) or
 # `{source}-{item_id}-{chunk}-{ts}.wav` (frame).
+#
+# lru_cache, not a fresh re.compile() every call: both call sites
+# (list_item_transmissions, item_clip_path) already run _safe_segment on
+# source/item_id first, so by the time we get here the values are bounded,
+# separator-free strings — safe to key a *bounded* cache on. maxsize=512
+# rather than unbounded because item_id ultimately comes from adapter-
+# supplied data (externally influenced), so we still cap how many distinct
+# patterns we'll hold onto.
+@lru_cache(maxsize=512)
 def _item_clip_re(source: str, item_id: str) -> re.Pattern:
     return re.compile(rf"\A{re.escape(source)}-{re.escape(item_id)}-(?:(\d+)-)?\d+\.wav\Z")
 
@@ -159,15 +169,24 @@ def item_transmission_counts(
     rows get a play button / an "xN" disclosure). Not file-existence
     filtered: this is a cheap "has it ever aired?" hint; the per-item list
     (list_item_transmissions) does the disk check."""
-    keys = {(row["source"], row["item_id"]) for row in items}
+    keys = sorted({(row["source"], row["item_id"]) for row in items})
     if not keys:
         return {}
+    pairs = ",".join("(?,?)" for _ in keys)
     rows = conn.execute(
-        "SELECT source, item_id, COUNT(*) FROM audit_log "
-        "WHERE event_type IN ('beacon.voice.transmitted', 'beacon.frame.transmitted') "
-        "GROUP BY source, item_id"
+        # `+event_type`: without the unary +, SQLite may drive this off an
+        # event_type index and still scan every transmit row ever recorded
+        # before filtering to these specific items; + disqualifies
+        # event_type from index selection so the planner uses the
+        # (source, item_id) index instead and only touches these items'
+        # rows.
+        f"SELECT source, item_id, COUNT(*) FROM audit_log "
+        f"WHERE (source, item_id) IN (VALUES {pairs}) "
+        f"AND +event_type IN ('beacon.voice.transmitted', 'beacon.frame.transmitted') "
+        f"GROUP BY source, item_id",
+        [v for pair in keys for v in pair],
     ).fetchall()
-    return {(s, i): c for s, i, c in rows if (s, i) in keys}
+    return {(s, i): c for s, i, c in rows}
 
 
 def item_clip_path(

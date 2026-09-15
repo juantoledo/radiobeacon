@@ -4,7 +4,13 @@
    (the SvxLink/Direwolf pages, which add a conf-file editor below this),
    and setup_wizard.html (a curated cross-group subset of fields). Expects:
    slug, fields (each with its own reset_url — see config._build_fields),
-   sentinel, error, form_action. #}
+   sentinel, error, form_action.
+
+   Wrapped in id="config-group-body" so the per-key reset action
+   (ui.routers.config.config_setting_reset_action) can target= this whole
+   element wholesale when it re-renders after a reset — see
+   static/ajax-forms.js's target-vs-data-cell handling. #}
+<div id="config-group-body">
 {% if error %}<p class="banner-warn">⚠ {{ error }}</p>{% endif %}
 
 <form method="post" action="{{ form_action }}" id="config-form">
@@ -63,3 +69,4 @@
 <form id="reset-{{ f.spec.key }}" method="post" action="{{ f.reset_url }}">{{ csrf_field() }}</form>
 {% endif %}
 {% endfor %}
+</div>

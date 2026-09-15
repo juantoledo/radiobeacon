@@ -85,7 +85,7 @@
            past two or three and reads oddly as a "choice among many"
            control; a <select> is the standard affordance and stays usable
            with JS disabled via the fallback button below). #}
-        <form class="locale-select" method="post" action="/locale" aria-label="{{ t('common.language') }}">
+        <form class="locale-select" method="post" action="/locale" data-no-ajax aria-label="{{ t('common.language') }}">
           {{ csrf_field() }}
           <input type="hidden" name="next" value="{{ request.url.path }}">
           {{ icon('globe', 14) }}
@@ -128,6 +128,10 @@
   <div id="toast-region" class="toast-region" aria-live="polite"></div>
 
   <script src="{{ static_url('app-shell.js') }}" defer></script>
+  {# Paints the theme switch instantly, in parallel with (not instead of)
+     ajax-forms.js's own submit handling below — listed first so its
+     document-level submit listener registers, and therefore runs, first. #}
+  <script src="{{ static_url('theme-switch.js') }}" defer></script>
   <script src="{{ static_url('ajax-forms.js') }}" defer></script>
   <script src="{{ static_url('conditional-fields.js') }}" defer></script>
   {# Drives the on-air glow border + nav badge on every page, not just the
