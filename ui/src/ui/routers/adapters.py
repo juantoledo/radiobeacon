@@ -2,6 +2,8 @@ import dataclasses
 import html
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any
 from urllib.parse import urlencode
 
@@ -27,6 +29,7 @@ from adapters.timeutil import utc_now
 from adapters.voice_replacements import SUGGESTED_VOICE_REPLACEMENTS
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from markupsafe import Markup
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import FormData
 from starlette.responses import RedirectResponse, Response
 
@@ -39,6 +42,35 @@ from ..templating import templates
 router = APIRouter(dependencies=[Depends(require_role("admin"))])
 
 _ADAPTER_CLASSES = {"api": ApiAdapter, "custom": CustomAdapter, "aiprompt": AiPromptAdapter}
+
+# CUSTOM adapters run operator-authored Python via exec() with no timeout
+# of its own (see custom_adapter.py) — unlike api_adapter.py/llm.py, which
+# already bound their own network calls. Bounding it here, on the
+# interactive test path only, keeps a hung custom adapter from tying up a
+# threadpool worker indefinitely.
+_CUSTOM_ADAPTER_TEST_TIMEOUT_SECONDS = 30
+
+
+def _fetch_with_timeout(fetch, timeout: float | None):
+    """Runs fetch() and returns its result, bounded by timeout when given.
+    Called via run_in_threadpool, so this itself already runs off the
+    asyncio event loop — the nested single-worker executor here exists
+    only to add a wall-clock deadline that plain fetch() can't honor on
+    its own (exec()'d code has no way to be cancelled once started)."""
+    if timeout is None:
+        return fetch()
+    executor = ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(fetch)
+    try:
+        return future.result(timeout=timeout)
+    except FutureTimeoutError:
+        raise TimeoutError(f"test fetch timed out after {timeout:.0f}s")
+    finally:
+        # wait=False: a still-running custom adapter is left to finish (or
+        # hang) on its own detached thread rather than blocking this
+        # response on a shutdown join — the whole point of the timeout
+        # above is to not wait for it.
+        executor.shutdown(wait=False)
 
 
 def _dev_tools_enabled(conn: sqlite3.Connection) -> bool:
@@ -633,7 +665,15 @@ async def adapter_test_action(request: Request, conn: sqlite3.Connection = Depen
             common["source"], common["adapter_type"], config,
             policy=resolve_policy(conn, common["policy"]),
         )
-        reading = adapter.fetch()
+        # Off the event loop: adapter.fetch() is blocking network/LLM I/O
+        # (or, for CUSTOM, arbitrary exec()'d code) — run it in a
+        # threadpool worker instead of inline on the single asyncio event
+        # loop this whole dashboard shares, so one slow test fetch doesn't
+        # freeze every other user's page.
+        timeout = (
+            _CUSTOM_ADAPTER_TEST_TIMEOUT_SECONDS if common["adapter_type"] == "custom" else None
+        )
+        reading = await run_in_threadpool(_fetch_with_timeout, adapter.fetch, timeout)
     except HTTPException:
         raise
     except Exception as e:
@@ -671,7 +711,8 @@ async def adapter_sample_action(request: Request, conn: sqlite3.Connection = Dep
 
     try:
         config = _form_to_config("api", form)
-        preview = preview_response(config)
+        # Off the event loop, same reasoning as adapter_test_action above.
+        preview = await run_in_threadpool(preview_response, config)
     except Exception as e:
         context = _error_context(common, form, f"Sample fetch failed: {e}", conn=conn)
         return templates.TemplateResponse(request, "adapter_form.html", context)

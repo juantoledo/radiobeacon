@@ -152,7 +152,17 @@ _ensure_venv_dir() {
 # start.sh, and by sources.sh/policies.sh/override_item.sh, so every one of
 # them keeps working standalone — against the one shared venv — per this
 # repo's "run just one piece" contract (see root start.sh's own comment).
+#
+# No-ops if RADIOBEACON_VENV_READY is set: root start.sh's setup_venv_all
+# already installed every package's requirements (including this one, as
+# part of its merged pass) and exports that var before backgrounding each
+# package's own start.sh, which is what calls this. Without this check,
+# every `./start.sh` run pays for a second, fully redundant `pip install`
+# per package — five of them, serialized against each other by
+# _venv_lock_acquire below since they all race the same site-packages dir
+# — on top of the one merged install that already covered them.
 setup_venv() {
+  [ -n "${RADIOBEACON_VENV_READY:-}" ] && return 0
   _venv_lock_acquire
   _ensure_venv_dir
   "$VENV_DIR/bin/pip" install -q -r requirements.txt
@@ -207,6 +217,11 @@ setup_venv_all() {
 
   "$VENV_DIR/bin/pip" install -q -r "$merged"
   _venv_lock_release
+
+  # Lets setup_venv (above) skip its own redundant install: root start.sh
+  # backgrounds each package's own start.sh after calling this, and those
+  # child processes inherit this export, so their setup_venv sees it set.
+  export RADIOBEACON_VENV_READY=1
 }
 
 # Downloads the default Piper neural-TTS voice model (BEACON_TTS_ENGINE=

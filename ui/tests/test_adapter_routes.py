@@ -1124,3 +1124,74 @@ def test_adapter_import_override_source_field_imports_under_new_key(client, conn
     assert response.status_code == 303
     assert get_adapter_instance(conn, "original-copy") is not None
     assert get_adapter_instance(conn, "original") is None
+
+
+def test_adapter_test_action_does_not_block_other_requests(client):
+    """Regression test for the bug this whole change fixes: adapter.fetch()
+    used to run synchronously on the single asyncio event loop this
+    dashboard's one uvicorn worker shares for every request (see
+    ui/src/ui/tx_stream.py's single-worker note), so a slow test fetch
+    froze every other user's request until it finished. adapters.py now
+    runs it via starlette.concurrency.run_in_threadpool.
+
+    Plain TestClient calls (as every other test in this file uses them)
+    each get their own throwaway event loop per call (see
+    starlette.testclient.TestClient._portal_factory), which would make
+    this test pass even without the fix -- it wouldn't be exercising a
+    shared event loop at all. Setting `.portal` directly, instead of
+    entering the client as `with client:`, gets that one-shared-event-loop
+    behavior (matching production) without also running this app's real
+    lifespan handler, which opens the real on-disk default database (not
+    this test's in-memory `conn`) to bootstrap an admin account -- exactly
+    the kind of side effect a test using an in-memory conn should not
+    trigger.
+    """
+    import threading
+    import time
+
+    import anyio.from_thread
+
+    slow_done = threading.Event()
+    result: dict = {}
+
+    def run_slow_test():
+        client.post(
+            "/config/adapters/test",
+            data={
+                "mode": "create",
+                "source": "slow-test-source",
+                "adapter_type": "custom",
+                "code": (
+                    "import time\n"
+                    "def fetch(config):\n"
+                    "    time.sleep(1.5)\n"
+                    "    return [{'id': '1', 'title': 'slow'}]\n"
+                ),
+            },
+        )
+        slow_done.set()
+
+    with anyio.from_thread.start_blocking_portal(**client.async_backend) as portal:
+        client.portal = portal
+        try:
+            thread = threading.Thread(target=run_slow_test)
+            thread.start()
+            # Give the slow request a moment to actually reach and start
+            # executing adapter.fetch() before racing the second request.
+            time.sleep(0.3)
+
+            start = time.monotonic()
+            result["status"] = client.get("/config/adapters").status_code
+            result["elapsed"] = time.monotonic() - start
+            # If adapter.fetch() still ran inline on the shared event loop,
+            # the slow test-fetch would have to finish first.
+            result["slow_done_before_other_finished"] = slow_done.is_set()
+
+            thread.join(timeout=5)
+        finally:
+            client.portal = None
+
+    assert result["status"] == 200
+    assert not result["slow_done_before_other_finished"]
+    assert result["elapsed"] < 1.0
+    assert slow_done.is_set()
