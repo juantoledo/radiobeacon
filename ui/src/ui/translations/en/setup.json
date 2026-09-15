@@ -21,5 +21,7 @@
   "setup.step.ai": "AI summarization",
   "setup.step.ai.intro": "Optional — has an AI provider condense each bulletin before it's queued for transmission. Ollama runs on your own machine and needs no key; OpenAI and Anthropic are cloud services and need an API key below to work.",
   "setup.step.display": "Display & language",
-  "setup.step.display.intro": "How dates/times, language, and theme appear on this dashboard — purely cosmetic, doesn't affect what's transmitted."
+  "setup.step.display.intro": "How dates/times, language, and theme appear on this dashboard — purely cosmetic, doesn't affect what's transmitted.",
+  "setup.step.branding": "Branding",
+  "setup.step.branding.intro": "Optional — a logo for your station, shown in the sidebar and on the login page in place of the default mark. PNG, JPEG, or WebP; it's automatically resized. You can add or change this later from Config."
 }

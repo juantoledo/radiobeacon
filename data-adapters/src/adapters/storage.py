@@ -908,6 +908,110 @@ def _ensure_beacon_manual_tx_table(conn: sqlite3.Connection) -> None:
     _ensure_bootstrapped(conn, "beacon_manual_tx", lambda c: c.execute(_CREATE_BEACON_MANUAL_TX))
 
 
+# One row per kind ("logo" today) — an admin-uploaded, server-normalized
+# image (see ui.branding.save_logo), unlike every other admin-supplied
+# asset in this repo (e.g. beacon TTS WAV clips), which lives on disk with
+# only a filename in the DB. Deliberately a DB blob instead: there's only
+# ever one row per kind, so SQLite's usual "don't put large binaries in
+# the hot WAL path" concern doesn't apply the way it would for
+# high-volume per-item data, and it means a DB backup captures branding
+# automatically along with everything else.
+_CREATE_BRAND_ASSETS = """
+CREATE TABLE IF NOT EXISTS brand_assets (
+    kind         TEXT PRIMARY KEY,
+    content      BLOB NOT NULL,
+    content_type TEXT NOT NULL,
+    width        INTEGER NOT NULL,
+    height       INTEGER NOT NULL,
+    checksum     TEXT NOT NULL,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by   TEXT NOT NULL
+);
+"""
+
+
+def _ensure_brand_assets_table(conn: sqlite3.Connection) -> None:
+    """Idempotent, and safe to call on any connection — the brand-asset
+    helpers below call this themselves, same pattern as
+    _ensure_beacon_manual_tx_table. Routes through the process-wide
+    bootstrap cache (kind="brand_assets")."""
+    _ensure_bootstrapped(conn, "brand_assets", lambda c: c.execute(_CREATE_BRAND_ASSETS))
+
+
+def get_brand_asset(conn: sqlite3.Connection, kind: str) -> dict[str, Any] | None:
+    """The stored asset row for `kind` (e.g. "logo"), or None if unset.
+    `checksum` is what ui.templating's logo_url() uses to cache-bust the
+    image URL on re-upload, the same role a static file's mtime plays for
+    static_url()."""
+    _ensure_brand_assets_table(conn)
+    row = conn.execute(
+        "SELECT content, content_type, width, height, checksum, updated_at "
+        "FROM brand_assets WHERE kind = ?",
+        (kind,),
+    ).fetchone()
+    if row is None:
+        return None
+    content, content_type, width, height, checksum, updated_at = row
+    return {
+        "content": content,
+        "content_type": content_type,
+        "width": width,
+        "height": height,
+        "checksum": checksum,
+        "updated_at": updated_at,
+    }
+
+
+def set_brand_asset(
+    conn: sqlite3.Connection,
+    kind: str,
+    *,
+    content: bytes,
+    content_type: str,
+    width: int,
+    height: int,
+    checksum: str,
+    actor: str,
+) -> None:
+    """Upserts one brand asset row and records a branding.<kind>_uploaded
+    audit event — same actor-attributed audit trail every other admin
+    write in this app gets. `content` is the already-validated,
+    already-normalized image (see ui.branding.save_logo); this function
+    does no validation of its own."""
+    _ensure_brand_assets_table(conn)
+    conn.execute(
+        "INSERT INTO brand_assets "
+        "(kind, content, content_type, width, height, checksum, updated_at, updated_by) "
+        "VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?) "
+        "ON CONFLICT(kind) DO UPDATE SET "
+        "content = excluded.content, content_type = excluded.content_type, "
+        "width = excluded.width, height = excluded.height, "
+        "checksum = excluded.checksum, updated_at = excluded.updated_at, "
+        "updated_by = excluded.updated_by",
+        (kind, content, content_type, width, height, checksum, actor),
+    )
+    conn.commit()
+    record_audit_event(
+        conn,
+        event_type=f"branding.{kind}_uploaded",
+        actor=actor,
+        details={"content_type": content_type, "width": width, "height": height},
+    )
+
+
+def delete_brand_asset(conn: sqlite3.Connection, kind: str, *, actor: str) -> bool:
+    """Removes the stored asset for `kind`, if any. Returns whether a row
+    was actually deleted (so the caller can skip the audit event / toast
+    for a no-op remove)."""
+    _ensure_brand_assets_table(conn)
+    cur = conn.execute("DELETE FROM brand_assets WHERE kind = ?", (kind,))
+    conn.commit()
+    removed = cur.rowcount > 0
+    if removed:
+        record_audit_event(conn, event_type=f"branding.{kind}_removed", actor=actor)
+    return removed
+
+
 def _backfill_senapred_ai_on_failure(conn: sqlite3.Connection) -> None:
     """One-time, best-effort backfill: senapred is seeded with
     `ai_on_failure="use_title"` (see _SEED_ADAPTER_INSTANCES), but the seed
@@ -1027,6 +1131,7 @@ def _bootstrap_schema(conn: sqlite3.Connection) -> None:
     _ensure_adapter_instances_table(conn)
     _ensure_beacon_tx_schedule_table(conn)
     _ensure_beacon_manual_tx_table(conn)
+    _ensure_brand_assets_table(conn)
     _backfill_senapred_ai_on_failure(conn)
 
 

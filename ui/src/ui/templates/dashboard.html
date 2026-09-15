@@ -2,6 +2,9 @@
 {% block title %}{{ t('dashboard.title') }}{% endblock %}
 {% block body_class %}dashboard-page{% endblock %}
 {% block content %}
+{% if logo_url() %}
+<div class="dashboard-watermark" style="background-image: url('{{ logo_url() }}');" aria-hidden="true"></div>
+{% endif %}
 <div class="page-header">
   {# The sidebar's own "Dashboard" nav item is already active/highlighted
      here, so a second visible title just repeats it — kept for a11y

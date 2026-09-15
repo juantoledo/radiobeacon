@@ -9,9 +9,11 @@ require_setup_complete redirects everyone else to, so gating it too would
 redirect-loop."""
 import sqlite3
 
+from adapters.storage import get_brand_asset
 from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.responses import RedirectResponse
 
+from .. import branding
 from ..config_catalog import spec_for_key
 from ..current_user import require_role
 from ..db import get_db
@@ -93,6 +95,11 @@ def setup_step_page(request: Request, slug: str, conn: sqlite3.Connection = Depe
     if step is None:
         raise HTTPException(status_code=404, detail="setup step not found")
 
+    if slug == "branding":
+        ctx = _step_context(slug, specs=[], fields=[], error=None)
+        ctx["asset"] = get_brand_asset(conn, "logo")
+        return templates.TemplateResponse(request, "setup_wizard.html", ctx)
+
     specs = [spec_for_key(key) for key in step.keys]
     ctx = _step_context(slug, specs=specs, fields=_build_fields(conn, specs), error=None)
     return templates.TemplateResponse(request, "setup_wizard.html", ctx)
@@ -109,6 +116,21 @@ async def setup_step_save_action(
     step = step_for_slug(slug)
     if step is None:
         raise HTTPException(status_code=404, detail="setup step not found")
+
+    if slug == "branding":
+        form = await request.form()
+        upload = form.get("logo")
+        if upload is None or isinstance(upload, str) or not upload.filename:
+            # No file chosen -- same as clicking "skip", nothing to save.
+            return RedirectResponse(url=f"/setup/{next_step_slug(slug)}", status_code=303)
+        raw_bytes = await upload.read()
+        try:
+            branding.save_logo(conn, raw_bytes, actor="ui.setup")
+        except branding.LogoUploadError as exc:
+            ctx = _step_context(slug, specs=[], fields=[], error=str(exc))
+            ctx["asset"] = get_brand_asset(conn, "logo")
+            return templates.TemplateResponse(request, "setup_wizard.html", ctx, status_code=400)
+        return RedirectResponse(url=f"/setup/{next_step_slug(slug)}", status_code=303)
 
     specs = [spec_for_key(key) for key in step.keys]
     form = await request.form()

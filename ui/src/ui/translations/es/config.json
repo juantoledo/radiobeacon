@@ -23,6 +23,16 @@
   "config.import_export.preview_button": "Previsualizar importación",
   "config.import_export.back_to_import_export": "Volver a Importar / Exportar",
 
+  "config.branding.title": "Marca",
+  "config.branding.intro": "Un logo para tu estación, mostrado en la barra lateral y en la página de inicio de sesión en lugar de la marca por defecto.",
+  "config.branding.current_heading": "Logo actual",
+  "config.branding.none_set": "No hay logo configurado — se muestra la marca por defecto en todas partes.",
+  "config.branding.remove_button": "Quitar logo",
+  "config.branding.upload_heading": "Subir un logo",
+  "config.branding.upload_desc": "PNG, JPEG o WebP, hasta 2 MB. Se redimensiona y se vuelve a codificar automáticamente — no hay herramienta de recorte aquí, así que encuádralo como quieras que se vea antes de subirlo.",
+  "config.branding.upload_button": "Subir",
+  "config.branding.zoom_label": "Zoom",
+
   "config.import_preview.title": "Vista previa de importación",
   "config.import_preview.intro": "Todavía no se ha escrito nada — esto es una simulación. Revisa lo siguiente y luego confirma para aplicarlo de verdad. Los ajustes/adaptadores/políticas/fuentes existentes que compartan clave con el archivo se sobrescribirán; nada de lo que ya existe en esta instalación y no está en el archivo se toca.",
   "config.import_preview.skipped_warning": "{count} adaptador(es) CUSTOM en este archivo se <strong>omitirán</strong> — activa {link} en esta instalación para importarlos. Su código Python nunca se lee ni se ejecuta de todas formas.",

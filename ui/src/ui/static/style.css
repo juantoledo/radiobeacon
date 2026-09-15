@@ -443,6 +443,11 @@ code, pre, .mono {
   background: var(--sidebar-accent);
   box-shadow: 0 0 0 3px var(--sidebar-accent-soft), 0 0 6px 1px color-mix(in srgb, var(--sidebar-accent) 70%, transparent);
 }
+/* Operator-uploaded logo (see ui.branding) — replaces the .dot above in
+   the same slot when one is set. Capped height rather than a fixed
+   width/height so any aspect ratio the operator uploaded still reads
+   correctly at a consistent brand-mark size. */
+.brand-logo { height: 1.5rem; width: auto; max-width: 6rem; }
 
 .sidebar-nav { display: flex; flex-direction: column; gap: 0.15rem; }
 
@@ -667,13 +672,33 @@ main {
 body.dashboard-page { height: 100dvh; overflow: hidden; }
 body.dashboard-page .app-main { overflow: hidden; min-height: 0; }
 body.dashboard-page main {
-  overflow: hidden;
+  position: relative; /* anchors .dashboard-watermark below */
+  overflow: hidden; /* also clips the watermark cleanly at the content edges */
   min-height: 0;
   display: flex;
   flex-direction: column;
   padding-bottom: var(--space-4);
 }
 body.dashboard-page .app-footer { display: none; } /* no room for it in a no-scroll layout */
+
+/* Decorative, low-opacity — distinct from .brand-logo (the small, opaque
+   sidebar mark). Every bento tile/panel is its own opaque .surface card
+   (see the bento/panel rules), so rendering this first in DOM order, with
+   no z-index tricks, already makes it show through only in the gaps
+   between cards and the page background, never competing with card
+   content. */
+.dashboard-watermark {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16rem;
+  height: 16rem;
+  background-repeat: no-repeat;
+  background-position: top right;
+  background-size: contain;
+  opacity: 0.07;
+  pointer-events: none;
+}
 @media (max-width: 960px) {
   body.dashboard-page { display: flex; flex-direction: column; }
   body.dashboard-page .mobile-bar { flex: none; }
@@ -2492,6 +2517,36 @@ pre.contents {
   background: var(--accent);
   display: inline-block;
 }
+/* Larger than the sidebar's .brand-logo — the login card is a standalone
+   focal point, same reasoning as .auth-card's own bigger radius/shadow. */
+.auth-brand .brand-logo { height: 2.25rem; max-width: 10rem; }
+
+/* /config/branding's current-logo preview — deliberately capped well
+   below MAX_DIMENSION (ui.branding), since the stored image itself may
+   be up to 512px and this is just a glance-sized preview. */
+.branding-preview { max-height: 6rem; max-width: 100%; display: block; }
+
+/* ---- logo crop/pan/zoom editor (static/logo-editor.js) -------------- */
+
+.logo-editor-stage { margin-top: var(--space-3); }
+.logo-editor-canvas {
+  display: block;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-subtle);
+  cursor: grab;
+  touch-action: none; /* pointer events drive panning, not the browser's own scroll/zoom */
+}
+.logo-editor-canvas.dragging { cursor: grabbing; }
+.logo-editor-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  max-width: 260px;
+  color: var(--fg-muted);
+}
+.logo-editor-zoom { flex: 1; }
 .auth-field { margin-bottom: var(--space-4); }
 .auth-field label {
   display: block;

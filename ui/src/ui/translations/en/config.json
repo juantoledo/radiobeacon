@@ -23,6 +23,16 @@
   "config.import_export.preview_button": "Preview import",
   "config.import_export.back_to_import_export": "Back to Import / Export",
 
+  "config.branding.title": "Branding",
+  "config.branding.intro": "A logo for your station, shown in the sidebar and on the login page in place of the default mark.",
+  "config.branding.current_heading": "Current logo",
+  "config.branding.none_set": "No logo set — the default mark is shown everywhere.",
+  "config.branding.remove_button": "Remove logo",
+  "config.branding.upload_heading": "Upload a logo",
+  "config.branding.upload_desc": "PNG, JPEG, or WebP, up to 2 MB. It's automatically resized to fit and re-encoded — no cropping tool here, so frame it the way you want it to appear before uploading.",
+  "config.branding.upload_button": "Upload",
+  "config.branding.zoom_label": "Zoom",
+
   "config.import_preview.title": "Preview import",
   "config.import_preview.intro": "Nothing has been written yet — this is a dry run. Review below, then confirm to actually apply it. Existing settings/adapters/policies/sources sharing a key with the file will be overwritten; nothing already on this install that's absent from the file is touched.",
   "config.import_preview.skipped_warning": "{count} CUSTOM adapter(s) in this file will be <strong>skipped</strong> — enable {link} on this install to import them. Their Python code is never read or executed either way.",

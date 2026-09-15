@@ -7,7 +7,7 @@ from pathlib import Path
 
 from adapters import __version__ as ADAPTERS_VERSION
 from adapters.categories import get_category, get_subtype
-from adapters.storage import DEFAULT_DB_PATH, get_connection, get_setting
+from adapters.storage import DEFAULT_DB_PATH, get_brand_asset, get_connection, get_setting
 from adapters.timeutil import resolve_display_tz, to_utc
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
@@ -47,6 +47,37 @@ def _icon_global(name: str, size: int = 16) -> Markup:
 
 
 templates.env.globals["icon"] = _icon_global
+
+
+@pass_context
+def _logo_url_global(context) -> str | None:
+    """`{{ logo_url() }}` — the operator's uploaded brand logo, as a
+    checksum-versioned URL (`/brand/logo?v=<checksum>`), or None if no
+    logo is set (callers fall back to the plain siren dot). The checksum
+    query param is what cache-busts a re-upload, the same role a static
+    file's mtime plays for static_url() — there's no file here, so the
+    stored row's own checksum stands in for it. Cached per-request (same
+    request.state idiom as _request_setting) since base.html calls this
+    twice (sidebar + mobile-bar)."""
+    request = context["request"]
+    cached = getattr(request.state, "logo_url", "__unset__")
+    if cached != "__unset__":
+        return cached
+    conn = getattr(request.state, "db_conn", None)
+    owns_conn = conn is None
+    if owns_conn:
+        conn = get_connection(config.UI_DB_PATH or DEFAULT_DB_PATH, check_same_thread=False)
+    try:
+        asset = get_brand_asset(conn, "logo")
+    finally:
+        if owns_conn:
+            conn.close()
+    url = f"/brand/logo?v={asset['checksum'][:12]}" if asset else None
+    request.state.logo_url = url
+    return url
+
+
+templates.env.globals["logo_url"] = _logo_url_global
 
 # `{{ app_version() }}` — the whole-project version (VERSION at the repo
 # root, resolved once by adapters.version at import time), shown in the
@@ -232,15 +263,16 @@ _CONFIG_TAB_ICONS: dict[str, str] = {
     "Logging": "monitor",
     "Policies": "policies",
     "Import/Export": "transfer",
+    "Branding": "radio",
 }
 
 
 def _config_nav_tabs_global() -> list[dict]:
     """Tabs for the /config subnav — one per settings category (in
-    NAV_CATEGORY_ORDER) plus Policies and Import/Export, which live outside
-    SETTINGS_CATALOG entirely (see ui.routers.policies /
-    ui.routers.config_transfer) but are folded into the same Config section
-    rather than separate top-level pages."""
+    NAV_CATEGORY_ORDER) plus Policies, Import/Export, and Branding, which
+    all live outside SETTINGS_CATALOG entirely (see ui.routers.policies /
+    ui.routers.config_transfer / ui.routers.branding) but are folded into
+    the same Config section rather than separate top-level pages."""
     tabs = [
         {"name": category, "slug": category_slug(category), "icon": _CONFIG_TAB_ICONS[category]}
         for category in NAV_CATEGORY_ORDER
@@ -252,6 +284,9 @@ def _config_nav_tabs_global() -> list[dict]:
             "slug": "import-export",
             "icon": _CONFIG_TAB_ICONS["Import/Export"],
         }
+    )
+    tabs.append(
+        {"name": "Branding", "slug": "branding", "icon": _CONFIG_TAB_ICONS["Branding"]}
     )
     return tabs
 

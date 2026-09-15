@@ -28,7 +28,7 @@
 
   <div class="mobile-bar">
     <button type="button" class="nav-toggle" aria-label="{{ t('common.open_navigation') }}" aria-controls="sidebar" aria-expanded="false">{{ icon('menu', 20) }}</button>
-    <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
+    <a class="brand" href="/">{% if logo_url() %}<img src="{{ logo_url() }}" class="brand-logo" alt="">{% else %}<span class="dot"></span>{% endif %}radiobeacon</a>
     {% if request.url.path != '/' %}
     <span class="on-air-indicator" role="status" hidden>
       <span class="on-air-dot" aria-hidden="true"></span>{{ t('dashboard.on_air_indicator') }}
@@ -40,7 +40,7 @@
 
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-head">
-      <a class="brand" href="/"><span class="dot"></span>radiobeacon</a>
+      <a class="brand" href="/">{% if logo_url() %}<img src="{{ logo_url() }}" class="brand-logo" alt="">{% else %}<span class="dot"></span>{% endif %}radiobeacon</a>
       <div class="sidebar-head-controls">
         {% if request.url.path != '/' %}
         <span class="on-air-indicator" role="status" hidden>

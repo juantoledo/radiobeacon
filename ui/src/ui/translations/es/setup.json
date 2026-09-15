@@ -21,5 +21,7 @@
   "setup.step.ai": "Resumen por IA",
   "setup.step.ai.intro": "Opcional — hace que un proveedor de IA condense cada boletín antes de ponerlo en cola para transmitir. Ollama funciona en tu propia máquina y no necesita clave; OpenAI y Anthropic son servicios en la nube y necesitan una clave de API abajo para funcionar.",
   "setup.step.display": "Pantalla e idioma",
-  "setup.step.display.intro": "Cómo se muestran fechas/horas, idioma y tema en este panel — puramente estético, no afecta lo que se transmite."
+  "setup.step.display.intro": "Cómo se muestran fechas/horas, idioma y tema en este panel — puramente estético, no afecta lo que se transmite.",
+  "setup.step.branding": "Marca",
+  "setup.step.branding.intro": "Opcional — un logo para tu estación, mostrado en la barra lateral y en la página de inicio de sesión en lugar de la marca por defecto. PNG, JPEG o WebP; se redimensiona automáticamente. Puedes agregarlo o cambiarlo más tarde desde Config."
 }

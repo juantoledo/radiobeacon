@@ -13,7 +13,7 @@
 </head>
 <body class="auth-page">
   <div class="auth-card">
-    <div class="auth-brand"><span class="dot"></span>radiobeacon</div>
+    <div class="auth-brand">{% if logo_url() %}<img src="{{ logo_url() }}" class="brand-logo" alt="">{% else %}<span class="dot"></span>{% endif %}radiobeacon</div>
     {% if error %}
     <p class="banner-warn">⚠ {{ t('auth.invalid_credentials') }}</p>
     {% endif %}

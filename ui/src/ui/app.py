@@ -34,6 +34,7 @@ from .routers import (
     audit,
     auth,
     beacon,
+    branding,
     config as config_router,
     config_transfer,
     dashboard,
@@ -148,6 +149,11 @@ app.mount(
 )
 
 app.include_router(auth.router)
+# Public, no auth dependency at all — same reason as auth.router: the
+# logo has to render on the (pre-login) login page and for a non-admin
+# 'user' role in the sidebar, neither of which any *_router.router below
+# is reachable to.
+app.include_router(branding.router)
 app.include_router(setup_router.router)
 app.include_router(dashboard.router)
 app.include_router(about.router)
@@ -159,11 +165,13 @@ app.include_router(beacon.router)
 app.include_router(items.router)
 app.include_router(adapters.router)
 app.include_router(policies.router)
-# Before config_router: rf_conf owns GET /config/beacon-{svxlink,direwolf}
-# and config_transfer owns /config/import-export/*, both of which
-# config_router's GET /config/{slug} catch-all would otherwise handle.
+# Before config_router: rf_conf owns GET /config/beacon-{svxlink,direwolf},
+# config_transfer owns /config/import-export/*, and branding.admin_router
+# owns /config/branding*, all of which config_router's GET /config/{slug}
+# catch-all would otherwise handle.
 app.include_router(rf_conf.router)
 app.include_router(config_transfer.router)
+app.include_router(branding.admin_router)
 app.include_router(config_router.router)
 app.include_router(audit.router)
 app.include_router(users.router)

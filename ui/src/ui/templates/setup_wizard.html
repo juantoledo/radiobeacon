@@ -33,7 +33,11 @@
   </div>
   {% set intro = t('setup.step.' ~ step.slug ~ '.intro', default='') %}
   {% if intro %}<p class="meta-line">{{ intro }}</p>{% endif %}
-  {% include "_config_group_form_body.html" %}
+  {% if step.slug == "branding" %}
+    {% include "_setup_branding_body.html" %}
+  {% else %}
+    {% include "_config_group_form_body.html" %}
+  {% endif %}
 {% endif %}
 
 {% if prev_url or skip_url %}
@@ -42,4 +46,10 @@
   {% if skip_url %}<a class="btn secondary" href="{{ skip_url }}">{{ t('setup.wizard.skip') }} &rarr;</a>{% endif %}
 </div>
 {% endif %}
+{% endblock %}
+{% block scripts %}
+{# Harmless no-op on every step but "branding" — it only ever looks for
+   [data-logo-editor], which _setup_branding_body.html is the only
+   include that renders. #}
+<script src="{{ static_url('logo-editor.js') }}" defer></script>
 {% endblock %}

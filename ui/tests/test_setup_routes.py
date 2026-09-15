@@ -32,6 +32,9 @@ STEP_VALUES = {
         "UI_DEFAULT_LOCALE": "en",
         "UI_DEFAULT_THEME": "system",
     },
+    # No file chosen -- the branding step's own POST handler treats an
+    # absent "logo" field as equivalent to clicking "skip".
+    "branding": {},
 }
 
 

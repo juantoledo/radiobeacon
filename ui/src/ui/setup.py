@@ -104,6 +104,14 @@ SETUP_WIZARD_STEPS: tuple[WizardStep, ...] = (
         "Display & language",
         ("DISPLAY_TIMEZONE", "UI_DEFAULT_LOCALE", "UI_DEFAULT_THEME"),
     ),
+    # Empty `keys` — unlike every other step, this isn't a curated
+    # SettingSpec subset (a logo upload isn't a form field); see
+    # routers/setup.py's `if step.slug == "branding"` branch, the one
+    # place that special-cases this step's GET/POST instead of going
+    # through the shared _build_fields/save_settings machinery. Placed
+    # last (not, say, right after "identity") so inserting it doesn't
+    # renumber/reorder any of the other steps' slugs.
+    WizardStep("branding", "Branding", ()),
 )
 
 FINISH_SLUG = "finish"
